@@ -54,7 +54,8 @@ header.top .sub{color:var(--mut);font-size:13px;margin:0}
 .dlg.small{max-width:440px}
 .dh{display:flex;align-items:flex-start;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
 .dh h3{margin:0;font-size:17px;flex:1}
-.x{border:0;background:none;font-size:22px;line-height:1;color:var(--mut);padding:0 4px}
+.x{border:1px solid var(--line);background:var(--card2);border-radius:8px;font:600 14px system-ui,sans-serif;color:var(--ink);padding:8px 14px;white-space:nowrap;flex:none}
+.x:hover{border-color:#c9d1de;background:#eef1f5}
 .db{padding:14px 16px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
 .grid .full{grid-column:1/-1}
@@ -253,7 +254,7 @@ function avisos(primeira){
 $("alertaP").onclick=()=>acessos();
 $("alerta").onclick=$("bBell").onclick=()=>{
   const a=atrasados();
-  dlg(`<div class="dh"><h3>Avisos</h3><button class="x" onclick="fechar()">×</button></div><div class="db ntf">
+  dlg(`<div class="dh"><h3>Avisos</h3><button class="x" onclick="fechar()">✕ Fechar</button></div><div class="db ntf">
   ${PEDIDOS.length?`<button class="it" onclick="acessos()">🔑 <b>${PEDIDOS.length} pedido(s) de acesso</b> esperando sua aprovação</button>`:""}
   ${a.length?a.map(c=>`<button class="it" onclick="abrir(${c.id})"><span class="chip ${c.situacao}">${esc(sitTxt(c))}</span> <b>${esc(c.fornecedor)}</b> · ${esc(c.assunto)}</button>`).join(""):'<div class="note">Nada atrasado. 👍</div>'}
   ${"Notification"in window&&Notification.permission!=="granted"?`<div class="acts" style="justify-content:flex-start"><button class="btn" onclick="Notification.requestPermission().then(()=>fechar())">Ativar notificação neste aparelho</button></div>`:""}
@@ -261,9 +262,15 @@ $("alerta").onclick=$("bBell").onclick=()=>{
 
 /* ---------------- janela ---------------- */
 function dlg(html,small){$("dlg").className="dlg"+(small?" small":"");$("dlg").innerHTML=html;$("ov").classList.remove("hidden");$("ov").scrollTop=0}
-function fechar(){$("ov").classList.add("hidden");if(location.search)history.replaceState(null,"",location.pathname)}
-$("ov").onclick=e=>{if(e.target.id==="ov")fechar()};
-document.addEventListener("keydown",e=>{if(e.key==="Escape")fechar()});
+/* a janela só fecha pelo botão "Fechar" (clicar fora ou arrastar a seleção para fora não fecha) */
+let CUR=null;
+async function guardar(){ // salva o que foi mexido no cartão aberto, sem enviar nada
+  if(!CUR||!QUEM||!QUEM.edita||!$("stb")||!$("cSalvar"))return true;
+  const d=coletar(CUR);if(!Object.keys(d).length)return true;
+  try{msg("cMsg","Guardando…");await rpc("sol_salvar",{p_token:TOKEN,p_id:CUR.id,p_dados:d});Object.assign(CUR,d);msg("cMsg","Guardado.","ok");return true}
+  catch(e){msg("cMsg","Não consegui guardar: "+e.message,"err");return false}}
+async function fechar(){const tinha=CUR&&$("cSalvar");if(!(await guardar()))return;
+  $("ov").classList.add("hidden");CUR=null;if(location.search)history.replaceState(null,"",location.pathname);if(tinha)carregar(false)}
 function msg(id,t,cl){const m=$(id);if(m){m.textContent=t;m.className="msg "+(cl||"")}}
 
 const CAMPOS=[ // [campo, rótulo, tipo, fornecedor pode editar, classe]
@@ -318,12 +325,12 @@ function destSug(btn){document.querySelectorAll(".dest").forEach(d=>{const s=$("
 /* ---------------- abrir cartão ---------------- */
 async function abrir(id){
   let r,mails=[];try{[r,mails]=await Promise.all([rpc("sol_cartao",{p_token:TOKEN,p_id:id}),rpc("sol_emails_cartao",{p_token:TOKEN,p_cartao:id})])}catch(e){alert(e.message);return}
-  const c=r.cartao,interno=QUEM.tipo==="interno";
+  const c=r.cartao,interno=QUEM.tipo==="interno";CUR=c;
   const mailById=Object.fromEntries((mails||[]).map(m=>[m.id,m]));
   const primeiro=!(mails||[]).some(m=>!/^Acesso ao quadro/.test(m.assunto));
   const tl=r.historico.map(h=>evHTML(h,mailById)).join("");
   const pub=r.link||(location.origin+location.pathname+"?d="+c.slug);DOCS=r.docs||[];
-  dlg(`<div class="dh"><h3><span class="chip ${c.situacao}">${esc(sitTxt(c))}</span><br>${esc(c.assunto)}</h3><button class="x" onclick="fechar()">×</button></div>
+  dlg(`<div class="dh"><h3><span class="chip ${c.situacao}">${esc(sitTxt(c))}</span><br>${esc(c.assunto)}</h3><button class="x" onclick="fechar()">✕ Fechar</button></div>
   <div class="db">${stBtns(c)}${form(c)}
   <div class="fl" style="margin-top:12px"><label class="fl">Documentos</label>
    <div class="anx">${DOCS.map(a=>`<span>📎 <a onclick="baixar(${a.id})">${esc(a.nome)}</a> ${kb(a.tamanho)}${interno&&QUEM.edita?` <a title="remover" onclick="docDel(${a.id},${c.id})">×</a>`:""}</span>`).join("")||'<span class="note" style="border:0;background:none;padding:0">Nenhum documento ainda.</span>'}</div>
@@ -342,12 +349,13 @@ async function abrir(id){
   if($("cSalvar"))$("cSalvar").onclick=async()=>{const d=coletar(c);if(!Object.keys(d).length){fechar();return}
     msg("cMsg","Salvando…");try{await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:d});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
   if($("cEnviar"))$("cEnviar").onclick=async()=>{const t=$("cCom").value.trim();if(!t)return;
+    if(!(await guardar()))return;
     try{await rpc("sol_comentar",{p_token:TOKEN,p_id:c.id,p_texto:t});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
   if($("cMail"))$("cMail").onclick=async()=>{
     // guarda o que foi editado no cartão antes de abrir o e-mail
-    const d=coletar(c);if(Object.keys(d).length){try{await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:d});Object.assign(c,d)}catch(e){msg("cMsg",e.message,"err");return}}
+    if(!(await guardar()))return;CUR=null;
     compor(c,DOCS,primeiro)};
-  if($("cRep"))$("cRep").onclick=()=>repassar(c);
+  if($("cRep"))$("cRep").onclick=async()=>{if(await guardar())repassar(c)};
   if($("cDel"))$("cDel").onclick=async()=>{if(!confirm("Apagar este cartão e todo o histórico? Não dá para desfazer."))return;
     try{await rpc("sol_remover",{p_token:TOKEN,p_id:c.id});fechar();carregar(false)}catch(e){msg("cMsg",e.message,"err")}};
 }
@@ -376,7 +384,7 @@ async function baixar(id){try{const a=await rpc("sol_anexo",{p_token:TOKEN,p_id:
 
 /* ---------------- repassar para alguém de fora ---------------- */
 function repassar(c){
-  dlg(`<div class="dh"><h3>Repassar a demanda</h3><button class="x" onclick="abrir(${c.id})">×</button></div><div class="db">
+  dlg(`<div class="dh"><h3>Repassar a demanda</h3><button class="x" onclick="abrir(${c.id})">✕ Fechar</button></div><div class="db">
   <p class="note">A pessoa passa a ser a responsável. ${QUEM.admin?"":"O Mizael recebe um aviso e, quando aprovar, ela ganha uma senha própria por e-mail para atualizar esta demanda."}</p>
   <div class="grid"><label class="fl">Nome<input id="rNome"></label><label class="fl">E-mail<input id="rEmail" type="email"></label>
   <label class="fl full">Recado (opcional)<textarea id="rMsg" rows="2" placeholder="ex.: vai cuidar da parte do mapa"></textarea></label></div>
@@ -399,17 +407,22 @@ async function decidir(id,ok){
 let DOCS=[];
 const lerB64=f=>new Promise((ok,er)=>{const r=new FileReader();r.onload=()=>ok({nome:f.name,tipo:f.type||"application/octet-stream",base64:String(r.result).split(",")[1]||""});r.onerror=er;r.readAsDataURL(f)});
 async function docEnviar(inp,id){const fs=[...inp.files];inp.value="";
+  if(!(await guardar()))return;
   for(const f of fs){if(f.size>MAX_ANEXOS){msg("dMsg",f.name+" passa de 15 MB.","err");return}
     msg("dMsg","Enviando "+f.name+"…");try{const a=await lerB64(f);await rpc("sol_doc_enviar",{p_token:TOKEN,p_cartao:id,p_nome:a.nome,p_tipo:a.tipo,p_base64:a.base64})}catch(e){msg("dMsg",e.message,"err");return}}
   await carregar(false);abrir(id)}
-async function docDel(aid,id){if(!confirm("Remover este documento do cartão?"))return;try{await rpc("sol_doc_remover",{p_token:TOKEN,p_id:aid});abrir(id)}catch(e){alert(e.message)}}
+async function docDel(aid,id){if(!confirm("Remover este documento do cartão?"))return;if(!(await guardar()))return;try{await rpc("sol_doc_remover",{p_token:TOKEN,p_id:aid});abrir(id)}catch(e){alert(e.message)}}
 
 /* ---------------- escrever e-mail (também é a "Nova solicitação") ---------------- */
 let ANEXOS=[];
+const RASC={};   // rascunho de cada e-mail (por cartão): nada se perde ao fechar ou anexar
 function compor(c,docs,primeiro){
-  ANEXOS=[];const nova=!c;c=c||{fornecedor:"TFleet",emails:[]};docs=docs||[];
-  const volta=nova?"fechar()":"abrir("+c.id+")";
-  dlg(`<div class="dh"><h3>${nova?"Nova solicitação":"Enviar e-mail · "+esc(c.fornecedor)}</h3><button class="x" onclick="${volta}">×</button></div><div class="db">
+  const nova=!c;c=c||{fornecedor:"TFleet",emails:[]};docs=docs||[];
+  const rk=nova?"nova":"c"+c.id;let rs=RASC[rk];
+  if(!rs){try{const g=ls.get("tf_sol_rasc_"+rk);if(g)rs=RASC[rk]=Object.assign(g,{anexos:[]})}catch(e){}}
+  ANEXOS=rs?rs.anexos:[];
+  const volta=nova?"fecharRasc()":"abrir("+c.id+")";
+  dlg(`<div class="dh"><h3>${nova?"Nova solicitação":"Enviar e-mail · "+esc(c.fornecedor)}</h3><button class="x" onclick="${volta}">✕ Fechar</button></div><div class="db">
   ${nova?`<div class="grid" style="margin-bottom:10px"><label class="fl">Fornecedor<input id="mForn" value="${esc(c.fornecedor)}" list="dlForn2"></label>
     <label class="fl">Prazo de entrega (se já tiver)<input id="mPrazo" type="date"></label></div>
     <datalist id="dlForn2">${[...new Set(CARDS.map(x=>x.fornecedor))].map(f=>`<option value="${esc(f)}">`).join("")}</datalist>`:""}
@@ -422,10 +435,22 @@ function compor(c,docs,primeiro){
   ${docs.length?`<div class="anx">${docs.map(a=>`<span><label><input type="checkbox" class="mDoc" value="${a.id}" data-t="${a.tamanho}" checked onchange="mostraAnx()"> 📎 ${esc(a.nome)} ${kb(a.tamanho)}</label></span>`).join("")}</div>`:""}
   <label class="btn" style="margin-top:6px">📎 Anexar arquivos (PDF, Word, Excel…)<input type="file" id="mArq" multiple class="hidden"></label>
   <div class="anx" id="mAnx"></div>
-  <div class="acts"><button class="btn" onclick="${volta}">Cancelar</button>${nova?'<button class="btn" id="mReg" title="Cria o cartão com esse texto e os arquivos, sem mandar e-mail">Só registrar (já mandei por fora)</button>':""}<button class="btn p" id="mEnviar">Enviar e-mail</button></div>
+  <div class="acts"><button class="btn" onclick="${volta}" title="O que você escreveu fica guardado como rascunho">Fechar (guarda o rascunho)</button>${nova?'<button class="btn" id="mReg" title="Cria o cartão com esse texto e os arquivos, sem mandar e-mail">Só registrar (já mandei por fora)</button>':""}<button class="btn p" id="mEnviar">Enviar e-mail</button></div>
   <div class="msg" id="mMsg"></div>
   <p class="note">Sai pelo Gmail do Mizael em até 1 minuto. Quem está em Para e Cc passa a receber os avisos de prazo e fica salvo nos contatos. Os arquivos ficam guardados no cartão.</p></div>`);
-  $("mArq").onchange=e=>{[...e.target.files].forEach(f=>ANEXOS.push(f));e.target.value="";mostraAnx()};
+  $("mArq").onchange=e=>{[...e.target.files].forEach(f=>ANEXOS.push(f));e.target.value="";mostraAnx();guardaRasc()};
+  // devolve o rascunho, se tiver
+  if(rs){if(nova){$("mForn").value=rs.forn||"";$("mPrazo").value=rs.prazo||""}
+    $("mAss").value=rs.ass;$("mCorpo").value=rs.corpo;
+    $("dPara").querySelectorAll(".tag").forEach(t=>t.remove());(rs.para||[]).forEach(e=>destAdd("dPara",e));
+    (rs.cc||[]).forEach(e=>destAdd("dCc",e));
+    document.querySelectorAll(".mDoc").forEach(x=>x.checked=!rs.docs||rs.docs.includes(+x.value));mostraAnx();
+    msg("mMsg","Rascunho recuperado.","ok")}
+  const guardaRasc=()=>{if(!$("mAss"))return;const o={para:destLer("dPara"),cc:destLer("dCc"),ass:$("mAss").value,corpo:$("mCorpo").value,
+      docs:[...document.querySelectorAll(".mDoc")].filter(x=>x.checked).map(x=>+x.value),forn:nova?$("mForn").value:null,prazo:nova?$("mPrazo").value:null};
+    RASC[rk]=Object.assign(o,{anexos:ANEXOS});ls.set("tf_sol_rasc_"+rk,o)};
+  window.guardaRasc=guardaRasc;window.limpaRasc=()=>{delete RASC[rk];ls.del("tf_sol_rasc_"+rk)};
+  const box=$("dlg").querySelector(".db");["input","change"].forEach(ev=>box.addEventListener(ev,guardaRasc));box.addEventListener("click",()=>setTimeout(()=>{if($("mAss"))guardaRasc()},0));
   const ler=()=>{destAdd("dPara",$("dPara").querySelector("input").value);destAdd("dCc",$("dCc").querySelector("input").value);
     return {para:destLer("dPara"),cc:destLer("dCc"),ass:$("mAss").value.trim(),corpo:$("mCorpo").value,
       docs:[...document.querySelectorAll(".mDoc:checked")].map(x=>+x.value)}};
@@ -443,27 +468,28 @@ function compor(c,docs,primeiro){
       msg("mMsg","Enviando…");
       if(primeiro&&!nova&&f.corpo!==(c.descricao||""))await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:{descricao:f.corpo,enviado_em:hoje()}});
       await rpc("sol_email_enviar",{p_token:TOKEN,p_cartao:c.id,p_para:f.para,p_cc:f.cc,p_assunto:f.ass,p_corpo:f.corpo,p_anexos:anexos,p_docs:f.docs});
-      CONTATOS=await rpc("sol_contatos_lista",{p_token:TOKEN})||CONTATOS;await carregar(false);abrir(c.id);
+      limpaRasc();CONTATOS=await rpc("sol_contatos_lista",{p_token:TOKEN})||CONTATOS;await carregar(false);abrir(c.id);
     }catch(e){$("mEnviar").disabled=false;msg("mMsg",e.message,"err")}};
   if($("mReg"))$("mReg").onclick=async()=>{const f=ler();
     if(!f.ass){msg("mMsg","Preencha o assunto.","err");return}
     $("mReg").disabled=true;msg("mMsg","Salvando…");
     try{if(!c.id)await criarCartao(f,f.corpo.trim()||null);
       for(const file of ANEXOS){const a=await lerB64(file);await rpc("sol_doc_enviar",{p_token:TOKEN,p_cartao:c.id,p_nome:a.nome,p_tipo:a.tipo,p_base64:a.base64})}
-      await carregar(false);abrir(c.id);
+      limpaRasc();await carregar(false);abrir(c.id);
     }catch(e){$("mReg").disabled=false;msg("mMsg",e.message,"err")}};
 }
 function totalAnx(){return ANEXOS.reduce((s,f)=>s+f.size,0)+[...document.querySelectorAll(".mDoc:checked")].reduce((s,x)=>s+(+x.dataset.t||0),0)}
 function mostraAnx(){const tot=totalAnx();
   $("mAnx").innerHTML=ANEXOS.map((f,i)=>`<span>📎 ${esc(f.name)} ${kb(f.size)} <a onclick="ANEXOS.splice(${i},1);mostraAnx()">×</a></span>`).join("")+(tot?`<span class="note" style="border:0;background:none">${kb(tot)} de 15 MB</span>`:"")}
 
+function fecharRasc(){if(window.guardaRasc)try{guardaRasc()}catch(e){}$("ov").classList.add("hidden")}
 /* ---------------- nova solicitação ---------------- */
 $("bNovo").onclick=()=>compor(null);
 
 /* ---------------- contatos ---------------- */
 $("bContatos").onclick=contatos;
 async function contatos(){try{CONTATOS=await rpc("sol_contatos_lista",{p_token:TOKEN})||[]}catch(e){alert(e.message);return}
-  dlg(`<div class="dh"><h3>Contatos salvos</h3><button class="x" onclick="fechar()">×</button></div><div class="db">
+  dlg(`<div class="dh"><h3>Contatos salvos</h3><button class="x" onclick="fechar()">✕ Fechar</button></div><div class="db">
   <p class="note">Quem recebe e-mail pelo quadro entra aqui sozinho. Coloque o nome para aparecer bonito na hora de escolher.</p>
   <table class="tbl"><tr><th>Nome</th><th>E-mail</th><th>Fornecedor</th><th></th></tr>
   ${CONTATOS.map(c=>`<tr><td><input id="cn${c.id}" value="${esc(c.nome||"")}" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:4px"></td><td>${esc(c.email)}</td>
@@ -479,7 +505,7 @@ async function ctDel(id){if(!confirm("Remover este contato?"))return;try{await r
 $("bAcessos").onclick=acessos;
 async function acessos(){
   let ps=[],cfg={};try{[ps,cfg,PEDIDOS]=await Promise.all([rpc("sol_pessoas_lista",{p_token:TOKEN}),rpc("sol_config_ver",{p_token:TOKEN}),rpc("sol_pedidos_lista",{p_token:TOKEN})]);PEDIDOS=PEDIDOS||[];avisos(false)}catch(e){alert(e.message);return}
-  dlg(`<div class="dh"><h3>Acessos e robô de e-mail</h3><button class="x" onclick="fechar()">×</button></div><div class="db">
+  dlg(`<div class="dh"><h3>Acessos e robô de e-mail</h3><button class="x" onclick="fechar()">✕ Fechar</button></div><div class="db">
   ${PEDIDOS.length?`<h4 class="sec4" style="color:var(--brand-ink)">Pedidos de acesso</h4>
   <table class="tbl">${PEDIDOS.map(p=>`<tr><td><b>${esc(p.nome)}</b><br><span class="note">${esc(p.email)} · ${esc(p.fornecedor)}</span></td>
    <td class="note">pedido por ${esc(p.pedido_por)}${p.assunto?"<br>"+esc(p.assunto):""}${p.mensagem?"<br>“"+esc(p.mensagem)+"”":""}</td>
@@ -502,7 +528,7 @@ async function acessos(){
     try{const c=await rpc("sol_config_salvar",{p_token:TOKEN,p_dias:+$("kDias").value,p_nova_chave:true});$("kRobo").textContent=c.chave_robo;msg("kMsg","Chave nova gerada.","ok")}catch(e){msg("kMsg",e.message,"err")}};
 }
 function pessoa(p){
-  dlg(`<div class="dh"><h3>${p.id?"Editar acesso":"Nova senha"}</h3><button class="x" onclick="acessos()">×</button></div><div class="db"><div class="grid">
+  dlg(`<div class="dh"><h3>${p.id?"Editar acesso":"Nova senha"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db"><div class="grid">
   <label class="fl">Nome<input id="pNome" value="${esc(p.nome||"")}"></label><label class="fl">Fornecedor (igual ao dos cartões, ou *)<input id="pForn" value="${esc(p.fornecedor||"")}"></label>
   <label class="fl full">E-mail (opcional)<input id="pEmail" type="email" value="${esc(p.email||"")}"></label>
   <label class="fl">${p.id?"Nova senha (vazio = mantém)":"Senha (mín. 6)"}<input id="pSenha" type="text" autocomplete="off"></label>
