@@ -343,14 +343,15 @@ async function abrir(id){
    <button class="btn" onclick="fechar()">Fechar</button>${QUEM.edita?'<button class="btn p" id="cSalvar">Salvar</button>':""}</div>
   <div class="msg" id="cMsg"></div>
   <div class="tl"><h4>Andamento</h4>
-   ${QUEM.edita?`<div class="cbox"><textarea id="cCom" rows="2" placeholder="Escreva uma atualização (ex.: começamos, previsão, dúvida)…"></textarea><button class="btn p" id="cEnviar">Enviar</button></div>`:""}
+   ${QUEM.comenta??QUEM.edita?`<div class="cbox"><textarea id="cCom" rows="2" placeholder="Escreva uma atualização (ex.: começamos, previsão, dúvida)…"></textarea><button class="btn p" id="cEnviar">Enviar</button></div>
+    <label class="note" style="display:flex;gap:6px;align-items:center;margin:-4px 0 10px"><input type="checkbox" id="cCobrar"> 📣 Cobrar resposta: mandar este comentário por e-mail para quem recebe os avisos${(c.emails||[]).length?" ("+esc(c.emails.join(", "))+")":""}</label>`:""}
    ${tl||'<div class="note">Sem registros.</div>'}</div></div>`);
   ligaSt();
   if($("cSalvar"))$("cSalvar").onclick=async()=>{const d=coletar(c);if(!Object.keys(d).length){fechar();return}
     msg("cMsg","Salvando…");try{await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:d});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
   if($("cEnviar"))$("cEnviar").onclick=async()=>{const t=$("cCom").value.trim();if(!t)return;
     if(!(await guardar()))return;
-    try{await rpc("sol_comentar",{p_token:TOKEN,p_id:c.id,p_texto:t});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
+    try{await rpc("sol_comentar",{p_token:TOKEN,p_id:c.id,p_texto:t,p_cobrar:!!($("cCobrar")&&$("cCobrar").checked)});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
   if($("cMail"))$("cMail").onclick=async()=>{
     // guarda o que foi editado no cartão antes de abrir o e-mail
     if(!(await guardar()))return;CUR=null;
@@ -424,7 +425,9 @@ function compor(c,docs,primeiro){
   const volta=nova?"fecharRasc()":"abrir("+c.id+")";
   dlg(`<div class="dh"><h3>${nova?"Nova solicitação":"Enviar e-mail · "+esc(c.fornecedor)}</h3><button class="x" onclick="${volta}">✕ Fechar</button></div><div class="db">
   ${nova?`<div class="grid" style="margin-bottom:10px"><label class="fl">Fornecedor<input id="mForn" value="${esc(c.fornecedor)}" list="dlForn2"></label>
-    <label class="fl">Prazo de entrega (se já tiver)<input id="mPrazo" type="date"></label></div>
+    <label class="fl">Prazo de entrega (se já tiver)<input id="mPrazo" type="date"></label>
+    <label class="fl full">Quem vai assumir (opcional; se não for ela, ela mesma repassa)<input id="mResp" list="dlResp" placeholder="ex.: Adriano"></label></div>
+    <datalist id="dlResp">${CONTATOS.filter(x=>x.nome).map(x=>`<option value="${esc(x.nome)}">${esc(x.email)}</option>`).join("")}</datalist>
     <datalist id="dlForn2">${[...new Set(CARDS.map(x=>x.fornecedor))].map(f=>`<option value="${esc(f)}">`).join("")}</datalist>`:""}
   <label class="fl">Para</label>${destHTML("dPara",c.emails||[])}
   <details style="margin:8px 0"><summary class="note">Cópia (Cc)</summary>${destHTML("dCc",[])}</details>
@@ -440,14 +443,14 @@ function compor(c,docs,primeiro){
   <p class="note">Sai pelo Gmail do Mizael em até 1 minuto. Quem está em Para e Cc passa a receber os avisos de prazo e fica salvo nos contatos. Os arquivos ficam guardados no cartão.</p></div>`);
   $("mArq").onchange=e=>{[...e.target.files].forEach(f=>ANEXOS.push(f));e.target.value="";mostraAnx();guardaRasc()};
   // devolve o rascunho, se tiver
-  if(rs){if(nova){$("mForn").value=rs.forn||"";$("mPrazo").value=rs.prazo||""}
+  if(rs){if(nova){$("mForn").value=rs.forn||"";$("mPrazo").value=rs.prazo||"";$("mResp").value=rs.resp||""}
     $("mAss").value=rs.ass;$("mCorpo").value=rs.corpo;
     $("dPara").querySelectorAll(".tag").forEach(t=>t.remove());(rs.para||[]).forEach(e=>destAdd("dPara",e));
     (rs.cc||[]).forEach(e=>destAdd("dCc",e));
     document.querySelectorAll(".mDoc").forEach(x=>x.checked=!rs.docs||rs.docs.includes(+x.value));mostraAnx();
     msg("mMsg","Rascunho recuperado.","ok")}
   const guardaRasc=()=>{if(!$("mAss"))return;const o={para:destLer("dPara"),cc:destLer("dCc"),ass:$("mAss").value,corpo:$("mCorpo").value,
-      docs:[...document.querySelectorAll(".mDoc")].filter(x=>x.checked).map(x=>+x.value),forn:nova?$("mForn").value:null,prazo:nova?$("mPrazo").value:null};
+      docs:[...document.querySelectorAll(".mDoc")].filter(x=>x.checked).map(x=>+x.value),forn:nova?$("mForn").value:null,prazo:nova?$("mPrazo").value:null,resp:nova?$("mResp").value:null};
     RASC[rk]=Object.assign(o,{anexos:ANEXOS});ls.set("tf_sol_rasc_"+rk,o)};
   window.guardaRasc=guardaRasc;window.limpaRasc=()=>{delete RASC[rk];ls.del("tf_sol_rasc_"+rk)};
   const box=$("dlg").querySelector(".db");["input","change"].forEach(ev=>box.addEventListener(ev,guardaRasc));box.addEventListener("click",()=>setTimeout(()=>{if($("mAss"))guardaRasc()},0));
@@ -456,7 +459,7 @@ function compor(c,docs,primeiro){
       docs:[...document.querySelectorAll(".mDoc:checked")].map(x=>+x.value)}};
   const criarCartao=async(f,descricao)=>{const forn=$("mForn").value.trim();if(!forn)throw new Error("Preencha o fornecedor.");
     const d={fornecedor:forn,assunto:f.ass,status:"Enviado",enviado_em:hoje(),ultimo_contato:hoje(),emails:f.para.concat(f.cc)};
-    if($("mPrazo").value)d.prazo=$("mPrazo").value;if(descricao)d.descricao=descricao;
+    if($("mPrazo").value)d.prazo=$("mPrazo").value;if($("mResp").value.trim())d.responsavel=$("mResp").value.trim();if(descricao)d.descricao=descricao;
     const r=await rpc("sol_salvar",{p_token:TOKEN,p_id:null,p_dados:d});c=r;return r};
   $("mEnviar").onclick=async()=>{const f=ler();
     if(!f.para.length){msg("mMsg","Coloque pelo menos um e-mail em Para.","err");return}
@@ -491,7 +494,8 @@ $("bContatos").onclick=()=>acessos();
 const contatos=()=>acessos();
 const SIT=c=>{const a=c.acesso;if(!c.tem_acesso)return'<span class="note">sem acesso</span>';if(!a)return'<span class="st ok">tem acesso</span>';
   if(!a.ativo)return'<span class="note">desativado</span>';
-  return`<span class="st ok">ativo</span><br><span class="note">${a.ultimo_acesso?"entrou "+dtBR(a.ultimo_acesso):"nunca entrou"}${a.fornecedor==="*"?" · vê tudo":""}</span>`};
+  return`<span class="st ok">${NIVEIS[a.nivel||"editar"]}</span><br><span class="note">${a.ultimo_acesso?"entrou "+dtBR(a.ultimo_acesso):"nunca entrou"}${a.fornecedor==="*"?" · todos os fornecedores":""}</span>`};
+const NIVEIS={ver:"só acompanha",comentar:"comenta e cobra",editar:"edita"};
 async function acessos(){
   let cfg={};
   try{const r=await Promise.all([rpc("sol_contatos_lista",{p_token:TOKEN}),
@@ -509,7 +513,7 @@ async function acessos(){
   ${CONTATOS.map((c,i)=>`<tr><td>${inp("cn"+i,c.nome)}</td><td>${esc(c.email)}</td><td>${inp("cf"+i,c.acesso&&c.acesso.fornecedor==="*"?"*":c.fornecedor)}</td>
    ${adm?`<td>${SIT(c)}</td>`:""}
    <td style="white-space:nowrap"><button class="btn" onclick="ctSalvar(${i})">Salvar</button>
-   ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Trocar código</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
+   ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Editar acesso</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
        :`<button class="btn p" onclick="acNumero(${i})">Dar acesso</button>`):""}
    <button class="btn d" title="Remover" onclick="ctDel(${i})">×</button></td></tr>`).join("")||`<tr><td colspan="5" class="note">Nenhum ainda.</td></tr>`}</table></div>
   <h4 class="sec4" style="margin-top:16px">Adicionar contato</h4>
@@ -529,32 +533,36 @@ async function acessos(){
 async function ctNovo(){try{await rpc("sol_contato_salvar",{p_token:TOKEN,p_id:null,p_nome:$("ctN").value,p_email:$("ctE").value,p_fornecedor:$("ctF").value});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 async function ctSalvar(i){const c=CONTATOS[i],nome=$("cn"+i).value.trim(),forn=$("cf"+i).value.trim();
   try{if(forn!=="*"||!c.acesso)await rpc("sol_contato_salvar",{p_token:TOKEN,p_id:c.contato_id,p_nome:nome,p_email:c.email,p_fornecedor:forn==="*"?"":forn});
-    if(c.acesso)await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:c.acesso.id,p_nome:nome,p_fornecedor:forn,p_email:c.email,p_senha:null,p_ativo:c.acesso.ativo});
+    if(c.acesso)await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:c.acesso.id,p_nome:nome,p_fornecedor:forn,p_email:c.email,p_senha:null,p_ativo:c.acesso.ativo,p_nivel:c.acesso.nivel||null});
     acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 async function ctDel(i){const c=CONTATOS[i];
   if(!confirm(c.acesso?"Remover este contato e o acesso dele?":"Remover este contato?"))return;
   try{if(c.acesso)await rpc("sol_pessoa_remover",{p_token:TOKEN,p_id:c.acesso.id});
     if(c.contato_id)await rpc("sol_contato_remover",{p_token:TOKEN,p_id:c.contato_id});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 async function acAtivo(i,ativo){const c=CONTATOS[i],a=c.acesso;
-  try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a.id,p_nome:c.nome,p_fornecedor:a.fornecedor,p_email:c.email,p_senha:null,p_ativo:ativo});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
+  try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a.id,p_nome:c.nome,p_fornecedor:a.fornecedor,p_email:c.email,p_senha:null,p_ativo:ativo,p_nivel:a.nivel||null});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 function acNumero(i){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()||c.fornecedor||"",nome=$("cn"+i).value.trim()||c.nome||"";
-  dlg(`<div class="dh"><h3>${a?"Trocar código":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
+  dlg(`<div class="dh"><h3>${a?"Editar acesso":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
   <p><b>${esc(nome||c.email)}</b><br><span class="note">${esc(c.email)}</span></p>
   ${nome?"":`<label class="fl full">Nome<input id="aNome"></label>`}
-  <label class="fl full">Código de acesso (ex.: 4 últimos do celular)<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" style="font-size:22px;letter-spacing:6px"></label>
+  <label class="fl full">${a?"Código novo (deixe vazio para manter o atual)":"Código de acesso (ex.: 4 últimos do celular)"}<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" style="font-size:22px;letter-spacing:6px"></label>
+  <label class="fl full">O que pode fazer<select id="aNivel">
+    <option value="ver">Só acompanhar (vê os cartões e baixa os documentos)</option>
+    <option value="comentar">Acompanhar, comentar e cobrar resposta</option>
+    <option value="editar">Editar: status, responsável, datas, prazo, documentos, comentar e repassar</option></select></label>
   <label class="fl full">O que pode ver<select id="aForn">
     ${forn&&forn!=="*"?`<option value="${esc(forn)}">Só os cartões de ${esc(forn)}</option>`:""}
-    <option value="*" ${forn==="*"?"selected":""}>Tudo (é da casa: edita e envia e-mail, sem mexer em acessos)</option></select></label>
+    <option value="*" ${forn==="*"?"selected":""}>Todos os fornecedores (é da casa; não mexe em acessos)</option></select></label>
   ${!forn?'<p class="note">Para limitar aos cartões de um fornecedor, feche, preencha o Fornecedor do contato e clique em Salvar.</p>':""}
   <p class="note">Ela entra no quadro digitando só esse código. Os avisos vão para ${esc(c.email)}.</p>
-  <div class="acts"><button class="btn" onclick="acessos()">Voltar</button><button class="btn p" id="aOk">${a?"Trocar":"Criar acesso"}</button></div>
+  <div class="acts"><button class="btn" onclick="acessos()">Voltar</button><button class="btn p" id="aOk">${a?"Salvar":"Criar acesso"}</button></div>
   <div class="msg" id="aMsg"></div></div>`,true);
-  $("aNum").focus();
+  $("aNivel").value=a?(a.nivel||"editar"):"editar";$("aNum").focus();
   $("aOk").onclick=async()=>{const n=$("aNum").value.trim(),nm=nome||($("aNome")&&$("aNome").value.trim());
-    if(n.length<4){msg("aMsg","Digite pelo menos 4 números.","err");return}
+    if(!a&&n.length<4||n&&n.length<4){msg("aMsg","Digite pelo menos 4 números.","err");return}
     if(!nm){msg("aMsg","Coloque o nome da pessoa.","err");return}
-    try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a?a.id:null,p_nome:nm,p_fornecedor:$("aForn").value,p_email:c.email,p_senha:n,p_ativo:true});
-      await acessos();msg("ctMsg",`Pronto: ${nm} entra com o código ${n}.`,"ok")}catch(e){msg("aMsg",e.message,"err")}};
+    try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a?a.id:null,p_nome:nm,p_fornecedor:$("aForn").value,p_email:c.email,p_senha:n||null,p_ativo:true,p_nivel:$("aNivel").value});
+      await acessos();msg("ctMsg",n?`Pronto: ${nm} entra com o código ${n}.`:`Pronto: acesso de ${nm} atualizado.`,"ok")}catch(e){msg("aMsg",e.message,"err")}};
 }
 /* ---------------- link público (só ver) ---------------- */
 async function publico(chave){
