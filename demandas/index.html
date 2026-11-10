@@ -279,7 +279,8 @@ function form(c){
     const dis=!ed||(forn&&!fp)?"disabled":"";let v=c[k]==null?"":c[k];if(t==="date")v=String(v).slice(0,10);
     const inp=t==="area"?`<textarea id="c_${k}" rows="3" ${dis}>${esc(v)}</textarea>`:`<input id="c_${k}" type="${t}" value="${esc(v)}" ${dis} ${k==="fornecedor"?'list="dlForn"':""}>`;
     return `<label class="fl ${cl||""}">${l}${k==="prazo"&&c.prazo_original&&c.prazo_original!==c.prazo?` <span class="note">(1º prazo: ${dBR(c.prazo_original)})</span>`:""}${inp}</label>`}).join("")}
-    ${c.descricao?`<div class="fl full"><label class="fl" style="margin:0">Pedido (texto enviado)</label><div class="pedido">${esc(c.descricao)}</div></div>`:""}
+    ${!forn&&ed?`<label class="fl full">Pedido (texto do e-mail)<textarea id="c_descricao" rows="6" placeholder="Prezados,&#10;&#10;…">${esc(c.descricao||"")}</textarea></label>`
+      :c.descricao?`<div class="fl full"><label class="fl" style="margin:0">Pedido (texto enviado)</label><div class="pedido">${esc(c.descricao)}</div></div>`:""}
     ${c.status!=="Enviado"||c.observacoes?`<label class="fl full">Observações / próximos passos<textarea id="c_observacoes" rows="3" ${ed?"":"disabled"} placeholder="ex.: o que falta, combinado na reunião, próximo passo">${esc(c.observacoes||"")}</textarea></label>`:""}
     ${!forn?`<div class="fl full"><label class="fl" style="margin:0">E-mails que recebem os avisos de prazo</label>${destHTML("dAviso",c.emails||[])}</div>`:""}</div>
     <datalist id="dlForn">${[...new Set(CARDS.map(x=>x.fornecedor))].map(f=>`<option value="${esc(f)}">`).join("")}</datalist>`;
@@ -290,6 +291,7 @@ function ligaSt(){document.querySelectorAll("#stb button").forEach(b=>b.onclick=
 function coletar(c){const d={},forn=QUEM.tipo==="fornecedor";
   CAMPOS.forEach(([k,,t,fp])=>{if(forn&&!fp)return;const el=$("c_"+k);if(!el)return;let v=el.value.trim();
     if(v==="")v=null;const ant=c[k]==null?null:(t==="date"?String(c[k]).slice(0,10):c[k]);if(v!==ant)d[k]=v});
+  if($("c_descricao")){const v=$("c_descricao").value.trim()?$("c_descricao").value:null;if(v!==(c.descricao||null))d.descricao=v}
   if($("c_observacoes")){const v=$("c_observacoes").value.trim()||null;if(v!==(c.observacoes||null))d.observacoes=v}
   if(!forn&&$("dAviso")){const novo=destLer("dAviso");if(novo.join(",")!==(c.emails||[]).join(","))d.emails=novo}
   const s=document.querySelector("#stb .on");if(s&&s.dataset.s!==c.status)d.status=s.dataset.s;return d}
@@ -318,6 +320,7 @@ async function abrir(id){
   let r,mails=[];try{[r,mails]=await Promise.all([rpc("sol_cartao",{p_token:TOKEN,p_id:id}),rpc("sol_emails_cartao",{p_token:TOKEN,p_cartao:id})])}catch(e){alert(e.message);return}
   const c=r.cartao,interno=QUEM.tipo==="interno";
   const mailById=Object.fromEntries((mails||[]).map(m=>[m.id,m]));
+  const primeiro=!(mails||[]).some(m=>!/^Acesso ao quadro/.test(m.assunto));
   const tl=r.historico.map(h=>evHTML(h,mailById)).join("");
   const pub=r.link||(location.origin+location.pathname+"?d="+c.slug);DOCS=r.docs||[];
   dlg(`<div class="dh"><h3><span class="chip ${c.situacao}">${esc(sitTxt(c))}</span><br>${esc(c.assunto)}</h3><button class="x" onclick="fechar()">×</button></div>
@@ -329,7 +332,7 @@ async function abrir(id){
   <p class="note">Link para acompanhar (só ver, sem senha): <a href="${esc(pub)}" target="_blank" rel="noopener">${esc(pub)}</a> <button class="btn" type="button" onclick="copiar('${esc(pub)}',this)">Copiar</button></p>
   <div class="acts">${QUEM.admin?'<button class="btn d" id="cDel">Apagar</button>':""}<span style="flex:1"></span>
    ${QUEM.edita?'<button class="btn" id="cRep">↪ Repassar</button>':""}
-   ${interno&&QUEM.edita?'<button class="btn" id="cMail">✉ Enviar e-mail</button>':""}
+   ${interno&&QUEM.edita?`<button class="btn ${primeiro?"p":""}" id="cMail">✉ ${primeiro?"Enviar o pedido por e-mail":"Enviar e-mail"}</button>`:""}
    <button class="btn" onclick="fechar()">Fechar</button>${QUEM.edita?'<button class="btn p" id="cSalvar">Salvar</button>':""}</div>
   <div class="msg" id="cMsg"></div>
   <div class="tl"><h4>Andamento</h4>
@@ -340,7 +343,10 @@ async function abrir(id){
     msg("cMsg","Salvando…");try{await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:d});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
   if($("cEnviar"))$("cEnviar").onclick=async()=>{const t=$("cCom").value.trim();if(!t)return;
     try{await rpc("sol_comentar",{p_token:TOKEN,p_id:c.id,p_texto:t});await carregar(false);abrir(c.id)}catch(e){msg("cMsg",e.message,"err")}};
-  if($("cMail"))$("cMail").onclick=()=>compor(c,DOCS);
+  if($("cMail"))$("cMail").onclick=async()=>{
+    // guarda o que foi editado no cartão antes de abrir o e-mail
+    const d=coletar(c);if(Object.keys(d).length){try{await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:d});Object.assign(c,d)}catch(e){msg("cMsg",e.message,"err");return}}
+    compor(c,DOCS,primeiro)};
   if($("cRep"))$("cRep").onclick=()=>repassar(c);
   if($("cDel"))$("cDel").onclick=async()=>{if(!confirm("Apagar este cartão e todo o histórico? Não dá para desfazer."))return;
     try{await rpc("sol_remover",{p_token:TOKEN,p_id:c.id});fechar();carregar(false)}catch(e){msg("cMsg",e.message,"err")}};
@@ -400,7 +406,7 @@ async function docDel(aid,id){if(!confirm("Remover este documento do cartão?"))
 
 /* ---------------- escrever e-mail (também é a "Nova solicitação") ---------------- */
 let ANEXOS=[];
-function compor(c,docs){
+function compor(c,docs,primeiro){
   ANEXOS=[];const nova=!c;c=c||{fornecedor:"TFleet",emails:[]};docs=docs||[];
   const volta=nova?"fechar()":"abrir("+c.id+")";
   dlg(`<div class="dh"><h3>${nova?"Nova solicitação":"Enviar e-mail · "+esc(c.fornecedor)}</h3><button class="x" onclick="${volta}">×</button></div><div class="db">
@@ -410,7 +416,7 @@ function compor(c,docs){
   <label class="fl">Para</label>${destHTML("dPara",c.emails||[])}
   <details style="margin:8px 0"><summary class="note">Cópia (Cc)</summary>${destHTML("dCc",[])}</details>
   <div class="grid"><label class="fl full">Assunto${nova?" (vira o título do cartão)":""}<input id="mAss" value="${esc(c.assunto||"")}"></label>
-  <label class="fl full">Texto do e-mail<textarea id="mCorpo" rows="10" placeholder="Prezados,&#10;&#10;…"></textarea></label></div>
+  <label class="fl full">Texto do e-mail<textarea id="mCorpo" rows="10" placeholder="Prezados,&#10;&#10;…">${primeiro?esc(c.descricao||""):""}</textarea></label></div>
   <p class="note">No fim do e-mail vai automaticamente o botão <b>"Veja a gestão dessa demanda"</b>, com o link para acompanhar (só ver) e baixar os documentos. Para atualizar, a pessoa entra com a senha dela.</p>
   <label class="fl" style="margin-top:6px">Anexos</label>
   ${docs.length?`<div class="anx">${docs.map(a=>`<span><label><input type="checkbox" class="mDoc" value="${a.id}" data-t="${a.tamanho}" checked onchange="mostraAnx()"> 📎 ${esc(a.nome)} ${kb(a.tamanho)}</label></span>`).join("")}</div>`:""}
@@ -435,6 +441,7 @@ function compor(c,docs){
     try{const anexos=await Promise.all(ANEXOS.map(lerB64));
       if(nova&&!c.id)await criarCartao(f);
       msg("mMsg","Enviando…");
+      if(primeiro&&!nova&&f.corpo!==(c.descricao||""))await rpc("sol_salvar",{p_token:TOKEN,p_id:c.id,p_dados:{descricao:f.corpo,enviado_em:hoje()}});
       await rpc("sol_email_enviar",{p_token:TOKEN,p_cartao:c.id,p_para:f.para,p_cc:f.cc,p_assunto:f.ass,p_corpo:f.corpo,p_anexos:anexos,p_docs:f.docs});
       CONTATOS=await rpc("sol_contatos_lista",{p_token:TOKEN})||CONTATOS;await carregar(false);abrir(c.id);
     }catch(e){$("mEnviar").disabled=false;msg("mMsg",e.message,"err")}};
