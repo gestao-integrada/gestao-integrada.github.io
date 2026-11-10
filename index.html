@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gestão Integrada</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;color-scheme:light}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:40px 16px}
+h1{font-size:26px;margin:0}p.sub{color:var(--mut);margin:4px 0 24px}
+a.card{display:block;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:14px;padding:16px 18px;color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06)}
+a.card:hover{border-color:#c9d1de;border-left-color:var(--brand)}a.card b{font-size:17px}a.card span{display:block;color:var(--mut);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Gestão Integrada</h1>
+  <p class="sub">Acompanhamento da operação</p>
+  <a class="card" href="demandas/"><b>Demandas</b><span>Pedidos a fornecedores e parceiros: quem assumiu, prazo, documentos e andamento.</span></a>
+</div>
+<script>
+// links antigos (?d=… ou ?v=… na raiz) vão para o quadro
+if(/[?&](d|v|c|acessos)=/.test(location.search))location.replace("demandas/"+location.search);
+</script>
+</body>
+</html>
