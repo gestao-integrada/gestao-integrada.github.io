@@ -506,13 +506,13 @@ async function acessos(){
    <td style="white-space:nowrap"><button class="btn p" onclick="decidir(${p.id},true)">Aprovar</button> <button class="btn d" onclick="decidir(${p.id},false)">Recusar</button></td></tr>`).join("")}</table>`:""}
   <div class="msg" id="kPed"></div>
   <p class="note">Quem recebe e-mail pelo quadro entra aqui sozinho.${adm?" Para a pessoa poder atualizar os cartões, clique em <b>Dar acesso</b> e digite só o número (ex.: 4 últimos do celular). Ela entra com o <b>e-mail + esse número</b> e vê só os cartões do fornecedor dela.":""}</p>
-  <table class="tbl"><tr><th>Nome</th><th>E-mail</th><th>Fornecedor</th>${adm?"<th>Acesso</th>":""}<th></th></tr>
+  <div style="overflow-x:auto"><table class="tbl"><tr><th>Nome</th><th>E-mail</th><th>Fornecedor</th>${adm?"<th>Acesso</th>":""}<th></th></tr>
   ${CONTATOS.map((c,i)=>`<tr><td>${inp("cn"+i,c.nome)}</td><td>${esc(c.email)}</td><td>${inp("cf"+i,c.acesso&&c.acesso.fornecedor==="*"?"*":c.fornecedor)}</td>
    ${adm?`<td>${SIT(c)}</td>`:""}
    <td style="white-space:nowrap"><button class="btn" onclick="ctSalvar(${i})">Salvar</button>
    ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Trocar número</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
        :`<button class="btn p" onclick="acNumero(${i})">Dar acesso</button>`):""}
-   <button class="btn d" title="Remover" onclick="ctDel(${i})">×</button></td></tr>`).join("")||`<tr><td colspan="5" class="note">Nenhum ainda.</td></tr>`}</table>
+   <button class="btn d" title="Remover" onclick="ctDel(${i})">×</button></td></tr>`).join("")||`<tr><td colspan="5" class="note">Nenhum ainda.</td></tr>`}</table></div>
   <h4 class="sec4" style="margin-top:16px">Adicionar contato</h4>
   <div class="grid"><label class="fl">Nome<input id="ctN"></label><label class="fl">E-mail<input id="ctE" type="email"></label><label class="fl">Fornecedor<input id="ctF" value="TFleet"></label></div>
   <div class="acts"><button class="btn p" onclick="ctNovo()">Adicionar</button></div><div class="msg" id="ctMsg"></div>
