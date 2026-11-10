@@ -116,9 +116,8 @@ code.key{background:var(--card2);border:1px solid var(--line);border-radius:6px;
 
 <div id="vLogin" class="login hidden">
   <h2>Solicitações a fornecedores</h2>
-  <div class="note">Da casa: só a sua senha pessoal (a mesma da Central). Fornecedor: o seu e-mail + o número de acesso que recebeu.</div>
-  <form id="fLogin"><input id="lEmail" type="email" autocomplete="username" placeholder="E-mail (só fornecedor)">
-  <input id="lSenha" type="password" inputmode="text" autocomplete="current-password" placeholder="Senha ou número de acesso" required>
+  <div class="note">Digite a sua senha pessoal (a mesma da Central) ou o código de acesso que você recebeu.</div>
+  <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha ou código de acesso" required>
   <button class="btn p">Entrar</button></form>
   <div id="lMsg" class="msg"></div>
 </div>
@@ -181,9 +180,9 @@ async function iniciar(){
   const pk=QS.get("d")||QS.get("v");if(pk){publico(pk);return}
   mostrarLogin();
 }
-function mostrarLogin(){$("vPub").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lEmail").focus()}
+function mostrarLogin(){$("vPub").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
 $("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
-  try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:$("lEmail").value.trim()||null});
+  try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:null});
     if(r.erro){msg("lMsg",r.erro,"err");return}
     ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token,r);
   }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
@@ -386,7 +385,7 @@ async function baixar(id){try{const a=await rpc("sol_anexo",{p_token:TOKEN,p_id:
 /* ---------------- repassar para alguém de fora ---------------- */
 function repassar(c){
   dlg(`<div class="dh"><h3>Repassar a demanda</h3><button class="x" onclick="abrir(${c.id})">✕ Fechar</button></div><div class="db">
-  <p class="note">A pessoa passa a ser a responsável. ${QUEM.admin?"":"O Mizael recebe um aviso e, quando aprovar, ela recebe por e-mail um número de acesso (entra com o e-mail dela + o número) para atualizar esta demanda."}</p>
+  <p class="note">A pessoa passa a ser a responsável. ${QUEM.admin?"":"O Mizael recebe um aviso e, quando aprovar, ela recebe por e-mail um código de acesso para entrar para atualizar esta demanda."}</p>
   <div class="grid"><label class="fl">Nome<input id="rNome"></label><label class="fl">E-mail<input id="rEmail" type="email"></label>
   <label class="fl full">Recado (opcional)<textarea id="rMsg" rows="2" placeholder="ex.: vai cuidar da parte do mapa"></textarea></label></div>
   <div class="acts"><button class="btn" onclick="abrir(${c.id})">Cancelar</button><button class="btn p" id="rOk">Repassar</button></div><div class="msg" id="rRes"></div></div>`,true);
@@ -394,14 +393,14 @@ function repassar(c){
     await carregar(false);
     if(r==="ja_tem_acesso"){msg("rRes","Repassado. Essa pessoa já tem acesso e vai receber os avisos de prazo.","ok")}
     else if(QUEM.admin){acessos();return}
-    else msg("rRes","Repassado. Pedido de acesso enviado para aprovação. Assim que aprovar, a pessoa recebe por e-mail o número de acesso.","ok");
+    else msg("rRes","Repassado. Pedido de acesso enviado para aprovação. Assim que aprovar, a pessoa recebe por e-mail o código de acesso.","ok");
     $("rOk").outerHTML=`<button class="btn p" onclick="abrir(${c.id})">Voltar ao cartão</button>`;
   }catch(e){msg("rRes",e.message,"err")}};
 }
 async function decidir(id,ok){
   if(!ok&&!confirm("Recusar este pedido de acesso?"))return;
   try{const r=await rpc("sol_pedido_decidir",{p_token:TOKEN,p_id:id,p_aprovar:ok});PEDIDOS=await rpc("sol_pedidos_lista",{p_token:TOKEN})||[];avisos(false);
-    await acessos();if(ok)msg("kPed",`Aprovado. Número de acesso: ${r.senha} — ${r.email_enviado?"vai por e-mail em até 1 minuto":"anote e passe para a pessoa"}.`,"ok");
+    await acessos();if(ok)msg("kPed",`Aprovado. Código de acesso: ${r.senha} — ${r.email_enviado?"vai por e-mail em até 1 minuto":"anote e passe para a pessoa"}.`,"ok");
   }catch(e){msg("kPed",e.message,"err")}}
 
 /* ---------------- documentos ---------------- */
@@ -491,7 +490,7 @@ $("bNovo").onclick=()=>compor(null);
 $("bContatos").onclick=()=>acessos();
 const contatos=()=>acessos();
 const SIT=c=>{const a=c.acesso;if(!c.tem_acesso)return'<span class="note">sem acesso</span>';if(!a)return'<span class="st ok">tem acesso</span>';
-  if(a.travado)return'<span class="st err">travado 15 min</span>';if(!a.ativo)return'<span class="note">desativado</span>';
+  if(!a.ativo)return'<span class="note">desativado</span>';
   return`<span class="st ok">ativo</span><br><span class="note">${a.ultimo_acesso?"entrou "+dtBR(a.ultimo_acesso):"nunca entrou"}${a.fornecedor==="*"?" · vê tudo":""}</span>`};
 async function acessos(){
   let cfg={};
@@ -505,12 +504,12 @@ async function acessos(){
    <td class="note">pedido por ${esc(p.pedido_por)}${p.assunto?"<br>"+esc(p.assunto):""}${p.mensagem?"<br>“"+esc(p.mensagem)+"”":""}</td>
    <td style="white-space:nowrap"><button class="btn p" onclick="decidir(${p.id},true)">Aprovar</button> <button class="btn d" onclick="decidir(${p.id},false)">Recusar</button></td></tr>`).join("")}</table>`:""}
   <div class="msg" id="kPed"></div>
-  <p class="note">Quem recebe e-mail pelo quadro entra aqui sozinho.${adm?" Para a pessoa poder atualizar os cartões, clique em <b>Dar acesso</b> e digite só o número (ex.: 4 últimos do celular). Ela entra com o <b>e-mail + esse número</b> e vê só os cartões do fornecedor dela.":""}</p>
+  <p class="note">Quem recebe e-mail pelo quadro entra aqui sozinho.${adm?" Para a pessoa poder atualizar os cartões, clique em <b>Dar acesso</b> e digite o código (ex.: 4 últimos do celular). Ela entra <b>só com esse código</b> e vê só os cartões do fornecedor dela. Cada código é de uma pessoa só.":""}</p>
   <div style="overflow-x:auto"><table class="tbl"><tr><th>Nome</th><th>E-mail</th><th>Fornecedor</th>${adm?"<th>Acesso</th>":""}<th></th></tr>
   ${CONTATOS.map((c,i)=>`<tr><td>${inp("cn"+i,c.nome)}</td><td>${esc(c.email)}</td><td>${inp("cf"+i,c.acesso&&c.acesso.fornecedor==="*"?"*":c.fornecedor)}</td>
    ${adm?`<td>${SIT(c)}</td>`:""}
    <td style="white-space:nowrap"><button class="btn" onclick="ctSalvar(${i})">Salvar</button>
-   ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Trocar número</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
+   ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Trocar código</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
        :`<button class="btn p" onclick="acNumero(${i})">Dar acesso</button>`):""}
    <button class="btn d" title="Remover" onclick="ctDel(${i})">×</button></td></tr>`).join("")||`<tr><td colspan="5" class="note">Nenhum ainda.</td></tr>`}</table></div>
   <h4 class="sec4" style="margin-top:16px">Adicionar contato</h4>
@@ -539,15 +538,15 @@ async function ctDel(i){const c=CONTATOS[i];
 async function acAtivo(i,ativo){const c=CONTATOS[i],a=c.acesso;
   try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a.id,p_nome:c.nome,p_fornecedor:a.fornecedor,p_email:c.email,p_senha:null,p_ativo:ativo});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 function acNumero(i){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()||c.fornecedor||"",nome=$("cn"+i).value.trim()||c.nome||"";
-  dlg(`<div class="dh"><h3>${a?"Trocar número":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
+  dlg(`<div class="dh"><h3>${a?"Trocar código":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
   <p><b>${esc(nome||c.email)}</b><br><span class="note">${esc(c.email)}</span></p>
   ${nome?"":`<label class="fl full">Nome<input id="aNome"></label>`}
-  <label class="fl full">Número de acesso (ex.: 4 últimos do celular)<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" style="font-size:22px;letter-spacing:6px"></label>
+  <label class="fl full">Código de acesso (ex.: 4 últimos do celular)<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" style="font-size:22px;letter-spacing:6px"></label>
   <label class="fl full">O que pode ver<select id="aForn">
     ${forn&&forn!=="*"?`<option value="${esc(forn)}">Só os cartões de ${esc(forn)}</option>`:""}
     <option value="*" ${forn==="*"?"selected":""}>Tudo (é da casa: edita e envia e-mail, sem mexer em acessos)</option></select></label>
   ${!forn?'<p class="note">Para limitar aos cartões de um fornecedor, feche, preencha o Fornecedor do contato e clique em Salvar.</p>':""}
-  <p class="note">Ela entra no quadro com <b>${esc(c.email)}</b> + esse número. 5 erros seguidos travam o acesso por 15 minutos.</p>
+  <p class="note">Ela entra no quadro digitando só esse código. Os avisos vão para ${esc(c.email)}.</p>
   <div class="acts"><button class="btn" onclick="acessos()">Voltar</button><button class="btn p" id="aOk">${a?"Trocar":"Criar acesso"}</button></div>
   <div class="msg" id="aMsg"></div></div>`,true);
   $("aNum").focus();
@@ -555,7 +554,7 @@ function acNumero(i){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()|
     if(n.length<4){msg("aMsg","Digite pelo menos 4 números.","err");return}
     if(!nm){msg("aMsg","Coloque o nome da pessoa.","err");return}
     try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a?a.id:null,p_nome:nm,p_fornecedor:$("aForn").value,p_email:c.email,p_senha:n,p_ativo:true});
-      await acessos();msg("ctMsg",`Pronto: ${nm} entra com ${c.email} + ${n}.`,"ok")}catch(e){msg("aMsg",e.message,"err")}};
+      await acessos();msg("ctMsg",`Pronto: ${nm} entra com o código ${n}.`,"ok")}catch(e){msg("aMsg",e.message,"err")}};
 }
 /* ---------------- link público (só ver) ---------------- */
 async function publico(chave){
