@@ -120,6 +120,18 @@ code.key{background:var(--card2);border:1px solid var(--line);border-radius:6px;
   <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha ou código de acesso" required>
   <button class="btn p">Entrar</button></form>
   <div id="lMsg" class="msg"></div>
+  <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <button class="btn" id="bPedir" type="button" style="width:100%">Não tem acesso? Solicitar acesso</button>
+    <form id="fPedir" class="hidden" style="margin-top:6px">
+      <p class="note">Preencha e envie. Quando o responsável aprovar, o seu código de acesso chega no seu e-mail.</p>
+      <input id="pdNome" placeholder="Nome completo" required autocomplete="name">
+      <input id="pdEmail" type="email" placeholder="E-mail" required autocomplete="email">
+      <input id="pdEmp" placeholder="Empresa" required autocomplete="organization">
+      <input id="pdMsg" placeholder="Para qual demanda? (opcional)">
+      <button class="btn p" id="pdOk">Enviar pedido</button>
+      <div id="pdRes" class="msg"></div>
+    </form>
+  </div>
 </div>
 
 <div id="vApp" class="hidden">
@@ -181,6 +193,11 @@ async function iniciar(){
   mostrarLogin();
 }
 function mostrarLogin(){$("vPub").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("bPedir").onclick=()=>{$("fPedir").classList.toggle("hidden");$("pdNome").focus()};
+$("fPedir").onsubmit=async e=>{e.preventDefault();$("pdOk").disabled=true;msg("pdRes","Enviando…");
+  try{const r=await rpc("sol_pedir_acesso",{p_nome:$("pdNome").value,p_email:$("pdEmail").value,p_empresa:$("pdEmp").value,p_mensagem:$("pdMsg").value});
+    msg("pdRes",r,"ok");["pdNome","pdEmail","pdEmp","pdMsg"].forEach(i=>$(i).value="")}catch(err){msg("pdRes",err.message,"err")}
+  $("pdOk").disabled=false};
 $("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
   try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:null});
     if(r.erro){msg("lMsg",r.erro,"err");return}
@@ -400,7 +417,7 @@ function repassar(c){
 }
 async function decidir(id,ok){
   if(!ok&&!confirm("Recusar este pedido de acesso?"))return;
-  try{const r=await rpc("sol_pedido_decidir",{p_token:TOKEN,p_id:id,p_aprovar:ok});PEDIDOS=await rpc("sol_pedidos_lista",{p_token:TOKEN})||[];avisos(false);
+  try{const r=await rpc("sol_pedido_decidir",{p_token:TOKEN,p_id:id,p_aprovar:ok,p_nivel:ok&&$("pn"+id)?$("pn"+id).value:null});PEDIDOS=await rpc("sol_pedidos_lista",{p_token:TOKEN})||[];avisos(false);
     await acessos();if(ok)msg("kPed",`Aprovado. Código de acesso: ${r.senha} — ${r.email_enviado?"vai por e-mail em até 1 minuto":"anote e passe para a pessoa"}.`,"ok");
   }catch(e){msg("kPed",e.message,"err")}}
 
@@ -505,8 +522,10 @@ async function acessos(){
   dlg(`<div class="dh"><h3>Contatos e acessos</h3><button class="x" onclick="fechar()">✕ Fechar</button></div><div class="db">
   ${adm&&PEDIDOS.length?`<h4 class="sec4" style="color:var(--brand-ink)">Pedidos de acesso</h4>
   <table class="tbl">${PEDIDOS.map(p=>`<tr><td><b>${esc(p.nome)}</b><br><span class="note">${esc(p.email)} · ${esc(p.fornecedor)}</span></td>
-   <td class="note">pedido por ${esc(p.pedido_por)}${p.assunto?"<br>"+esc(p.assunto):""}${p.mensagem?"<br>“"+esc(p.mensagem)+"”":""}</td>
-   <td style="white-space:nowrap"><button class="btn p" onclick="decidir(${p.id},true)">Aprovar</button> <button class="btn d" onclick="decidir(${p.id},false)">Recusar</button></td></tr>`).join("")}</table>`:""}
+   <td class="note">${p.pedido_por==="Pela tela de entrada"?"pediu pela tela de entrada":"pedido por "+esc(p.pedido_por)}${p.assunto?"<br>"+esc(p.assunto):""}${p.mensagem?"<br>“"+esc(p.mensagem)+"”":""}</td>
+   <td style="white-space:nowrap"><select id="pn${p.id}" title="O que vai poder fazer" style="border:1px solid var(--line);border-radius:6px;padding:5px">
+     ${Object.entries(NIVEIS).map(([k,v])=>`<option value="${k}" ${k===(p.cartao_id?"editar":"ver")?"selected":""}>${v}</option>`).join("")}</select>
+   <button class="btn p" onclick="decidir(${p.id},true)">Aprovar</button> <button class="btn d" onclick="decidir(${p.id},false)">Recusar</button></td></tr>`).join("")}</table>`:""}
   <div class="msg" id="kPed"></div>
   <p class="note">Quem recebe e-mail pelo quadro entra aqui sozinho.${adm?" Para a pessoa poder atualizar os cartões, clique em <b>Dar acesso</b> e digite o código (ex.: 4 últimos do celular). Ela entra <b>só com esse código</b> e vê só os cartões do fornecedor dela. Cada código é de uma pessoa só.":""}</p>
   <div style="overflow-x:auto"><table class="tbl"><tr><th>Nome</th><th>E-mail</th><th>Fornecedor</th>${adm?"<th>Acesso</th>":""}<th></th></tr>
