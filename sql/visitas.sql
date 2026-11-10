@@ -87,6 +87,19 @@ create table if not exists public.vis_config (
   link           text not null default 'https://gestao-integrada.github.io/visitas/'
 );
 insert into public.vis_config (id) values (1) on conflict (id) do nothing;
+-- agenda da semana (onde você está em cada dia e o horário); a Caliman vê isso na página
+alter table public.vis_config add column if not exists agenda jsonb not null default '[
+  {"d":1,"onde":"Mina","ini":"08:00","fim":"17:00","obs":"pode ir ao terminal"},
+  {"d":2,"onde":"Garagem","ini":"08:00","fim":"17:00","obs":""},
+  {"d":3,"onde":"Mina","ini":"08:00","fim":"17:00","obs":"nem sempre vai ao terminal"},
+  {"d":4,"onde":"Mina","ini":"08:00","fim":"17:00","obs":"pode ir ao terminal"},
+  {"d":5,"onde":"Garagem","ini":"08:00","fim":"17:00","obs":""}]'::jsonb;
+
+-- ocorrências que NÃO aparecem para a Caliman (só se resolvem trocando o celular)
+create or replace function public._vis_oculta(p_categoria text, p_problema text) returns boolean
+language sql immutable as $$
+  select coalesce(p_problema, '') ~* '(bateria inchad|inchad|tela trincad|tela quebrad|trincad|carca[cç]a)'
+$$;
 
 alter table public.vis_pessoas   enable row level security;   -- sem policy: só pelas funções
 alter table public.vis_sessoes   enable row level security;
@@ -168,6 +181,7 @@ language sql security definer set search_path = public as $$
   insert into vis_avisos (proposta_id, para, email, assunto, texto) values (p_prop, p_para, p_email, left(p_assunto, 200), p_texto);
 $$;
 
+revoke execute on function public._vis_oculta(text, text) from anon, authenticated;
 revoke execute on function public._vis_quem(text), public._vis_exige(text, text),
   public._vis_avisar(bigint, text, text, text, text), public._vis_json(public.vis_propostas, boolean)
   from public, anon, authenticated;
@@ -220,21 +234,23 @@ begin
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'tag', o.tag, 'categoria', o.categoria, 'problema', o.problema,
              'status', o.status, 'prioridade', o.prioridade, 'reincidencias', o.reincidencias,
-             'desde', coalesce(o.primeira_msg_em, o.criado_em)) order by o.tag, o.criado_em), '[]'::jsonb)
+             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.categoria, o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
       into oc
-      from v_ocorrencias_cruzadas o where o.status in ('aberta', 'em_andamento') and o.tag is not null;
+      from v_ocorrencias_cruzadas o where o.status in ('aberta', 'em_andamento') and o.tag is not null
+        and (eq or not public._vis_oculta(o.categoria, o.problema));
   exception when others then      -- view antiga/sem prioridade: lê direto da tabela
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'tag', o.tag, 'categoria', o.categoria, 'problema', o.problema,
              'status', o.status, 'prioridade', o.urgencia, 'reincidencias', o.reincidencias,
-             'desde', coalesce(o.primeira_msg_em, o.criado_em)) order by o.tag, o.criado_em), '[]'::jsonb)
+             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.categoria, o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
       into oc
-      from ocorrencias o where o.status in ('aberta', 'em_andamento') and o.tag is not null;
+      from ocorrencias o where o.status in ('aberta', 'em_andamento') and o.tag is not null
+        and (eq or not public._vis_oculta(o.categoria, o.problema));
   end;
   return json_build_object(
     'quem', q,
     'hoje', public._vis_hoje(),
     'config', (select jsonb_build_object('nome_dono', c.nome_dono, 'dias_semana', c.dias_semana,
-                 'whatsapp_dono', c.whatsapp_dono, 'locais', c.locais) from vis_config c where c.id = 1),
+                 'whatsapp_dono', c.whatsapp_dono, 'locais', c.locais, 'agenda', c.agenda) from vis_config c where c.id = 1),
     'ocorrencias', oc,
     'propostas', coalesce((select jsonb_agg(public._vis_json(v, eq) order by v.dia desc, v.id desc)
                  from vis_propostas v
@@ -392,10 +408,16 @@ begin
   if w <> '' and length(public._vis_cel(w)) not in (10, 11) then raise exception 'WhatsApp precisa ter DDD + número.'; end if;
   update vis_config set
     nome_dono = coalesce(nullif(trim(p_dados->>'nome_dono'), ''), nome_dono),
-    dias_semana = coalesce((select array_agg(distinct x::int order by x::int) from jsonb_array_elements_text(p_dados->'dias_semana') x
-                            where x ~ '^[0-6]$'), '{}'),
+    dias_semana = case when p_dados ? 'dias_semana' then coalesce((select array_agg(distinct x::int order by x::int)
+                    from jsonb_array_elements_text(p_dados->'dias_semana') x where x ~ '^[0-6]$'), '{}') else dias_semana end,
     whatsapp_dono = nullif(public._vis_cel(w), ''),
-    locais = coalesce((select array_agg(trim(x)) from jsonb_array_elements_text(p_dados->'locais') x where trim(x) <> ''), locais)
+    locais = coalesce((select array_agg(trim(x)) from jsonb_array_elements_text(p_dados->'locais') x where trim(x) <> ''), locais),
+    agenda = case when jsonb_typeof(p_dados->'agenda') = 'array' then coalesce((
+      select jsonb_agg(jsonb_build_object('d', (a->>'d')::int, 'onde', left(trim(a->>'onde'), 40),
+               'ini', left(coalesce(a->>'ini', ''), 5), 'fim', left(coalesce(a->>'fim', ''), 5), 'obs', left(trim(coalesce(a->>'obs', '')), 120))
+             order by (a->>'d')::int)
+      from jsonb_array_elements(p_dados->'agenda') a
+      where (a->>'d') ~ '^[0-6]$' and coalesce(trim(a->>'onde'), '') <> ''), '[]'::jsonb) else agenda end
   where id = 1;
   return 'ok';
 end $$;
