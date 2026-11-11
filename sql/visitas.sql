@@ -256,6 +256,42 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- tela (tudo de uma vez)
+-- ---------------------------------------------------------------- rotas que ainda não subiram hoje (TFleet → tabela viagens, coleta de hora em hora)
+-- "Esperada" = a mesma linha + sentido + horário previsto rodou em pelo menos 60% dos dias parecidos (dia útil x fim de semana)
+-- dos últimos 14 dias. Entra na lista quando já passou 1 h do horário típico de saída e não há viagem dela hoje.
+create or replace function public._vis_rotas_pendentes() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare hoje date := public._vis_hoje(); agora time := (now() at time zone 'America/Belem')::time;
+        fds boolean := extract(isodow from public._vis_hoje()) in (6, 7); ult timestamptz; r jsonb;
+begin
+  if to_regclass('public.viagens') is null then return null; end if;
+  select max(coletado_em) into ult from viagens;
+  with v as (
+    select data_local, linha, upper(coalesce(tipo, '')) as tipo, hora_saida, frota, motorista,
+           coalesce(substring(case when upper(tipo) = 'VOLTA' then bruto->>'saidaprevista' else bruto->>'entradaprevista' end from '(\d{1,2}:\d{2})'),
+                    to_char(date_trunc('hour', hora_saida) + interval '30 min' * floor(extract(minute from hora_saida) / 30), 'HH24:MI')) as prev
+      from viagens
+     where data_local between hoje - 14 and hoje and linha is not null and hora_saida is not null),
+  dias as (select count(distinct data_local) as n from v
+            where data_local < hoje and (extract(isodow from data_local) in (6, 7)) = fds),
+  h as (select linha, tipo, prev, count(distinct data_local) as vezes,
+               percentile_disc(0.5) within group (order by hora_saida) as hora_tipica,
+               mode() within group (order by frota) as frota,
+               (array_agg(motorista order by data_local desc, hora_saida desc))[1] as motorista
+          from v where data_local < hoje and (extract(isodow from data_local) in (6, 7)) = fds
+         group by linha, tipo, prev)
+  select coalesce(jsonb_agg(jsonb_build_object('linha', h.linha, 'tipo', h.tipo, 'hora', to_char(h.hora_tipica, 'HH24:MI'),
+           'frota', h.frota, 'motorista', h.motorista, 'vezes', h.vezes, 'dias', d.n) order by h.hora_tipica, h.linha), '[]'::jsonb)
+    into r
+    from h, dias d
+   where d.n >= 3 and h.vezes >= greatest(2, ceil(d.n * 0.6))
+     and agora > h.hora_tipica + interval '60 min' and h.hora_tipica < time '23:00'
+     and not exists (select 1 from v t where t.data_local = hoje and t.linha = h.linha and t.tipo = h.tipo
+                       and (t.prev = h.prev or abs(extract(epoch from t.hora_saida - h.hora_tipica)) < 5400));
+  return jsonb_build_object('lista', r, 'coleta', ult, 'coleta_ok', ult > now() - interval '3 hours');
+end $$;
+revoke execute on function public._vis_rotas_pendentes() from public, anon, authenticated;
+
 create or replace function public.vis_painel(p_token text) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._vis_exige(p_token); eq boolean := q->>'tipo' = 'equipe'; oc jsonb;
@@ -281,6 +317,7 @@ begin
     'config', (select jsonb_build_object('nome_dono', c.nome_dono, 'dias_semana', c.dias_semana,
                  'whatsapp_dono', c.whatsapp_dono, 'locais', c.locais, 'agenda', c.agenda) from vis_config c where c.id = 1),
     'ocorrencias', oc,
+    'rotas', public._vis_rotas_pendentes(),
     'propostas', coalesce((select jsonb_agg(public._vis_json(v, eq) order by v.dia desc, v.id desc)
                  from vis_propostas v
                  where v.dia >= public._vis_hoje() - 30 or v.status = 'pendente'), '[]'::jsonb),
