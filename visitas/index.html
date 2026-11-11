@@ -78,6 +78,7 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
 .dlg .ped{box-shadow:none;border-top:0;border-right:0;border-bottom:0;border-radius:0;padding:0 0 0 12px}
 .rbul{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 .rbul li{cursor:pointer;background:var(--card);border:1px solid var(--line);border-left:3px solid #f59e0b;border-radius:8px;padding:4px 9px;font-size:13px}
+.rbul .rult{font-size:11.5px;margin-top:1px}
 .rbul li:hover{border-color:var(--brand)}
 .pedmini{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
 .pm{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#94a3b8);border-radius:10px;padding:8px 10px}
@@ -368,20 +369,21 @@ function htmlRotas(){
   if(!r.vigiadas)return EQ()?'<div class="note" style="margin:4px 0 12px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia. As que não subirem aparecem aqui.</div>':"";
   const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
   const hc=hm(r.coleta), hp=hm(r.proxima);
-  let info;
-  if(!r.coleta_ok)info='⚠️ Os dados da TFleet não chegam desde as '+hc+'. Não dá para saber agora quais rotas subiram.';
-  else if(r.libera&&!r.viagens_hoje)info='🕐 As viagens de hoje ainda não chegaram da TFleet. Elas costumam chegar até as <b>'+r.libera+'</b> — aguarde até lá para ver quais rotas não subiram.';
-  else info='🕐 Dados da TFleet atualizam de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>.'+(r.atraso_min?' A TFleet costuma mostrar a viagem até '+r.atraso_min+' min depois da saída.':'');
-  const L=(r.coleta_ok||EQ())?r.lista:[];
+  const dm=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7):"";
+  let info='🕐 TFleet atualiza de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. Só entra aqui a ida que já passou do horário previsto e não veio na atualização.'+
+    (r.aguardando?' '+r.aguardando+' ida'+(r.aguardando>1?'s':'')+' ainda no prazo.':'');
+  if(!r.coleta_ok)info='⚠️ A atualização da TFleet não acontece desde as <b>'+hc+'</b>. A lista vale só até esse horário.';
+  const L=r.lista;
   const grupos=[...new Set(L.map(x=>x.grupo))];if(ROTA_G&&!grupos.includes(ROTA_G))ROTA_G="";
   const ver=L.filter(x=>!ROTA_G||x.grupo===ROTA_G);
-  return '<h2 class="sec" style="font-size:13px">Rotas que não subiram hoje <span class="n">'+L.length+'</span>'+
+  return '<h2 class="sec" style="font-size:13px">Idas que não subiram hoje <span class="n">'+L.length+'</span>'+
     (grupos.length>1?'<span class="r flt" id="fRota">'+[["","Todas"]].concat(grupos.map(g=>[g,g])).map(x=>'<button data-g="'+esc(x[0])+'" class="'+(ROTA_G===x[0]?"on":"")+'">'+esc(x[1])+'</button>').join("")+'</span>':'')+'</h2>'+
     '<div class="note" style="margin:-4px 0 6px">'+info+'</div>'+
     (ver.length?'<div class="note" style="margin:0 0 6px">Peça ao motorista para sincronizar a viagem no app ou ligar o celular. Toque na rota para pedir visita.</div>'+
-      '<ul class="rbul">'+ver.map(x=>'<li data-rota="'+r.lista.indexOf(x)+'"><b>'+esc(x.linha)+'</b> <span class="note">'+esc(x.tipo)+' '+esc(x.hora)+(grupos.length>1?' · '+esc(x.grupo):'')+'</span>'+
-        (x.dias_sem>=2?' <span class="chip alta">não sobe há '+x.dias_sem+' dias</span>':'')+'</li>').join("")+'</ul>':
-      (L.length?'':'<div class="note" style="margin-bottom:12px">'+(r.coleta_ok&&!(r.libera&&!r.viagens_hoje)?'✓ Nenhuma rota vigiada atrasada agora.':'')+'</div>'));
+      '<ul class="rbul">'+ver.map(x=>'<li data-rota="'+r.lista.indexOf(x)+'"><b>'+esc(x.linha)+'</b> <span class="note">prev. '+esc(x.prev||x.hora)+(grupos.length>1?' · '+esc(x.grupo):'')+'</span>'+
+        (x.dias_sem>=2?' <span class="chip alta">não sobe há '+x.dias_sem+' dias</span>':'')+
+        '<div class="note rult">'+(x.ult_dia?'últ. '+dm(x.ult_dia)+' '+esc(x.ult_hora||'')+' · carro <b>'+esc(x.frota||'?')+'</b> · '+esc(x.motorista||'motorista não informado'):'sem viagem nos últimos 30 dias')+'</div></li>').join("")+'</ul>':
+      '<div class="note" style="margin-bottom:12px">✓ Nenhuma ida atrasada agora.</div>');
 }
 function porCarro(){
   const m=new Map();
