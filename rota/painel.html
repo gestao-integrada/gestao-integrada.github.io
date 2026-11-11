@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Passagens nos pontos</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;--ok:#2e7d32;--late:#e65100;color-scheme:light}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin:0}p.sub{color:var(--mut);margin:2px 0 16px}
+.barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+input,select,button{min-height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:15px;background:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.card h2{font-size:16px;margin:0 0 2px}.card .m{color:var(--mut);font-size:13px;margin-bottom:8px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase}
+.ok{color:var(--ok);font-weight:700}.late{color:var(--late);font-weight:700}.nao{color:#b71c1c;font-weight:700}
+.resumo{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 10px}.resumo span{background:#eef2f7;border-radius:999px;padding:3px 10px;font-size:13px}
+.vazio{color:var(--mut);text-align:center;padding:30px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Passagens nos pontos</h1>
+  <p class="sub">Horário real em que o ônibus entrou na cerca de cada ponto, comparado com o previsto.</p>
+  <div class="barra">
+    <input type="date" id="dia">
+    <label style="font-size:14px;color:var(--mut)"><input type="checkbox" id="sim" style="min-height:auto"> incluir simulações</label>
+    <button id="bAt">Atualizar</button>
+    <a href="./" style="margin-left:auto">Abrir o app da rota</a>
+  </div>
+  <div id="out"><div class="vazio">Carregando…</div></div>
+</div>
+<script>
+"use strict";
+const SUPA_URL = "https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SUPA_KEY = "sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const TOL = 5;
+const $ = id => document.getElementById(id);
+$("dia").value = new Date().toLocaleDateString("sv-SE");
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+async function carregar() {
+  $("out").innerHTML = '<div class="vazio">Carregando…</div>';
+  try {
+    const r = await fetch(SUPA_URL + "/rest/v1/rpc/rota_listar", { method: "POST",
+      headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_data: $("dia").value, p_simulacao: $("sim").checked }) });
+    if (!r.ok) throw new Error(r.status === 404 ? "As tabelas ainda não foram criadas no Supabase (rodar sql/rota.sql)." : "Erro " + r.status);
+    const rows = await r.json();
+    if (!rows.length) { $("out").innerHTML = '<div class="vazio">Nenhuma passagem registrada neste dia.</div>'; return; }
+    const viagens = {};
+    rows.forEach(x => (viagens[x.viagem] = viagens[x.viagem] || []).push(x));
+    $("out").innerHTML = Object.values(viagens).map(v => {
+      const a = v[0], ch = v.filter(x => x.tipo === "chegou"), at = ch.filter(x => x.atraso_min > TOL), np = v.filter(x => x.tipo === "nao_passou");
+      return '<div class="card"><h2>' + esc(a.rota_nome || a.rota) + (a.simulacao ? " · simulação" : "") + "</h2>" +
+        '<div class="m">Ônibus ' + esc(a.onibus || "não informado") + " · viagem " + esc(a.viagem) + "</div>" +
+        '<div class="resumo"><span>Pontos com passagem: <b>' + ch.length + "</b></span><span>Atrasados (&gt;" + TOL + " min): <b>" + at.length + "</b></span><span>Não passou: <b>" + np.length + "</b></span></div>" +
+        '<div class="tw"><table><tr><th>#</th><th>Ponto</th><th>Previsto</th><th>Chegada real</th><th>Diferença</th></tr>' +
+        v.map(x => {
+          const real = x.chegada ? new Date(x.chegada).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—";
+          const dif = x.tipo === "nao_passou" ? '<span class="nao">não passou</span>' : x.atraso_min == null ? "—" :
+            x.atraso_min > TOL ? '<span class="late">+' + x.atraso_min + " min</span>" : '<span class="ok">' + (x.atraso_min > 0 ? "+" : "") + x.atraso_min + " min</span>";
+          return "<tr><td>" + x.ponto_seq + "</td><td>" + esc(x.ponto_nome) + "</td><td>" + esc(x.previsto || "—") + "</td><td>" + real + "</td><td>" + dif + "</td></tr>";
+        }).join("") + "</table></div></div>";
+    }).join("");
+  } catch (e) { $("out").innerHTML = '<div class="vazio">' + esc(e.message) + "</div>"; }
+}
+$("bAt").onclick = carregar; $("dia").onchange = carregar; $("sim").onchange = carregar;
+carregar(); setInterval(carregar, 60000);
+</script>
+</body>
+</html>

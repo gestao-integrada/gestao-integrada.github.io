@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14213d">
+<title>Rota do ônibus</title>
+<link rel="stylesheet" href="leaflet.css">
+<style>
+:root{--ink:#14213d;--bg:#f5f7fa;--ok:#2e7d32;--late:#e65100;--mut:#5b6678;--brand:#1e88e5;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#top{position:fixed;top:0;left:0;right:0;z-index:1000;background:var(--brand);color:#fff;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 10px 8px}
+#top .t{flex:1;min-width:0}
+#top b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#top small{opacity:.9;font-size:12px}
+#top button{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:10px;padding:9px 11px;font-size:14px;min-height:40px}
+#map{position:fixed;top:58px;left:0;right:0;bottom:0}
+#painel{position:fixed;left:0;right:0;bottom:0;z-index:1000;padding:10px 10px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.25) 30%)}
+.card{background:#fff;border-radius:16px;padding:12px 14px;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+.lin1{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;color:var(--mut)}
+.prox{background:var(--ink);color:#f5f7fa;border-radius:14px;padding:12px 14px;margin-top:8px;font-size:17px;line-height:1.45}
+.prox b{font-size:19px}
+.ok{color:#7ce0a0;font-weight:700}.late{color:#ffb74d;font-weight:700}
+.chips{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.chip{background:#eef2f7;border-radius:999px;padding:4px 10px;font-size:12px;color:var(--mut)}
+#aviso{position:fixed;top:70px;left:10px;right:10px;z-index:1100;display:none;border-radius:14px;padding:12px 14px;color:#fff;font-size:16px;box-shadow:0 4px 18px rgba(0,0,0,.3)}
+#menu{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.45);display:none;align-items:flex-end}
+#menu .card{width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+#menu button,#menu input{width:100%;min-height:46px;border-radius:12px;border:1px solid #d6dbe4;font-size:16px;margin-top:10px;background:#fff;color:var(--ink);padding:0 12px}
+#menu button.pri{background:var(--brand);color:#fff;border:0}
+#menu h3{margin:0 0 4px}
+#lista{max-height:40vh;overflow:auto;margin-top:8px;font-size:14px}
+#lista div{display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid #eef0f4}
+.bus{width:30px;height:30px;border-radius:50%;background:#e53935;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;font-size:15px}
+.num{background:#1e88e5;color:#fff;border:2px solid #fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font:700 12px system-ui}
+.num.feito{background:#9e9e9e}.num.prox{background:#ffca28;color:#14213d}.num.pulou{background:#e65100}
+</style>
+</head>
+<body>
+<div id="top">
+  <div class="t"><b id="tNome">Carregando rota…</b><small id="tSub">—</small></div>
+  <button id="bCentro" title="Centralizar no ônibus">◎</button>
+  <button id="bMenu">☰</button>
+</div>
+<div id="map"></div>
+<div id="aviso"></div>
+<div id="painel"><div class="card">
+  <div class="lin1"><span id="pOnibus">Ônibus —</span><span id="pGps">GPS…</span></div>
+  <div class="prox" id="pProx">Aguardando GPS…</div>
+  <div class="chips"><span class="chip" id="cPontos">Pontos 0/0</span><span class="chip" id="cVel">— km/h</span><span class="chip" id="cEnvio">Envio: —</span></div>
+</div></div>
+<div id="menu"><div class="card">
+  <h3>Viagem</h3>
+  <div style="color:var(--mut);font-size:13px">Nº do ônibus (frota) deste celular:</div>
+  <input id="iOnibus" inputmode="numeric" placeholder="Ex.: 39">
+  <button class="pri" id="bSalvar">Salvar</button>
+  <div id="lista"></div>
+  <div style="color:var(--mut);font-size:13px;margin-top:12px">Este celular é:</div>
+  <button id="bModoOn">Do ônibus (usa o GPS deste celular)</button>
+  <button id="bModoAc">Só para acompanhar o ônibus de longe</button>
+  <button id="bNova">Começar viagem nova (zera os pontos)</button>
+  <button id="bFechar">Voltar ao mapa</button>
+</div></div>
+
+<script src="leaflet.js"></script>
+<script>
+"use strict";
+/* ===== Configuração ===== */
+const MAPTILER_KEY = "G2MUHW7Q8hatR3VYbHUz";            // restringir ao domínio no painel da MapTiler
+const SUPA_URL = "https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SUPA_KEY = "sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL"; // chave pública (publishable)
+const Q = new URLSearchParams(location.search);
+const ROTA_ID = (Q.get("r") || "jd-bela-vista").replace(/[^a-z0-9-]/g, "");
+const SIM = Q.get("sim") ? Number(Q.get("sim")) || 10 : 0;     // ?sim=10 → simula o ônibus 10x mais rápido
+const TOLERANCIA_MIN = Number(Q.get("tol") || 5);               // atraso aceito antes de "Atrasado"
+const FOLGA_CERCA_M = Number(Q.get("folga") || 20);             // margem em volta da cerca desenhada
+const MODO = Q.get("modo") || (function () { try { return JSON.parse(localStorage.getItem("rota_modo")) || "onibus"; } catch (e) { return "onibus"; } })();
+const V_MIN_KMH = 15, JANELA_VEL_MS = 3 * 60 * 1000, PRECISAO_MAX_M = 60;
+
+/* ===== Utilidades ===== */
+const $ = id => document.getElementById(id);
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const LAT0 = Math.cos(-3 * Math.PI / 180);
+const xy = (lat, lon) => [lon * 111320 * LAT0, lat * 111320];
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const hhmm = d => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const hoje = () => new Date().toLocaleDateString("sv-SE");
+function previstoHoje(hm) { const [h, m] = hm.split(":").map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return d; }
+function aviso(txt, cor) { const a = $("aviso"); a.textContent = txt; a.style.background = cor; a.style.display = "block"; clearTimeout(aviso.t); aviso.t = setTimeout(() => a.style.display = "none", 4000); }
+
+/* ===== Estado ===== */
+let R, T = [], CUM = [], PTS = [];
+let st = ls.get("rota_st_" + ROTA_ID, null);
+function novaViagem() {
+  st = { viagem: ROTA_ID + "-" + Date.now().toString(36), data: hoje(), visit: {}, ultimo: 0, ultimoCh: 0 };
+  salvarSt();
+}
+function salvarSt() { ls.set("rota_st_" + ROTA_ID, st); }
+let fixes = [];              // últimas posições {t, p:[x,y], lat, lon, v}
+let fila = ls.get("rota_fila", []);
+
+/* ===== Mapa ===== */
+const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([-3.0, -47.355], 15);
+L.tileLayer("https://api.maptiler.com/maps/satellite/256/{z}/{x}/{y}.jpg?key=" + MAPTILER_KEY, {
+  maxZoom: 20, attribution: '&copy; MapTiler &copy; OpenStreetMap'
+}).addTo(map);
+let busMk, feitoLn, marc = [], seguir = true, toqueT = 0;
+map.on("dragstart", () => { seguir = false; toqueT = Date.now(); });
+$("bCentro").onclick = () => { seguir = true; if (busMk) map.setView(busMk.getLatLng(), Math.max(map.getZoom(), 16)); };
+
+/* ===== Rota ===== */
+async function carregar() {
+  const r = await fetch("rotas/" + ROTA_ID + ".json", { cache: "no-cache" });
+  if (!r.ok) throw new Error("Rota não encontrada: " + ROTA_ID);
+  R = await r.json();
+  T = R.tracado.map(p => xy(p[0], p[1]));
+  CUM = [0]; for (let i = 1; i < T.length; i++) CUM.push(CUM[i - 1] + dist(T[i - 1], T[i]));
+  let chMin = 0;
+  PTS = R.pontos.map(p => {
+    const c = p.cerca.map(v => xy(v[0], v[1]));
+    const cx = [c.reduce((s, v) => s + v[0], 0) / c.length, c.reduce((s, v) => s + v[1], 0) / c.length];
+    const pr = projetar(cx, chMin, Infinity); chMin = pr.ch;
+    const xs = c.map(v => v[0]), ys = c.map(v => v[1]);
+    return Object.assign({}, p, { c, cx, ch: pr.ch, box: [Math.min(...xs) - FOLGA_CERCA_M, Math.min(...ys) - FOLGA_CERCA_M, Math.max(...xs) + FOLGA_CERCA_M, Math.max(...ys) + FOLGA_CERCA_M] });
+  });
+  $("tNome").textContent = R.nome;
+  L.polyline(R.tracado, { color: "#00e5ff", weight: 6, opacity: .9 }).addTo(map);
+  feitoLn = L.polyline([], { color: "#9e9e9e", weight: 7 }).addTo(map);
+  PTS.forEach(p => {
+    L.polygon(p.cerca, { color: "#ffca28", weight: 2, fillOpacity: .18 }).addTo(map);
+    const mk = L.marker([R.pontos[p.seq - 1].cerca.reduce((s, v) => s + v[0], 0) / p.cerca.length, R.pontos[p.seq - 1].cerca.reduce((s, v) => s + v[1], 0) / p.cerca.length], {
+      icon: L.divIcon({ className: "", html: '<div class="num">' + p.seq + "</div>", iconSize: [24, 24], iconAnchor: [12, 12] })
+    }).addTo(map).bindPopup("<b>" + p.nome + "</b><br>Previsto " + (p.previsto || "—"));
+    marc.push(mk);
+  });
+  map.fitBounds(L.polyline(R.tracado.slice(0, Math.max(2, R.tracado.findIndex((_, i) => CUM[i] > PTS[PTS.length - 2].ch + 300)))).getBounds(), { padding: [30, 30] });
+  if (!st || st.data !== hoje()) novaViagem();
+  desenharPontos();
+}
+
+/* projeção no traçado: devolve distância ao traçado e quilometragem (m) */
+function projetar(q, chMin, chMax) {
+  let best = null;
+  for (let i = 0; i < T.length - 1; i++) {
+    if (CUM[i + 1] < chMin || CUM[i] > chMax) continue;
+    const a = T[i], b = T[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2));
+    const c = [a[0] + t * dx, a[1] + t * dy], d = dist(q, c), ch = CUM[i] + t * Math.sqrt(L2);
+    if (!best || d < best.d) best = { d, ch };
+  }
+  return best || { d: Infinity, ch: chMin };
+}
+const dentro = (p, b) => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3];
+/* o segmento a→b passa pela caixa? devolve fração (0..1) do ponto de entrada */
+function cruza(a, b, box) {
+  let t0 = 0, t1 = 1; const d = [b[0] - a[0], b[1] - a[1]];
+  for (let k = 0; k < 2; k++) {
+    if (Math.abs(d[k]) < 1e-9) { if (a[k] < box[k] || a[k] > box[k + 2]) return null; continue; }
+    let u = (box[k] - a[k]) / d[k], v = (box[k + 2] - a[k]) / d[k]; if (u > v) [u, v] = [v, u];
+    t0 = Math.max(t0, u); t1 = Math.min(t1, v); if (t0 > t1) return null;
+  }
+  return t0;
+}
+
+/* ===== Cercas: chegada em cada ponto ===== */
+function proximoIdx() { return PTS.findIndex(p => !st.visit[p.seq]); }
+function verificarCercas(f, ant) {
+  for (const p of PTS) {
+    if (st.visit[p.seq]) continue;
+    let hora = null;
+    if (dentro(f.p, p.box)) hora = new Date(f.t);
+    else if (ant && f.t - ant.t < (MODO === "acompanhar" ? 600000 : 120000)) { const fr = cruza(ant.p, f.p, p.box); if (fr != null) hora = new Date(ant.t + fr * (f.t - ant.t)); }
+    if (!hora) continue;
+    // pontos anteriores ainda abertos = não passou
+    PTS.filter(o => o.seq < p.seq && !st.visit[o.seq]).forEach(o => { st.visit[o.seq] = { tipo: "nao_passou", hora: null }; registrar(o, "nao_passou", null); });
+    st.visit[p.seq] = { tipo: "chegou", hora: hora.toISOString() };
+    st.ultimo = p.seq; st.ultimoCh = p.ch; salvarSt();
+    const atr = p.previsto ? Math.round((hora - previstoHoje(p.previsto)) / 60000) : null;
+    registrar(p, "chegou", hora, atr);
+    aviso("Chegou no " + p.nome + " às " + hhmm(hora) + (atr == null ? "" : atr > TOLERANCIA_MIN ? " · atrasado " + atr + " min" : " · no horário"), atr > TOLERANCIA_MIN ? "#e65100" : "#2e7d32");
+    desenharPontos();
+  }
+}
+function desenharPontos() {
+  const pi = proximoIdx();
+  PTS.forEach((p, i) => {
+    const v = st.visit[p.seq], cls = v ? (v.tipo === "chegou" ? "feito" : "pulou") : i === pi ? "prox" : "";
+    marc[i].setIcon(L.divIcon({ className: "", html: '<div class="num ' + cls + '">' + p.seq + "</div>", iconSize: [24, 24], iconAnchor: [12, 12] }));
+  });
+  $("cPontos").textContent = "Pontos " + Object.values(st.visit).filter(v => v.tipo === "chegou").length + "/" + PTS.length;
+}
+
+/* ===== Próximo ponto, tempo e atraso ===== */
+function atualizarPainel(f) {
+  const pi = proximoIdx();
+  const agora = new Date(f ? f.t : Date.now());
+  const ult = st.ultimo ? PTS[st.ultimo - 1] : null;
+  const velho = f ? (SIM ? 0 : Date.now() - f.t) : Infinity;
+  if (pi < 0) { $("pProx").innerHTML = "<b>Rota concluída.</b> Último ponto: " + (ult ? ult.nome : "—"); return; }
+  const p = PTS[pi];
+  const nele = ult && f && dentro(f.p, ult.box);
+  let txt = !ult ? "Indo para o primeiro ponto. " : (nele ? "Você está no <b>" : "Você passou pelo <b>") + ult.nome + "</b>. ";
+  txt += "Próximo: <b>" + p.nome + "</b>";
+  if (!f || velho > 90000) {
+    const quanto = f && velho < 36e5 ? " há " + Math.round(velho / 60000) + " min" : "";
+    $("pProx").innerHTML = txt + "<br>Previsto <b>" + (p.previsto || "—") + "</b> · <span class='late'>" + (MODO === "acompanhar" ? "ônibus sem sinal" + quanto : "sem sinal de GPS") + "</span>"; return;
+  }
+  const pr = projetar(f.p, Math.max(0, st.ultimoCh - 200), p.ch + 50);
+  let dm = pr.d > 200 ? dist(f.p, p.cx) * 1.3 : Math.max(0, p.ch - pr.ch);
+  const recentes = fixes.filter(x => f.t - x.t <= JANELA_VEL_MS && x.v != null);
+  const vel = Math.max(V_MIN_KMH, recentes.length ? recentes.reduce((s, x) => s + x.v, 0) / recentes.length : 0);
+  const eta = Math.max(1, Math.ceil(dm / 1000 / vel * 60));
+  txt += "<br>Chegada em <b>~" + eta + " min</b>";
+  if (p.previsto) {
+    txt += " · previsto <b>" + p.previsto + "</b> · ";
+    const atr = Math.round((agora.getTime() + eta * 60000 - previstoHoje(p.previsto)) / 60000);
+    txt += atr > TOLERANCIA_MIN ? "<span class='late'>atrasado " + atr + " min</span>" : "<span class='ok'>no horário</span>";
+  }
+  $("pProx").innerHTML = txt;
+}
+
+/* ===== GPS ===== */
+function novaPosicao(lat, lon, acc, velMs, t) {
+  $("pGps").textContent = "GPS ±" + Math.round(acc) + " m";
+  if (acc > PRECISAO_MAX_M) { $("pGps").textContent += " (fraco)"; return; }
+  const p = xy(lat, lon), ant = fixes[fixes.length - 1];
+  let v = velMs != null && !isNaN(velMs) ? velMs * 3.6 : (ant ? dist(ant.p, p) / ((t - ant.t) / 1000) * 3.6 : null);
+  if (v != null && (v < 0 || v > 130)) v = null;
+  const f = { t, p, lat, lon, v };
+  fixes.push(f); fixes = fixes.filter(x => t - x.t <= JANELA_VEL_MS + 60000);
+  $("cVel").textContent = (v == null ? "—" : Math.round(v)) + " km/h";
+  if (!busMk) busMk = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="bus">🚌</div>', iconSize: [30, 30], iconAnchor: [15, 15] }), zIndexOffset: 1000 }).addTo(map);
+  busMk.setLatLng([lat, lon]);
+  if (!seguir && Date.now() - toqueT > 10000) seguir = true;
+  if (seguir) map.panTo([lat, lon], { animate: true });
+  // trecho percorrido = traçado até a posição atual
+  const pr = projetar(p, Math.max(0, st.ultimoCh - 200), Infinity);
+  if (pr.d < 200) { const pts = R.tracado.filter((_, i) => CUM[i] <= pr.ch); pts.push([lat, lon]); feitoLn.setLatLngs(pts); }
+  verificarCercas(f, ant);
+  atualizarPainel(f);
+  if (MODO !== "acompanhar") enviarPosicao(f, acc);
+}
+let ultEnvioPos = 0;
+function enviarPosicao(f, acc) {
+  if (f.t - ultEnvioPos < 15000) return;
+  ultEnvioPos = f.t;
+  fetch(SUPA_URL + "/rest/v1/rpc/rota_posicao_enviar", {
+    method: "POST", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ p: { aparelho: aparelhoId(), rota: ROTA_ID, onibus: ls.get("rota_onibus", ""), viagem: st.viagem,
+      lat: f.lat, lon: f.lon, vel: f.v == null ? null : Math.round(f.v), precisao: Math.round(acc), em: new Date(f.t).toISOString(), simulacao: !!SIM } })
+  }).catch(() => {});
+}
+function aparelhoId() { let a = ls.get("rota_aparelho", ""); if (!a) { a = "ap-" + Math.random().toString(36).slice(2, 10); ls.set("rota_aparelho", a); } return a; }
+/* modo acompanhar: lê a última posição do ônibus desta rota e mostra como se fosse o GPS */
+let ultRemota = "";
+async function acompanhar() {
+  $("pGps").textContent = "Acompanhando o ônibus";
+  const ler = async () => {
+    try {
+      const r = await fetch(SUPA_URL + "/rest/v1/rpc/rota_posicao_ultima", {
+        method: "POST", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ p_rota: ROTA_ID, p_simulacao: !!Q.get("versim") }) });
+      if (!r.ok) { $("pGps").textContent = "Sem acesso ao servidor (" + r.status + ")"; return; }
+      const x = (await r.json())[0];
+      if (!x) { $("pProx").innerHTML = "Nenhum ônibus enviando posição nesta rota agora."; return; }
+      if (x.viagem !== st.viagem) { st = { viagem: x.viagem, data: hoje(), visit: {}, ultimo: 0, ultimoCh: 0 }; salvarSt(); fixes = []; feitoLn.setLatLngs([]); desenharPontos(); }
+      if (x.onibus) $("pOnibus").textContent = "Ônibus " + x.onibus + " (acompanhando)";
+      if (x.em !== ultRemota) { ultRemota = x.em; novaPosicao(x.lat, x.lon, x.precisao || 10, x.vel == null ? null : x.vel / 3.6, Date.parse(x.em)); $("pGps").textContent = "Posição das " + hhmm(new Date(x.em)); }
+      else atualizarPainel(fixes[fixes.length - 1]);
+    } catch (e) { $("pGps").textContent = "Sem internet"; }
+  };
+  ler(); setInterval(ler, 10000);
+}
+function iniciarGps() {
+  if (MODO === "acompanhar") return acompanhar();
+  if (SIM) return simular();
+  if (!("geolocation" in navigator)) { $("pProx").textContent = "Este aparelho não tem GPS no navegador."; return; }
+  navigator.geolocation.watchPosition(
+    pos => novaPosicao(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0, pos.coords.speed, pos.timestamp),
+    err => { $("pGps").textContent = "GPS: " + (err.code === 1 ? "permissão negada" : "sem sinal"); },
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  setInterval(() => atualizarPainel(fixes[fixes.length - 1]), 15000);
+}
+/* simulação: percorre o traçado a 35 km/h (bairro) e 70 km/h (estrada), acelerado SIM vezes, com GPS a cada 10 s */
+function simular() {
+  $("pGps").textContent = "SIMULAÇÃO " + SIM + "x";
+  let ch = 0, t = Date.now(); const passo = 10;
+  const tick = () => {
+    const v = ch < PTS[PTS.length - 2].ch + 500 ? 35 : 70;
+    ch += v / 3.6 * passo; t += passo * 1000;
+    if (ch > CUM[CUM.length - 1]) return;
+    let i = CUM.findIndex(c => c > ch) - 1; if (i < 0) i = 0;
+    const fr = (ch - CUM[i]) / ((CUM[i + 1] - CUM[i]) || 1), a = R.tracado[i], b = R.tracado[i + 1];
+    novaPosicao(a[0] + (b[0] - a[0]) * fr, a[1] + (b[1] - a[1]) * fr, 8, v / 3.6, t);
+    setTimeout(tick, passo * 1000 / SIM);
+  };
+  tick();
+}
+
+/* ===== Envio ao Supabase (fila offline) ===== */
+function registrar(p, tipo, hora, atr) {
+  if (MODO === "acompanhar") return;
+  fila.push({
+    viagem: st.viagem, data: st.data, rota: ROTA_ID, rota_nome: R.nome, onibus: ls.get("rota_onibus", ""),
+    ponto_seq: p.seq, ponto_nome: p.nome, previsto: p.previsto, tipo, chegada: hora ? hora.toISOString() : null,
+    atraso_min: atr == null ? null : atr, simulacao: !!SIM
+  });
+  ls.set("rota_fila", fila); enviarFila();
+}
+let enviando = false;
+async function enviarFila() {
+  if (enviando || !fila.length) { $("cEnvio").textContent = "Envio: " + (fila.length ? fila.length + " na fila" : "em dia"); return; }
+  enviando = true;
+  try {
+    const r = await fetch(SUPA_URL + "/rest/v1/rpc/rota_registrar", {
+      method: "POST", headers: { apikey: SUPA_KEY, Authorization: "Bearer " + SUPA_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_itens: fila })
+    });
+    if (r.ok) { fila = []; ls.set("rota_fila", fila); }
+  } catch (e) {}
+  enviando = false;
+  $("cEnvio").textContent = "Envio: " + (fila.length ? fila.length + " na fila" : "em dia");
+}
+setInterval(enviarFila, 30000);
+
+/* ===== Menu ===== */
+function abrirMenu() {
+  $("iOnibus").value = ls.get("rota_onibus", "");
+  $("lista").innerHTML = PTS.map(p => {
+    const v = st.visit[p.seq];
+    const s = !v ? "—" : v.tipo === "chegou" ? hhmm(new Date(v.hora)) : "não passou";
+    return "<div><span>" + p.seq + ". " + p.nome + "</span><span>prev. " + (p.previsto || "—") + " · <b>" + s + "</b></span></div>";
+  }).join("");
+  $("bModoOn").className = MODO !== "acompanhar" ? "pri" : "";
+  $("bModoAc").className = MODO === "acompanhar" ? "pri" : "";
+  $("menu").style.display = "flex";
+}
+$("bMenu").onclick = abrirMenu;
+$("bModoOn").onclick = () => { ls.set("rota_modo", "onibus"); location.reload(); };
+$("bModoAc").onclick = () => { ls.set("rota_modo", "acompanhar"); location.reload(); };
+$("bFechar").onclick = () => $("menu").style.display = "none";
+$("bSalvar").onclick = () => { ls.set("rota_onibus", $("iOnibus").value.trim()); atualizarTopo(); $("menu").style.display = "none"; };
+$("bNova").onclick = () => { if (confirm("Zerar os pontos e começar uma viagem nova?")) { novaViagem(); fixes = []; feitoLn.setLatLngs([]); desenharPontos(); atualizarPainel(); $("menu").style.display = "none"; } };
+function atualizarTopo() {
+  const o = ls.get("rota_onibus", "");
+  $("pOnibus").textContent = MODO === "acompanhar" ? "Acompanhando de longe" : o ? "Ônibus " + o : "Ônibus não informado (☰)";
+  $("tSub").textContent = (MODO === "acompanhar" ? "Acompanhando · " : "Viagem de ") + new Date().toLocaleDateString("pt-BR") + (SIM ? " · simulação" : "");
+}
+
+/* tela sempre ligada */
+async function telaLigada() { try { if ("wakeLock" in navigator) await navigator.wakeLock.request("screen"); } catch (e) {} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") telaLigada(); });
+
+carregar().then(() => { atualizarTopo(); atualizarPainel(); iniciarGps(); telaLigada(); enviarFila(); if (MODO !== "acompanhar" && !ls.get("rota_onibus", "")) abrirMenu(); })
+  .catch(e => { $("tNome").textContent = "Erro"; $("pProx").textContent = e.message; });
+</script>
+</body>
+</html>
