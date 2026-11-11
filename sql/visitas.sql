@@ -368,6 +368,7 @@ end $$;
 
 -- ---------------------------------------------------------------- equipe: responder
 -- p_status: confirmada | recusada | ciente | feita | pendente (desfazer)
+alter table public.vis_propostas add column if not exists alternativa text;   -- "não consigo, mas consigo em ..." 
 create or replace function public._vis_responder(p_id bigint, p_status text, p_texto text, p_hora text, p_nome text) returns text
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := jsonb_build_object('nome', p_nome); v vis_propostas; em text; txt text;
@@ -376,19 +377,21 @@ begin
   if p_status = 'recusada' and coalesce(trim(p_texto), '') = '' then raise exception 'Escreva o motivo de não poder ir.'; end if;
   update vis_propostas set status = p_status, resposta = nullif(left(trim(p_texto), 1000), ''),
     hora_combinada = case when p_status = 'confirmada' then nullif(left(trim(p_hora), 40), '') else hora_combinada end,
+    alternativa = case when p_status = 'recusada' then nullif(left(trim(p_hora), 120), '') else null end,
     respondido_por = q->>'nome', respondido_em = now(), atualizado_em = now()
    where id = p_id returning * into v;
   if v.id is null then raise exception 'Não encontrei esse pedido.'; end if;
   txt := case p_status when 'confirmada' then 'Confirmou' || coalesce(' (chega ' || v.hora_combinada || ')', '')
-                       when 'recusada' then 'Não vai conseguir' when 'ciente' then 'Ciente'
+                       when 'recusada' then 'Não vai conseguir nesse horário' when 'ciente' then 'Ciente'
                        when 'feita' then 'Visita feita' else 'Voltou para pendente' end;
   insert into vis_mensagens (proposta_id, quem, lado, texto)
-    values (p_id, q->>'nome', 'equipe', txt || coalesce(': ' || v.resposta, '.'));
+    values (p_id, q->>'nome', 'equipe', txt || coalesce(': ' || v.resposta, '.') || coalesce(chr(10) || '🕒 Consigo: ' || v.alternativa, ''));
   if p_status in ('confirmada', 'recusada', 'ciente') then
     perform public._vis_avisar_pessoa(v,
       (case p_status when 'confirmada' then 'Confirmado: ' when 'ciente' then 'Ciente: ' else 'Não vai dar: ' end) || public._vis_frase(v),
       (case p_status when 'confirmada' then '✅ ' when 'ciente' then '👍 ' else '❌ ' end) || (q->>'nome') || ': ' || txt ||
-      coalesce(': ' || v.resposta, '.') || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
+      coalesce(': ' || v.resposta, '.') || coalesce(chr(10) || '🕒 Consigo: ' || v.alternativa, '') ||
+      chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
   end if;
   return 'ok';
 end $$;
