@@ -364,9 +364,10 @@ function htmlRotas(){
   if(!r.vigiadas)return EQ()?'<div class="vazio" style="margin-bottom:10px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia (ADM, turno…). As que não subirem aparecem aqui para a Caliman.</div>':"";
   const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
   const hc=hm(r.coleta), hp=hm(r.proxima);
-  const info='<div class="note" style="margin:-4px 0 8px">🕐 Os dados da TFleet chegam aqui <b>de hora em hora</b>: última atualização às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. '+
+  const info='<div class="note" style="margin:-4px 0 8px">🕐 Os dados da TFleet chegam aqui <b>de hora em hora</b>: última atualização às <b>'+hc+'</b>'+(r.coleta_ok?', próxima por volta das <b>'+hp+'</b>':'')+'. '+
     'Uma rota só aparece como "não subiu" 1 hora depois do horário em que costuma sair. Se acabou de passar, aguarde a próxima atualização.</div>';
-  if(!r.coleta_ok)return '<h2 class="sec">Rotas de hoje</h2><div class="vazio">⚠️ Os dados da TFleet não chegam desde '+hc+'. Não dá para saber agora quais rotas subiram.</div>';
+  const parado=!r.coleta_ok?'<div class="vazio" style="margin-bottom:8px">⚠️ A atualização das '+hp+' não aconteceu: os dados da TFleet não chegam desde as '+hc+'. Enquanto isso, não dá para saber quais rotas subiram — a lista abaixo pode estar desatualizada.</div>':'';
+  if(!r.coleta_ok&&!EQ())return '<h2 class="sec">🚌 Rotas de hoje</h2>'+parado+info;
   const T=r.todas||[], cnt=(g,sit)=>T.filter(x=>(x.grupo||"Outras")===g&&x.situacao===sit).length;
   const grupos=[...new Set(T.map(x=>x.grupo||"Outras"))];
   const resumo='<div class="agd" style="margin-bottom:8px">'+grupos.map(g=>'<div><b>'+esc(g)+'</b><span class="o" style="color:var(--grn)">✓ '+cnt(g,"subiu")+' subiram</span>'+
@@ -375,10 +376,12 @@ function htmlRotas(){
   const todas='<details style="margin:6px 0 10px"><summary class="note" style="cursor:pointer">Ver todas as rotas de hoje ('+T.length+')</summary><div class="tblw"><table class="tbl" style="width:100%;font-size:14px">'+
     T.map(x=>'<tr><td>'+esc(x.grupo||"")+'</td><td><b>'+esc(x.linha)+'</b> <span class="note">'+esc(x.tipo)+'</span></td><td>'+esc(x.hora)+'</td><td style="color:'+SIT[x.situacao][1]+'">'+SIT[x.situacao][0]+
       (x.hoje_hora?' às '+esc(x.hoje_hora)+(x.hoje_frota?' · carro '+esc(x.hoje_frota):''):'')+'</td></tr>').join("")+'</table></div></details>';
-  return '<h2 class="sec">'+(r.lista.length?'⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span>':'🚌 Rotas de hoje')+'</h2>'+info+resumo+
+  const semDias=x=>{if(!x.ult_dia)return "";const n=Math.round((new Date(D.hoje+"T12:00Z")-new Date(x.ult_dia+"T12:00Z"))/864e5)-1;
+    return n>=1?'<br><b style="color:#f87171">Sem aparecer na TFleet há '+(n+1)+' dias</b> (desde '+dLbl(dAdd(x.ult_dia,1))+')':""};
+  return (parado?'<h2 class="sec">🚌 Rotas de hoje</h2>'+parado:'')+'<h2 class="sec"'+(parado?' style="display:none"':'')+'>'+(r.lista.length?'⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span>':'🚌 Rotas de hoje')+'</h2>'+info+resumo+
     (r.lista.length?'<div class="note" style="margin:0 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
     '<div class="pedmini">'+r.lista.map((x,i)=>'<div class="pm" data-rota="'+i+'" style="--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
-      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>':'')+todas;
+      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+semDias(x)+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>':'')+todas;
 }
 function porCarro(){
   const m=new Map();
