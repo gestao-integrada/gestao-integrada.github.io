@@ -304,7 +304,7 @@ create or replace function public.vis_rotas_salvar(p_token text, p_lista jsonb) 
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._vis_exige(p_token, 'equipe');
 begin
-  delete from vis_rotas_vigiadas;
+  delete from vis_rotas_vigiadas where true;   -- Supabase exige WHERE no DELETE
   insert into vis_rotas_vigiadas (linha, tipo, prev, hora, dias, grupo)
   select distinct on (x->>'linha', upper(x->>'tipo'), x->>'prev') x->>'linha', upper(x->>'tipo'), x->>'prev', (x->>'hora')::time,
          case when x->>'dias' in ('uteis', 'todos', 'fds') then x->>'dias' else 'uteis' end, nullif(left(trim(x->>'grupo'), 30), '')
