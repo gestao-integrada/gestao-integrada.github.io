@@ -97,8 +97,9 @@ window.htmlAberturas=function(){
   if(!A.ontem)return "";
   const dia=menos(hojeL(),1);
   const L=viagens(A.ontem).filter(v=>v.sit==="aberto").sort((a,b)=>a.hora.localeCompare(b.hora));
-  let h='<h2 class="sec" style="font-size:13px">Viagens abertas erradas ontem ('+dm(dia)+') <span class="n">'+L.length+'</span>'+
-    '<span class="r"><button class="btn sm" id="abVer">Ver análise →</button></span></h2>';
+  let h='<h2 class="sec">Viagens abertas erradas ontem ('+dm(dia)+') <span class="n">'+L.length+'</span>'+
+    '<span class="r"><button class="btn sm" id="abVer">Ver análise →</button></span></h2>'+
+    '<div class="secd">Viagens que o motorista <b>abriu no app com sentido, rota ou horário errado</b> ontem.</div>';
   if(!A.ontem.viagens)return h+'<div class="note" style="margin:-4px 0 14px">A TFleet ainda não mandou as viagens de ontem.</div>';
   if(!L.length)return h+'<div class="note" style="margin:-4px 0 14px">✓ Nenhuma viagem aberta errada ontem ('+A.ontem.viagens+' viagens conferidas).</div>';
   h+='<div class="note" style="margin:-4px 0 6px">Motoristas que abriram a viagem com sentido, rota ou horário errado no app. Oriente para abrir certo hoje. Toque para ver o detalhe.</div><ul class="ab-bul">';
