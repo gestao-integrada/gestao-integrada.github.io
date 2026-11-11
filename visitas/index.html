@@ -76,6 +76,9 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
 .ped{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#94a3b8);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
 .ped.alvo{outline:3px solid var(--brand)}
 .dlg .ped{box-shadow:none;border-top:0;border-right:0;border-bottom:0;border-radius:0;padding:0 0 0 12px}
+.rbul{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.rbul li{cursor:pointer;background:var(--card);border:1px solid var(--line);border-left:3px solid #f59e0b;border-radius:8px;padding:4px 9px;font-size:13px}
+.rbul li:hover{border-color:var(--brand)}
 .pedmini{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
 .pm{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#94a3b8);border-radius:10px;padding:8px 10px}
 .pm:hover{border-color:var(--brand)}
@@ -143,8 +146,8 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
 <div id="vLogin" class="login hidden">
   <div id="lCel">
     <h2>Visitas aos carros</h2>
-    <div class="note">Entre com o número do seu celular (DDD + número).</div>
-    <form id="fCel"><input id="iCel" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="(91) 98888-7777" required>
+    <div class="note">Entre com o número do seu celular (DDD + número) <b>ou</b> com a sua matrícula.</div>
+    <form id="fCel"><input id="iCel" type="tel" inputmode="numeric" autocomplete="off" placeholder="Celular ou matrícula" required>
     <button class="btn p">Entrar</button></form>
     <div style="margin-top:12px"><a id="aEquipe">Sou da equipe (entrar com senha)</a></div>
   </div>
@@ -234,7 +237,7 @@ function mostraLogin(){$("vApp").classList.add("hidden");$("fab").classList.add(
 $("aEquipe").onclick=()=>{$("lCel").classList.add("hidden");$("lSen").classList.remove("hidden");$("lMsg").textContent="";$("iSen").focus()};
 $("aCel").onclick=()=>{$("lSen").classList.add("hidden");$("lCel").classList.remove("hidden");$("lMsg").textContent=""};
 $("iCel").addEventListener("input",e=>{let v=e.target.value.replace(/\D/g,"");if(v.length>11&&v.startsWith("55"))v=v.slice(2);v=v.slice(0,11);
-  e.target.value=v.length>2?"("+v.slice(0,2)+") "+(v.length>6?v.slice(2,v.length-4)+"-"+v.slice(-4):v.slice(2)):v});
+  e.target.value=v.length>9?"("+v.slice(0,2)+") "+(v.length>6?v.slice(2,v.length-4)+"-"+v.slice(-4):v.slice(2)):v});
 $("fCel").onsubmit=async e=>{e.preventDefault();$("lMsg").className="msg";$("lMsg").textContent="Entrando…";
   try{const r=await rpc("vis_entrar",{p_celular:$("iCel").value});if(r.erro)throw new Error(r.erro);
     ls.set(K_SESS,{token:r.token,nome:r.nome});await abrir(r.token)}catch(err){$("lMsg").className="msg err";$("lMsg").textContent=err.message}};
@@ -353,35 +356,32 @@ function desenhar(){
   $("fxPend").onclick=()=>{FILTRO="pendentes";desenhar();$("secPed").scrollIntoView({behavior:"smooth"})};
   document.title=(eq&&pend.length?"("+pend.length+") ":"")+"Visitas aos carros";
   const blocoCarros=htmlCarros(), blocoPed=htmlPedidos(), blocoRotas=htmlRotas();
-  $("blocos").innerHTML=blocoRotas+(eq?blocoPed+blocoCarros:blocoCarros+blocoPed);
+  $("blocos").innerHTML=eq?blocoPed+blocoCarros+blocoRotas:blocoCarros+blocoRotas+blocoPed;
   ligar();
   $("fab").classList.toggle("hidden",SEL.size>0);
   barraSel();
   if(ALVO){if(D.propostas.some(x=>x.id===ALVO))dlgPedido(ALVO);ALVO=null}
 }
+let ROTA_G="";
 function htmlRotas(){
   const r=D.rotas;if(!r||!r.lista)return "";
-  if(!r.vigiadas)return EQ()?'<div class="vazio" style="margin-bottom:10px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia (ADM, turno…). As que não subirem aparecem aqui para a Caliman.</div>':"";
+  if(!r.vigiadas)return EQ()?'<div class="note" style="margin:4px 0 12px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia. As que não subirem aparecem aqui.</div>':"";
   const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
   const hc=hm(r.coleta), hp=hm(r.proxima);
-  const info='<div class="note" style="margin:-4px 0 8px">🕐 Os dados da TFleet chegam aqui <b>de hora em hora</b>: última atualização às <b>'+hc+'</b>'+(r.coleta_ok?', próxima por volta das <b>'+hp+'</b>':'')+'. '+
-    'Uma rota só aparece como "não subiu" 1 hora depois do horário em que costuma sair. Se acabou de passar, aguarde a próxima atualização.</div>';
-  const parado=!r.coleta_ok?'<div class="vazio" style="margin-bottom:8px">⚠️ A atualização das '+hp+' não aconteceu: os dados da TFleet não chegam desde as '+hc+'. Enquanto isso, não dá para saber quais rotas subiram — a lista abaixo pode estar desatualizada.</div>':'';
-  if(!r.coleta_ok&&!EQ())return '<h2 class="sec">🚌 Rotas de hoje</h2>'+parado+info;
-  const T=r.todas||[], cnt=(g,sit)=>T.filter(x=>(x.grupo||"Outras")===g&&x.situacao===sit).length;
-  const grupos=[...new Set(T.map(x=>x.grupo||"Outras"))];
-  const resumo='<div class="agd" style="margin-bottom:8px">'+grupos.map(g=>'<div><b>'+esc(g)+'</b><span class="o" style="color:var(--grn)">✓ '+cnt(g,"subiu")+' subiram</span>'+
-    '<i>'+(cnt(g,"nao_subiu")?'<b style="color:#f59e0b">⚠ '+cnt(g,"nao_subiu")+' não subiram</b> · ':'')+cnt(g,"aguardando")+' no horário ainda</i></div>').join("")+'</div>';
-  const SIT={subiu:["✓ subiu","var(--grn)"],nao_subiu:["⚠ não subiu","#f59e0b"],aguardando:["aguardando horário","var(--mut)"]};
-  const todas='<details style="margin:6px 0 10px"><summary class="note" style="cursor:pointer">Ver todas as rotas de hoje ('+T.length+')</summary><div class="tblw"><table class="tbl" style="width:100%;font-size:14px">'+
-    T.map(x=>'<tr><td>'+esc(x.grupo||"")+'</td><td><b>'+esc(x.linha)+'</b> <span class="note">'+esc(x.tipo)+'</span></td><td>'+esc(x.hora)+'</td><td style="color:'+SIT[x.situacao][1]+'">'+SIT[x.situacao][0]+
-      (x.hoje_hora?' às '+esc(x.hoje_hora)+(x.hoje_frota?' · carro '+esc(x.hoje_frota):''):'')+'</td></tr>').join("")+'</table></div></details>';
-  const semDias=x=>{if(!x.ult_dia)return "";const n=Math.round((new Date(D.hoje+"T12:00Z")-new Date(x.ult_dia+"T12:00Z"))/864e5)-1;
-    return n>=1?'<br><b style="color:#f87171">Sem aparecer na TFleet há '+(n+1)+' dias</b> (desde '+dLbl(dAdd(x.ult_dia,1))+')':""};
-  return (parado?'<h2 class="sec">🚌 Rotas de hoje</h2>'+parado:'')+'<h2 class="sec"'+(parado?' style="display:none"':'')+'>'+(r.lista.length?'⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span>':'🚌 Rotas de hoje')+'</h2>'+info+resumo+
-    (r.lista.length?'<div class="note" style="margin:0 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
-    '<div class="pedmini">'+r.lista.map((x,i)=>'<div class="pm" data-rota="'+i+'" style="--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
-      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+semDias(x)+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>':'')+todas;
+  let info;
+  if(!r.coleta_ok)info='⚠️ Os dados da TFleet não chegam desde as '+hc+'. Não dá para saber agora quais rotas subiram.';
+  else if(r.libera&&!r.viagens_hoje)info='🕐 As viagens de hoje ainda não chegaram da TFleet. Elas costumam chegar até as <b>'+r.libera+'</b> — aguarde até lá para ver quais rotas não subiram.';
+  else info='🕐 Dados da TFleet atualizam de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>.'+(r.atraso_min?' A TFleet costuma mostrar a viagem até '+r.atraso_min+' min depois da saída.':'');
+  const L=(r.coleta_ok||EQ())?r.lista:[];
+  const grupos=[...new Set(L.map(x=>x.grupo))];if(ROTA_G&&!grupos.includes(ROTA_G))ROTA_G="";
+  const ver=L.filter(x=>!ROTA_G||x.grupo===ROTA_G);
+  return '<h2 class="sec" style="font-size:13px">Rotas que não subiram hoje <span class="n">'+L.length+'</span>'+
+    (grupos.length>1?'<span class="r flt" id="fRota">'+[["","Todas"]].concat(grupos.map(g=>[g,g])).map(x=>'<button data-g="'+esc(x[0])+'" class="'+(ROTA_G===x[0]?"on":"")+'">'+esc(x[1])+'</button>').join("")+'</span>':'')+'</h2>'+
+    '<div class="note" style="margin:-4px 0 6px">'+info+'</div>'+
+    (ver.length?'<div class="note" style="margin:0 0 6px">Peça ao motorista para sincronizar a viagem no app ou ligar o celular. Toque na rota para pedir visita.</div>'+
+      '<ul class="rbul">'+ver.map(x=>'<li data-rota="'+r.lista.indexOf(x)+'"><b>'+esc(x.linha)+'</b> <span class="note">'+esc(x.tipo)+' '+esc(x.hora)+(grupos.length>1?' · '+esc(x.grupo):'')+'</span>'+
+        (x.dias_sem>=2?' <span class="chip alta">não sobe há '+x.dias_sem+' dias</span>':'')+'</li>').join("")+'</ul>':
+      (L.length?'':'<div class="note" style="margin-bottom:12px">'+(r.coleta_ok&&!(r.libera&&!r.viagens_hoje)?'✓ Nenhuma rota vigiada atrasada agora.':'')+'</div>'));
 }
 function porCarro(){
   const m=new Map();
@@ -523,6 +523,7 @@ function ligar(){
     const o=D.ocorrencias.find(x=>x.id===+b.dataset.oc), quer=b.dataset.v==="1";
     try{await rpc("vis_ocultar_salvar",{p_token:TOKEN,p_id:o.id,p_oculta:quer===!!o.oculta_auto?null:quer});await carregar()}catch(err){alert(err.message);b.disabled=false}});
   document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>acao(b.dataset.a,+b.dataset.id,b));
+  document.querySelectorAll("#fRota [data-g]").forEach(b=>b.onclick=()=>{ROTA_G=b.dataset.g;desenhar()});
   document.querySelectorAll("[data-rota]").forEach(b=>b.onclick=()=>dlgNovo("visita",D.rotas.lista[+b.dataset.rota]));
   document.querySelectorAll("[data-ped]").forEach(b=>b.onclick=()=>dlgPedido(+b.dataset.ped));
   document.querySelectorAll("[data-rec]").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();acao("rec",+i.dataset.rec,i)}});
