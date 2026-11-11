@@ -123,9 +123,10 @@ code.key{background:var(--card2);border:1px solid var(--line);border-radius:6px;
   <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
     <button class="btn" id="bPedir" type="button" style="width:100%">Não tem acesso? Solicitar acesso</button>
     <form id="fPedir" class="hidden" style="margin-top:6px">
-      <p class="note">Preencha e envie. Quando o responsável aprovar, o seu código de acesso chega no seu e-mail.</p>
+      <p class="note">Preencha e envie. Quando o responsável aprovar, o seu código de acesso chega no seu e-mail e no WhatsApp.</p>
       <input id="pdNome" placeholder="Nome completo" required autocomplete="name">
       <input id="pdEmail" type="email" placeholder="E-mail" required autocomplete="email">
+      <input id="pdCel" inputmode="tel" placeholder="Celular com DDD (WhatsApp)" autocomplete="tel">
       <input id="pdEmp" placeholder="Empresa" required autocomplete="organization">
       <input id="pdMsg" placeholder="Para qual demanda? (opcional)">
       <button class="btn p" id="pdOk">Enviar pedido</button>
@@ -195,8 +196,8 @@ async function iniciar(){
 function mostrarLogin(){$("vPub").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
 $("bPedir").onclick=()=>{$("fPedir").classList.toggle("hidden");$("pdNome").focus()};
 $("fPedir").onsubmit=async e=>{e.preventDefault();$("pdOk").disabled=true;msg("pdRes","Enviando…");
-  try{const r=await rpc("sol_pedir_acesso",{p_nome:$("pdNome").value,p_email:$("pdEmail").value,p_empresa:$("pdEmp").value,p_mensagem:$("pdMsg").value});
-    msg("pdRes",r,"ok");["pdNome","pdEmail","pdEmp","pdMsg"].forEach(i=>$(i).value="")}catch(err){msg("pdRes",err.message,"err")}
+  try{const r=await rpc("sol_pedir_acesso",{p_nome:$("pdNome").value,p_email:$("pdEmail").value,p_empresa:$("pdEmp").value,p_mensagem:$("pdMsg").value,p_celular:$("pdCel").value});
+    msg("pdRes",r,"ok");["pdNome","pdEmail","pdCel","pdEmp","pdMsg"].forEach(i=>$(i).value="")}catch(err){msg("pdRes",err.message,"err")}
   $("pdOk").disabled=false};
 $("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
   try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:null});
@@ -535,17 +536,24 @@ async function acessos(){
    <td style="white-space:nowrap"><button class="btn" onclick="ctSalvar(${i})">Salvar</button>
    ${adm?(c.acesso?`<button class="btn" onclick="acNumero(${i})">Editar acesso</button> <button class="btn" onclick="acAtivo(${i},${!c.acesso.ativo||c.acesso.travado})">${c.acesso.ativo&&!c.acesso.travado?"Desativar":"Reativar"}</button>`
        :`<button class="btn p" onclick="acNumero(${i})">Dar acesso</button>`):""}
+   ${adm?`<button class="btn" title="Cria/troca o código e manda no WhatsApp e no e-mail" onclick="acNumero(${i},true)">📨 Enviar convite</button>`:""}
    <button class="btn d" title="Remover" onclick="ctDel(${i})">×</button></td></tr>`).join("")||`<tr><td colspan="6" class="note">Nenhum ainda.</td></tr>`}</table></div>
   <h4 class="sec4" style="margin-top:16px">Adicionar contato</h4>
   <div class="grid"><label class="fl">Nome<input id="ctN"></label><label class="fl">E-mail<input id="ctE" type="email"></label><label class="fl">Celular com DDD<input id="ctC" inputmode="tel" placeholder="91 98888-7777"></label><label class="fl">Fornecedor<input id="ctF" value="TFleet"></label></div>
   <div class="acts"><button class="btn p" onclick="ctNovo()">Adicionar</button></div><div class="msg" id="ctMsg"></div>
-  ${adm?`<h4 class="sec4" style="margin-top:18px">Robô de e-mail (Apps Script)</h4>
+  ${adm?`<h4 class="sec4" style="margin-top:18px">WhatsApp automático</h4>
+  <p class="note">As mensagens saem sozinhas pelo número da frota (fluxo "Demandas — WhatsApp automático" no servidor): convite com código, mudança de status/responsável/prazo, cobrança e avisos de prazo. Vão para quem tem celular no contato e está nos e-mails do cartão (ou é o responsável), e para o seu número abaixo.
+   ${cfg.whats_fila?`<br><b>${cfg.whats_fila} mensagem(ns) esperando na fila.</b>`:""}${cfg.whats_ultimo?" Última enviada: "+dtBR(cfg.whats_ultimo)+".":" Nenhuma enviada ainda."}</p>
+  <div class="grid"><label class="fl">Seu WhatsApp (recebe todas as atualizações)<input id="kZap" inputmode="tel" value="${esc(fone(cfg.whatsapp_dono))}" placeholder="91 98888-7777"></label></div>
+  <div class="acts" style="justify-content:flex-start"><button class="btn" id="kZapOk">Salvar celular</button></div><div class="msg" id="kZapMsg"></div>
+  <h4 class="sec4" style="margin-top:18px">Robô de e-mail (Apps Script)</h4>
   <p class="note">Chave do robô: cole no script <b>solicitacoes-aviso.gs</b>. Não mande para ninguém.</p>
   <code class="key" id="kRobo">${esc(cfg.chave_robo)}</code> <button class="btn" onclick="copiar($('kRobo').textContent,this)">Copiar</button>
   <div class="grid" style="margin-top:10px"><label class="fl">Avisar "sem resposta" após (dias)<input id="kDias" type="number" min="1" value="${cfg.dias_sem_resposta}"></label></div>
   <div class="acts" style="justify-content:flex-start"><button class="btn" id="kSalvar">Salvar dias</button><button class="btn d" id="kNova">Gerar chave nova</button></div>
   <div class="msg" id="kMsg"></div>`:""}</div>`);
   if(!adm)return;
+  $("kZapOk").onclick=async()=>{try{await rpc("sol_whats_dono_salvar",{p_token:TOKEN,p_numero:$("kZap").value});msg("kZapMsg","Salvo.","ok")}catch(e){msg("kZapMsg",e.message,"err")}};
   $("kSalvar").onclick=async()=>{try{await rpc("sol_config_salvar",{p_token:TOKEN,p_dias:+$("kDias").value,p_nova_chave:false});msg("kMsg","Salvo.","ok");carregar(false)}catch(e){msg("kMsg",e.message,"err")}};
   $("kNova").onclick=async()=>{if(!confirm("Gerar chave nova? O script para de funcionar até você colar a nova."))return;
     try{const c=await rpc("sol_config_salvar",{p_token:TOKEN,p_dias:+$("kDias").value,p_nova_chave:true});$("kRobo").textContent=c.chave_robo;msg("kMsg","Chave nova gerada.","ok")}catch(e){msg("kMsg",e.message,"err")}};
@@ -561,11 +569,14 @@ async function ctDel(i){const c=CONTATOS[i];
     if(c.contato_id)await rpc("sol_contato_remover",{p_token:TOKEN,p_id:c.contato_id});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
 async function acAtivo(i,ativo){const c=CONTATOS[i],a=c.acesso;
   try{await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a.id,p_nome:c.nome,p_fornecedor:a.fornecedor,p_email:c.email,p_senha:null,p_ativo:ativo,p_nivel:a.nivel||null});acessos()}catch(e){msg("ctMsg",e.message,"err")}}
-function acNumero(i){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()||c.fornecedor||"",nome=$("cn"+i).value.trim()||c.nome||"",cel0=$("cc"+i).value.trim();
-  dlg(`<div class="dh"><h3>${a?"Editar acesso":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
+function acNumero(i,conv){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()||c.fornecedor||"",nome=$("cn"+i).value.trim()||c.nome||"",cel0=$("cc"+i).value.trim();
+  const sug=conv?String(cel0).replace(/\D/g,"").slice(-4):"";
+  dlg(`<div class="dh"><h3>${conv?"Enviar convite":a?"Editar acesso":"Dar acesso"}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
   <p><b>${esc(nome||c.email)}</b><br><span class="note">${esc(c.email)}</span></p>
   ${nome?"":`<label class="fl full">Nome<input id="aNome"></label>`}
-  <label class="fl full">${a?"Código novo (deixe vazio para manter o atual)":"Código de acesso (ex.: 4 últimos do celular)"}<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" style="font-size:22px;letter-spacing:6px"></label>
+  <label class="fl full">${conv?"Código de acesso (vai no convite)":a?"Código novo (deixe vazio para manter o atual)":"Código de acesso (ex.: 4 últimos do celular)"}<input id="aNum" inputmode="numeric" autocomplete="off" maxlength="12" value="${esc(sug)}" style="font-size:22px;letter-spacing:6px"></label>
+  ${conv&&a?'<p class="note" style="margin-top:-6px">O código que a pessoa usava deixa de valer: vale o deste convite.</p>':""}
+  <label class="fl full">Celular com DDD<input id="aCel" inputmode="tel" value="${esc(cel0)}" placeholder="91 98888-7777"></label>
   <label class="fl full">O que pode fazer<select id="aNivel">
     <option value="ver">Só acompanhar (vê os cartões e baixa os documentos)</option>
     <option value="comentar">Acompanhar, comentar e cobrar resposta</option>
@@ -574,47 +585,43 @@ function acNumero(i){const c=CONTATOS[i],a=c.acesso,forn=$("cf"+i).value.trim()|
     ${forn&&forn!=="*"?`<option value="${esc(forn)}">Só os cartões de ${esc(forn)}</option>`:""}
     <option value="*" ${forn==="*"?"selected":""}>Todos os fornecedores (é da casa; não mexe em acessos)</option></select></label>
   ${!forn?'<p class="note">Para limitar aos cartões de um fornecedor, feche, preencha o Fornecedor do contato e clique em Salvar.</p>':""}
-  <p class="note">Ela entra no quadro digitando só esse código. Os avisos vão para ${esc(c.email)}.</p>
-  <div class="acts"><button class="btn" onclick="acessos()">Voltar</button><button class="btn p" id="aOk">${a?"Salvar":"Criar acesso"}</button></div>
+  <div class="fl full"><label class="fl" style="margin:0">Mandar o convite com o código</label>
+    <label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aZap" ${conv?"checked":""}> 💬 WhatsApp (sai sozinho pelo número da frota)</label>
+    <label class="note" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="aMail" ${conv?"checked":""}> ✉ E-mail (${esc(c.email)})</label></div>
+  <div class="acts"><button class="btn" onclick="acessos()">Voltar</button><button class="btn p" id="aOk">${conv?"Salvar e enviar convite":a?"Salvar":"Criar acesso"}</button></div>
   <div class="msg" id="aMsg"></div></div>`,true);
-  $("aNum").closest("label").insertAdjacentHTML("afterend",`<label class="fl full">Celular com DDD (para mandar o convite no WhatsApp)<input id="aCel" inputmode="tel" value="${esc(cel0)}" placeholder="91 98888-7777"></label>`);
   $("aNivel").value=a?(a.nivel||"editar"):"editar";$("aNum").focus();
-  $("aOk").onclick=async()=>{const n=$("aNum").value.trim(),nm=nome||($("aNome")&&$("aNome").value.trim());
-    if(!a&&n.length<4||n&&n.length<4){msg("aMsg","Digite pelo menos 4 números.","err");return}
+  $("aOk").onclick=async()=>{const n=$("aNum").value.trim(),nm=nome||($("aNome")&&$("aNome").value.trim()),zp=$("aZap").checked,ml=$("aMail").checked;
+    if((!a||conv||zp||ml)&&n.length<4||n&&n.length<4){msg("aMsg",(zp||ml)&&!n?"Para mandar o convite, digite o código (pelo menos 4 números).":"Digite pelo menos 4 números.","err");return}
     if(!nm){msg("aMsg","Coloque o nome da pessoa.","err");return}
     const cel=$("aCel").value.trim();
+    if(zp&&!cel.replace(/\D/g,"")){msg("aMsg","Coloque o celular para mandar no WhatsApp.","err");return}
+    $("aOk").disabled=true;msg("aMsg","Salvando…");
     try{if(cel!==cel0||!c.contato_id)await rpc("sol_contato_salvar",{p_token:TOKEN,p_id:c.contato_id,p_nome:nm,p_email:c.email,p_fornecedor:$("aForn").value==="*"?"":$("aForn").value,p_celular:cel});
-      const pid=await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a?a.id:null,p_nome:nm,p_fornecedor:$("aForn").value,p_email:c.email,p_senha:n||null,p_ativo:true,p_nivel:$("aNivel").value});
-      if(!n){await acessos();msg("ctMsg",`Pronto: acesso de ${nm} atualizado.`,"ok");return}
-      convite({nome:nm,email:c.email,celular:cel,pessoa:pid||(a&&a.id),codigo:n})}catch(e){msg("aMsg",e.message,"err")}};
+      const pid=await rpc("sol_pessoa_salvar",{p_token:TOKEN,p_id:a?a.id:null,p_nome:nm,p_fornecedor:$("aForn").value,p_email:c.email,p_senha:n||null,p_ativo:true,p_nivel:$("aNivel").value})||(a&&a.id);
+      const res=[];
+      if(zp)try{await rpc("sol_convite_whats",{p_token:TOKEN,p_pessoa:pid,p_codigo:n});res.push("💬 WhatsApp na fila (sai em até 1 min)")}catch(e){res.push("💬 WhatsApp: "+e.message)}
+      if(ml)try{await rpc("sol_convite_email",{p_token:TOKEN,p_pessoa:pid,p_codigo:n});res.push("✉ e-mail na fila (sai em até 1 min)")}catch(e){res.push("✉ e-mail: "+e.message)}
+      await acessos();
+      msg("ctMsg",(n?`Pronto: ${nm} entra com o código ${n}.`:`Pronto: acesso de ${nm} atualizado.`)+(res.length?" "+res.join(" · "):""),"ok")
+    }catch(e){$("aOk").disabled=false;msg("aMsg",e.message,"err")}};
 }
 const LINK_QUADRO="https://gestao-integrada.github.io/demandas/";
 function fone(x){const d=String(x||"").replace(/\D/g,"");if(!d)return"";const n=d.length>11&&d.startsWith("55")?d.slice(2):d;
   return n.length===11?`${n.slice(0,2)} ${n.slice(2,7)}-${n.slice(7)}`:n.length===10?`${n.slice(0,2)} ${n.slice(2,6)}-${n.slice(6)}`:d}
-function zap(cel,txt){let d=String(cel||"").replace(/\D/g,"");if(!d)return null;if(d.length<=11)d="55"+d;return "https://wa.me/"+d+"?text="+encodeURIComponent(txt)}
-function convite(o){
-  const txt=`Olá, ${o.nome}! Você tem acesso ao quadro de demandas para acompanhar as solicitações.\n\nLink: ${LINK_QUADRO}\nSeu código de acesso: ${o.codigo}\n\nO código é pessoal, não compartilhe.`;
-  const w=zap(o.celular,txt);
-  dlg(`<div class="dh"><h3>Convite para ${esc(o.nome)}</h3><button class="x" onclick="acessos()">✕ Fechar</button></div><div class="db">
-  <p>Acesso salvo. ${esc(o.nome)} entra com o código <b style="font-size:20px;letter-spacing:3px">${esc(o.codigo)}</b>.</p>
-  <p class="note">Mande o convite já com o link e o código:</p>
-  <div class="acts" style="justify-content:flex-start;flex-wrap:wrap">
-    ${w?`<a class="btn p" href="${esc(w)}" target="_blank" rel="noopener" style="background:#1f8f4e;border-color:#1f8f4e;color:#fff;text-decoration:none">💬 Mandar no WhatsApp</a>`:`<span class="note">Sem celular: coloque o celular no contato para mandar pelo WhatsApp.</span>`}
-    <button class="btn" id="cvMail">✉ Mandar por e-mail (${esc(o.email)})</button>
-    <button class="btn" onclick="copiar(${esc(JSON.stringify(txt))},this)">Copiar a mensagem</button></div>
-  <pre style="white-space:pre-wrap;background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px">${esc(txt)}</pre>
-  <div class="acts"><button class="btn" onclick="acessos()">Voltar para os contatos</button></div><div class="msg" id="cvMsg"></div></div>`,true);
-  $("cvMail").onclick=async()=>{try{await rpc("sol_convite_email",{p_token:TOKEN,p_pessoa:o.pessoa,p_codigo:o.codigo});$("cvMail").disabled=true;msg("cvMsg","E-mail na fila: sai em até 1 minuto.","ok")}catch(e){msg("cvMsg",e.message,"err")}};
-}
 function zapCartao(c,pub){
   const alvo=CONTATOS.filter(x=>x.celular&&((c.emails||[]).includes(x.email)||(c.responsavel&&x.nome&&x.nome.toLowerCase()===c.responsavel.toLowerCase())));
-  const txt=n=>`Olá, ${n}! Atualização da demanda "${c.assunto}":\nStatus: ${c.status}${c.prazo?"\nPrazo: "+dBR(c.prazo):""}${c.responsavel?"\nResponsável: "+c.responsavel:""}\n\nAcompanhe aqui: ${pub}`;
-  dlg(`<div class="dh"><h3>Avisar no WhatsApp</h3><button class="x" onclick="abrir(${c.id})">✕ Fechar</button></div><div class="db">
-  ${alvo.length?`<p class="note">Abre o WhatsApp com a mensagem pronta (status, prazo e link). Você pode mudar o texto antes de mandar.</p>
-  <table class="tbl">${alvo.map(x=>`<tr><td><b>${esc(x.nome||x.email)}</b><br><span class="note">${esc(fone(x.celular))}</span></td>
-   <td style="text-align:right"><a class="btn p" style="background:#1f8f4e;border-color:#1f8f4e;color:#fff;text-decoration:none" target="_blank" rel="noopener" href="${esc(zap(x.celular,txt((x.nome||"").split(" ")[0]||"")))}">💬 Abrir conversa</a></td></tr>`).join("")}</table>`
-  :`<p class="note">Ninguém deste cartão tem celular salvo. Coloque o celular em <b>Contatos e acessos</b> (para quem está nos e-mails de aviso ou é o responsável).</p>`}
-  <div class="acts"><button class="btn" onclick="abrir(${c.id})">Voltar</button></div></div>`,true)}
+  const txt=`📋 *Demandas · ${c.fornecedor}*\n*${c.assunto}*\n\nStatus: ${c.status}${c.responsavel?"\nResponsável: "+c.responsavel:""}${c.prazo?"\nPrazo: "+dBR(c.prazo):""}\n\nAcompanhe: ${pub}`;
+  dlg(`<div class="dh"><h3>Mandar no WhatsApp</h3><button class="x" onclick="abrir(${c.id})">✕ Fechar</button></div><div class="db">
+  ${alvo.length?`<p class="note">Sai sozinho pelo número da frota em até 1 minuto. As mudanças de status, responsável e prazo já vão automaticamente; aqui é para mandar um recado.</p>
+  ${alvo.map(x=>`<label class="note" style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" class="zpN" value="${esc(x.celular)}" checked> <b>${esc(x.nome||x.email)}</b> · ${esc(fone(x.celular))}</label>`).join("")}
+  <label class="fl full" style="margin-top:8px">Mensagem<textarea id="zpT" rows="8">${esc(txt)}</textarea></label>
+  <div class="acts"><button class="btn" onclick="abrir(${c.id})">Voltar</button><button class="btn p" id="zpOk" style="background:#1f8f4e;border-color:#1f8f4e">💬 Enviar</button></div><div class="msg" id="zpMsg"></div>`
+  :`<p class="note">Ninguém deste cartão tem celular salvo. Coloque o celular em <b>Contatos e acessos</b> (para quem está nos e-mails de aviso ou é o responsável).</p>
+  <div class="acts"><button class="btn" onclick="abrir(${c.id})">Voltar</button></div>`}</div>`,true);
+  if($("zpOk"))$("zpOk").onclick=async()=>{const ns=[...document.querySelectorAll(".zpN:checked")].map(x=>x.value);
+    $("zpOk").disabled=true;try{const n=await rpc("sol_whats_cartao",{p_token:TOKEN,p_cartao:c.id,p_numeros:ns,p_texto:$("zpT").value});
+      msg("zpMsg",`Na fila para ${n} pessoa(s): sai em até 1 minuto.`,"ok");setTimeout(()=>abrir(c.id),1500)}catch(e){$("zpOk").disabled=false;msg("zpMsg",e.message,"err")}}}
 
 /* ---------------- link público (só ver) ---------------- */
 async function publico(chave){
