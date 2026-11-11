@@ -370,13 +370,15 @@ function htmlRotas(){
   const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
   const hc=hm(r.coleta), hp=hm(r.proxima);
   const dm=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7):"";
-  let info='🕐 TFleet atualiza de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. Só entra aqui a ida que já passou do horário previsto e não veio na atualização.'+
-    (r.aguardando?' '+r.aguardando+' ida'+(r.aguardando>1?'s':'')+' ainda no prazo.':'');
+  const ontem=r.modo==="ontem";
+  let info='🕐 TFleet atualiza de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. '+
+    (ontem?'As viagens de hoje ainda não chegaram da TFleet, então a conferência é de <b>ontem ('+dm(r.dia)+')</b>: aparece a ida que não subiu ontem nem hoje. Quando as de hoje chegarem, muda sozinho para hoje.':
+     'Só entra aqui a ida que já passou do horário previsto e não veio na atualização.'+(r.aguardando?' '+r.aguardando+' ida'+(r.aguardando>1?'s':'')+' ainda no prazo.':''));
   if(!r.coleta_ok)info='⚠️ A atualização da TFleet não acontece desde as <b>'+hc+'</b>. A lista vale só até esse horário.';
   const L=r.lista;
   const grupos=[...new Set(L.map(x=>x.grupo))];if(ROTA_G&&!grupos.includes(ROTA_G))ROTA_G="";
   const ver=L.filter(x=>!ROTA_G||x.grupo===ROTA_G);
-  return '<h2 class="sec" style="font-size:13px">Idas que não subiram hoje <span class="n">'+L.length+'</span>'+
+  return '<h2 class="sec" style="font-size:13px">Idas que não subiram '+(ontem?'ontem ('+dm(r.dia)+')':'hoje')+' <span class="n">'+L.length+'</span>'+
     (grupos.length>1?'<span class="r flt" id="fRota">'+[["","Todas"]].concat(grupos.map(g=>[g,g])).map(x=>'<button data-g="'+esc(x[0])+'" class="'+(ROTA_G===x[0]?"on":"")+'">'+esc(x[1])+'</button>').join("")+'</span>':'')+'</h2>'+
     '<div class="note" style="margin:-4px 0 6px">'+info+'</div>'+
     (ver.length?'<div class="note" style="margin:0 0 6px">Peça ao motorista para sincronizar a viagem no app ou ligar o celular. Toque na rota para pedir visita.</div>'+
