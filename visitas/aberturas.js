@@ -159,7 +159,7 @@ function montarAba(){
     '<details class="ab-box" style="margin-top:18px"><summary style="cursor:pointer;font-weight:600">Como a página decide que a abertura está errada</summary><ol class="ab-regras">'+
     '<li><b>Sentido</b>: no ADM, IDA aberta depois das 11h (era VOLTA) ou VOLTA antes das 10h (era IDA). Aprendiz, Extra e In Haus ficam fora. No turno, horário do outro sentido.</li>'+
     '<li><b>Rota especial</b>: rota que em certo horário tem outro nome (CT7 entre 06:30 e 08:30 = CT7 INTERNO).</li>'+
-    '<li><b>Repetida</b>: o mesmo carro abriu a mesma rota e sentido 2 vezes no dia.</li>'+
+    '<li><b>Repetida</b>: o mesmo carro abriu a mesma rota no mesmo sentido 2 vezes, com 3 h ou mais entre elas, e nenhuma das duas está fora do horário (uma deveria ser o outro sentido). Se ele só fechou e abriu de novo logo depois (KM ou horário errado), não conta.</li>'+
     '<li><b>Rota duplicada</b>: 2 carros na mesma rota e sentido no mesmo período; marca o carro que menos costuma fazer essa rota e diz a rota provável.</li>'+
     '<li><b>Duas rotas</b>: o carro abriu uma rota, leu passageiros, fechou e abriu outra em menos de 1 h; os passageiros ficaram na rota errada. Se a 1ª abertura não leu ninguém, o motorista só corrigiu e não conta como erro.</li>'+
     '<li><b>Dois carros</b>: o mesmo motorista em 2 carros ao mesmo tempo (provável login de outro motorista).</li></ol></details>';
