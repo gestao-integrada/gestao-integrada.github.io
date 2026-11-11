@@ -253,6 +253,12 @@ async function iniciar(){
 }
 
 const MOTIVOS=["Estou em outra área hoje","Sem transporte até o terminal","Reunião / outra demanda nesse horário","Não estou na mina nesse dia","Posso em outro dia"];
+const htmlAlt=id=>'<div class="fld"><b>Mas consigo em outro dia/horário? (opcional)</b><div class="row" style="flex-wrap:wrap;gap:6px;align-items:center"><input type="date" id="'+id+'D"><input type="time" id="'+id+'I"><span>até</span><input type="time" id="'+id+'F"></div><div class="note">A Caliman recebe essa sugestão junto com a resposta.</div></div>';
+function altTxt(id){const d=$(id+"D"),i=$(id+"I"),f=$(id+"F");if(!d)return null;let t="";
+  if(d.value){const x=new Date(d.value+"T12:00");t=DIAS[x.getDay()]+" "+x.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}
+  if(i.value&&f.value)t+=(t?" ":"")+"das "+i.value+" às "+f.value;else if(i.value)t+=(t?" ":"")+"a partir das "+i.value;else if(f.value)t+=(t?" ":"")+"até "+f.value;
+  return t||null}
+const htmlConversa=ms=>(ms&&ms.length)?'<div class="fld"><b>Conversa deste pedido</b>'+ms.map(m=>'<div class="ped" style="padding:6px 10px;margin:4px 0"><div class="note">'+esc(m.quem||"")+' · '+quando(m.ts)+'</div><div style="white-space:pre-wrap">'+esc(m.texto)+'</div></div>').join("")+'</div>':'';
 const htmlMotivos=id=>'<div class="opts" style="margin-bottom:6px">'+MOTIVOS.map(m=>'<button type="button" data-m="'+esc(m)+'" data-t="'+id+'">'+esc(m)+'</button>').join("")+'</div>';
 function ligaMotivos(){document.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{const t=$(b.dataset.t);
   t.value=b.dataset.m+(b.dataset.m==="Posso em outro dia"?": ":". ");t.focus();document.querySelectorAll(".msg.err").forEach(m=>m.textContent="")})}
@@ -262,27 +268,27 @@ async function linkResposta(chave,quer){
   let v;
   try{v=await rpc("vis_link_ver",{p_chave:chave});if(v.erro)throw new Error(v.erro)}catch(e){el.innerHTML='<h2>Visitas aos carros</h2><div class="msg err">'+esc(e.message)+'</div>';return}
   D={hoje:v.hoje,config:{nome_dono:v.nome_dono,agenda:[]}};
-  const st=ST[v.status]||[v.status,"#94a3b8"];
   const opc=v.tipo==="visita"?[["confirmada","✅ Consigo ir","ok"],["recusada","❌ Não consigo","d"]]:[["ciente","👍 Ciente","p"],["confirmada","✅ Vou passar lá","ok"]];
   if(!opc.some(o=>o[0]===quer))quer=opc[0][0];
   function tela(msg){
+    const st=ST[v.status]||[v.status,"#94a3b8"];
     el.innerHTML='<h2>'+TIPO[v.tipo]+'</h2><div class="note">'+esc(v.autor)+' · '+quando(v.criado_em)+'</div>'+
       '<div class="prev" style="margin:12px 0;font-size:17px;font-weight:700">'+esc(fraseJs(v))+'</div>'+
       (v.recado?'<div class="ped" style="padding:8px 10px;margin-bottom:10px"><div class="rc" style="margin:0">'+esc(v.recado)+'</div></div>':'')+
-      '<div style="margin-bottom:10px">Situação: <span class="chip '+v.status+'">'+st[0]+'</span>'+(v.status==="confirmada"&&v.hora_combinada?' · chega '+esc(v.hora_combinada):'')+(v.status==="recusada"&&v.resposta?' · '+esc(v.resposta):'')+'</div>'+
+      '<div style="margin-bottom:10px">Situação: <span class="chip '+v.status+'">'+st[0]+'</span>'+(v.status==="confirmada"&&v.hora_combinada?' · chega '+esc(v.hora_combinada):'')+(v.status==="recusada"&&v.resposta?' · '+esc(v.resposta):'')+(v.status==="recusada"&&v.alternativa?' · 🕒 consigo '+esc(v.alternativa):'')+'</div>'+
       (v.status==="cancelada"?'<div class="msg err">A Caliman cancelou esse pedido.</div>':
       '<div class="fld"><b>Sua resposta</b><div class="opts" id="lOp">'+opc.map(o=>'<button data-v="'+o[0]+'" class="'+(quer===o[0]?"on":"")+'"'+(quer===o[0]&&o[0]==="recusada"?' style="background:#dc2626;border-color:#dc2626"':'')+'>'+o[1]+'</button>').join("")+'</div></div>'+
       (quer==="confirmada"?'<div class="fld"><b>Que horas você chega? (opcional)</b><div class="row"><input type="time" id="lHora"></div></div>':'')+
-      '<div class="fld"><b>'+(quer==="recusada"?"Justificativa (obrigatória, a Caliman vê)":"Recado (opcional)")+'</b>'+(quer==="recusada"?htmlMotivos("lTxt"):'')+'<textarea id="lTxt" rows="2" maxlength="1000"></textarea></div>'+
+      '<div class="fld"><b>'+(quer==="recusada"?"Justificativa (obrigatória, a Caliman vê)":"Recado (opcional)")+'</b>'+(quer==="recusada"?htmlMotivos("lTxt"):'')+'<textarea id="lTxt" rows="2" maxlength="1000"></textarea></div>'+(quer==="recusada"?htmlAlt("lA"):'')+
       '<button class="btn '+(quer==="recusada"?"d":"p")+'" id="lS" style="width:100%;padding:12px;font-size:16px">Enviar resposta</button>')+
       '<div class="msg" id="lM">'+(msg||"")+'</div>'+
-      (v.celular&&v.status!=="pendente"?'<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(v.celular,textoWaPessoa(v))+'">Avisar '+esc(v.autor.split(" ")[0])+' no WhatsApp</a></div>':'')+
+      (v.celular&&v.status!=="pendente"?'<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(v.celular,textoWaPessoa(v))+'">Mandar também pelo seu WhatsApp</a></div>':'')+htmlConversa(v.mensagens)+
       '<div style="margin-top:14px"><a href="'+location.pathname+'?p='+v.id+'">Abrir a página completa</a></div>';
     if(!$("lOp"))return;
     $("lOp").querySelectorAll("button").forEach(b=>b.onclick=()=>{quer=b.dataset.v;tela()});ligaMotivos();
     $("lS").onclick=async()=>{if(quer==="recusada"&&!$("lTxt").value.trim()){$("lM").className="msg err";$("lM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
       $("lS").disabled=true;$("lM").className="msg";$("lM").textContent="Enviando…";
-      try{await rpc("vis_link_responder",{p_chave:chave,p_status:quer,p_texto:$("lTxt").value,p_hora:$("lHora")?$("lHora").value:null});
+      try{await rpc("vis_link_responder",{p_chave:chave,p_status:quer,p_texto:$("lTxt").value,p_hora:quer==="recusada"?altTxt("lA"):($("lHora")?$("lHora").value:null)});
         v=await rpc("vis_link_ver",{p_chave:chave});tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página'+(v.celular?'. Se quiser, mande também pelo seu WhatsApp:':'.')+'</span>')}
       catch(e){$("lM").className="msg err";$("lM").textContent=e.message;$("lS").disabled=false}};
   }
@@ -364,7 +370,7 @@ function htmlPedidos(){
       (p.tipo==="visita"&&p.status==="pendente"?'<div class="note">'+esc(DONO())+', consegue vir olhar?</div>':'')+
       (p.recado?'<div class="rc">'+esc(p.recado)+'</div>':'')+
       (p.status==="confirmada"?'<div class="rs">✅ <b>'+esc(p.respondido_por||DONO())+'</b> confirmou'+(p.hora_combinada?' · chega <b>'+esc(p.hora_combinada)+'</b>':'')+'</div>':'')+
-      (p.status==="recusada"?'<div class="rs">❌ <b>'+esc(p.respondido_por||DONO())+'</b> não vai conseguir'+(p.resposta?': <b>'+esc(p.resposta)+'</b>':'')+'</div>':'')+
+      (p.status==="recusada"?'<div class="rs">❌ <b>'+esc(p.respondido_por||DONO())+'</b> não vai conseguir'+(p.resposta?': <b>'+esc(p.resposta)+'</b>':'')+(p.alternativa?'<br>🕒 Consigo: <b>'+esc(p.alternativa)+'</b>':'')+'</div>':'')+
       (p.mensagens.length?'<div class="msgs">'+p.mensagens.map(m=>'<div class="m '+m.lado+'"><i>'+esc(m.quem||"")+' · '+quando(m.ts)+'</i>'+esc(m.texto)+'</div>').join("")+'</div>':'')+
       '<div class="acts">'+acoes(p,eq,meu)+'</div>'+
       (p.status!=="cancelada"?'<div class="rec"><input placeholder="Escrever recado…" data-rec="'+p.id+'" maxlength="1000"><button class="btn sm" data-a="rec" data-id="'+p.id+'">Enviar</button></div>':'')+
@@ -402,7 +408,7 @@ function textoWaDono(p){
 function textoWaPessoa(p){
   const nm=p.autor.split(" ")[0];
   const r=p.status==="confirmada"?"confirmado"+(p.hora_combinada?", chego "+p.hora_combinada:"")+".":p.status==="recusada"?"dessa vez não vou conseguir.":p.status==="ciente"?"ciente, obrigado.":p.status==="feita"?"visita feita, obrigado.":"";
-  return "Oi "+nm+", sobre "+fraseJs(p)+": "+r+(p.resposta?" "+p.resposta:"");
+  return "Oi "+nm+", sobre "+fraseJs(p)+": "+r+(p.resposta?" "+p.resposta:"")+(p.status==="recusada"&&p.alternativa?" Consigo: "+p.alternativa+".":"");
 }
 function barraSel(){
   $("selbar").classList.toggle("hidden",SEL.size===0);
@@ -438,12 +444,12 @@ function dlgResposta(p,st){
   abreDlg('<div class="dh"><h3>'+(ok?"✅ Confirmar visita":"❌ Não vou conseguir")+'</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db">'+
     '<div class="prev">'+esc(fraseJs(p))+'<div class="note">'+esc(p.autor)+'</div></div>'+
     (ok?'<div class="fld" style="margin-top:12px"><b>Horário que você chega (opcional)</b><div class="row"><input type="time" id="rHora"></div></div>':'')+
-    '<div class="fld" style="margin-top:12px"><b>'+(ok?"Recado (opcional)":"Justificativa (obrigatória, a Caliman vê)")+'</b>'+(ok?'':htmlMotivos("rTxt"))+'<textarea id="rTxt" rows="2" maxlength="1000" placeholder="'+(ok?"Ex.: deixa o carro ligado na tomada":"Ex.: estou em outra área hoje, pode ser quinta?")+'"></textarea></div>'+
+    '<div class="fld" style="margin-top:12px"><b>'+(ok?"Recado (opcional)":"Justificativa (obrigatória, a Caliman vê)")+'</b>'+(ok?'':htmlMotivos("rTxt"))+'<textarea id="rTxt" rows="2" maxlength="1000" placeholder="'+(ok?"Ex.: deixa o carro ligado na tomada":"Ex.: estou em outra área hoje, pode ser quinta?")+'"></textarea></div>'+(ok?'':htmlAlt("rA"))+
     '<div class="acts" style="justify-content:flex-end"><button class="btn" id="dC">Voltar</button><button class="btn '+(ok?"ok":"d")+'" id="dS">'+(ok?"Confirmar":"Enviar")+'</button></div><div class="msg" id="dM"></div></div>',true);
   $("dX").onclick=$("dC").onclick=fechaDlg;ligaMotivos();
   $("dS").onclick=async()=>{if(!ok&&!$("rTxt").value.trim()){$("dM").className="msg err";$("dM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
     $("dS").disabled=true;
-    try{await rpc("vis_responder",{p_token:TOKEN,p_id:p.id,p_status:st,p_texto:$("rTxt").value,p_hora:ok?$("rHora").value:null});
+    try{await rpc("vis_responder",{p_token:TOKEN,p_id:p.id,p_status:st,p_texto:$("rTxt").value,p_hora:ok?$("rHora").value:altTxt("rA")});
       await carregar();const np=D.propostas.find(x=>x.id===p.id)||p;
       if(np.celular){$("dlg").querySelector(".db").innerHTML='<div class="msg ok" style="font-size:15px">Resposta salva. '+esc(np.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página.</div>'+
         '<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(np.celular,textoWaPessoa(np))+'">Mandar também pelo seu WhatsApp</a><button class="btn" id="dF">Fechar</button></div>';$("dF").onclick=fechaDlg}
