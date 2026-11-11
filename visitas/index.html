@@ -362,13 +362,23 @@ function desenhar(){
 function htmlRotas(){
   const r=D.rotas;if(!r||!r.lista)return "";
   if(!r.vigiadas)return EQ()?'<div class="vazio" style="margin-bottom:10px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia (ADM, turno…). As que não subirem aparecem aqui para a Caliman.</div>':"";
-  const hc=r.coleta?new Date(r.coleta).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"—";
+  const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
+  const hc=hm(r.coleta), hp=hm(r.proxima);
+  const info='<div class="note" style="margin:-4px 0 8px">🕐 Os dados da TFleet chegam aqui <b>de hora em hora</b>: última atualização às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. '+
+    'Uma rota só aparece como "não subiu" 1 hora depois do horário em que costuma sair. Se acabou de passar, aguarde a próxima atualização.</div>';
   if(!r.coleta_ok)return '<h2 class="sec">Rotas de hoje</h2><div class="vazio">⚠️ Os dados da TFleet não chegam desde '+hc+'. Não dá para saber agora quais rotas subiram.</div>';
-  if(!r.lista.length)return "";
-  return '<h2 class="sec">⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span><span class="r note">dados da TFleet de '+hc+'</span></h2>'+
-    '<div class="note" style="margin:-4px 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
+  const T=r.todas||[], cnt=(g,sit)=>T.filter(x=>(x.grupo||"Outras")===g&&x.situacao===sit).length;
+  const grupos=[...new Set(T.map(x=>x.grupo||"Outras"))];
+  const resumo='<div class="agd" style="margin-bottom:8px">'+grupos.map(g=>'<div><b>'+esc(g)+'</b><span class="o" style="color:var(--grn)">✓ '+cnt(g,"subiu")+' subiram</span>'+
+    '<i>'+(cnt(g,"nao_subiu")?'<b style="color:#f59e0b">⚠ '+cnt(g,"nao_subiu")+' não subiram</b> · ':'')+cnt(g,"aguardando")+' no horário ainda</i></div>').join("")+'</div>';
+  const SIT={subiu:["✓ subiu","var(--grn)"],nao_subiu:["⚠ não subiu","#f59e0b"],aguardando:["aguardando horário","var(--mut)"]};
+  const todas='<details style="margin:6px 0 10px"><summary class="note" style="cursor:pointer">Ver todas as rotas de hoje ('+T.length+')</summary><div class="tblw"><table class="tbl" style="width:100%;font-size:14px">'+
+    T.map(x=>'<tr><td>'+esc(x.grupo||"")+'</td><td><b>'+esc(x.linha)+'</b> <span class="note">'+esc(x.tipo)+'</span></td><td>'+esc(x.hora)+'</td><td style="color:'+SIT[x.situacao][1]+'">'+SIT[x.situacao][0]+
+      (x.hoje_hora?' às '+esc(x.hoje_hora)+(x.hoje_frota?' · carro '+esc(x.hoje_frota):''):'')+'</td></tr>').join("")+'</table></div></details>';
+  return '<h2 class="sec">'+(r.lista.length?'⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span>':'🚌 Rotas de hoje')+'</h2>'+info+resumo+
+    (r.lista.length?'<div class="note" style="margin:0 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
     '<div class="pedmini">'+r.lista.map((x,i)=>'<div class="pm" data-rota="'+i+'" style="--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
-      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>';
+      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>':'')+todas;
 }
 function porCarro(){
   const m=new Map();
@@ -473,6 +483,7 @@ function acoes(p,eq,meu){
     }
     if(p.status!=="cancelada"&&p.status!=="feita")a+='<button class="btn sm" data-a="remarcar" data-id="'+p.id+'">📅 Remarcar</button>';
     if(p.status!=="pendente"&&p.status!=="cancelada")a+='<button class="btn sm" data-a="pendente" data-id="'+p.id+'">Desfazer resposta</button>';
+    a+='<button class="btn d sm" data-a="apagar" data-id="'+p.id+'">🗑 Apagar</button>';
     
   }else{
     if(meu&&["pendente","confirmada","recusada"].includes(p.status))a+='<button class="btn sm" data-a="remarcar" data-id="'+p.id+'">📅 Remarcar</button>';
@@ -521,6 +532,7 @@ async function acao(a,id,el){
     if(a==="cancelar"){if(!confirm("Cancelar este pedido?"))return;await rpc("vis_cancelar",{p_token:TOKEN,p_id:id});return carregar()}
     if(a==="confirmada"||a==="recusada")return dlgResposta(p,a);
     if(a==="remarcar")return dlgRemarcar(p);
+    if(a==="apagar"){if(!confirm("Apagar este pedido de vez? (some para todo mundo, junto com a conversa)"))return;await rpc("vis_apagar",{p_token:TOKEN,p_id:id});fechaDlg();return carregar()}
     el.disabled=true;await rpc("vis_responder",{p_token:TOKEN,p_id:id,p_status:a,p_texto:null,p_hora:null});await carregar();
   }catch(e){alert(e.message);el.disabled=false}
 }
