@@ -269,27 +269,31 @@ async function linkResposta(chave,quer){
   try{v=await rpc("vis_link_ver",{p_chave:chave});if(v.erro)throw new Error(v.erro)}catch(e){el.innerHTML='<h2>Visitas aos carros</h2><div class="msg err">'+esc(e.message)+'</div>';return}
   D={hoje:v.hoje,config:{nome_dono:v.nome_dono,agenda:[]}};
   const opc=v.tipo==="visita"?[["confirmada","✅ Consigo ir","ok"],["recusada","❌ Não consigo","d"]]:[["ciente","👍 Ciente","p"],["confirmada","✅ Vou passar lá","ok"]];
-  if(!opc.some(o=>o[0]===quer))quer=opc[0][0];
+  if(!opc.some(o=>o[0]===quer))quer=null;
+  let editar=v.status==="pendente";
   function tela(msg){
     const st=ST[v.status]||[v.status,"#94a3b8"];
     el.innerHTML='<h2>'+TIPO[v.tipo]+'</h2><div class="note">'+esc(v.autor)+' · '+quando(v.criado_em)+'</div>'+
       '<div class="prev" style="margin:12px 0;font-size:17px;font-weight:700">'+esc(fraseJs(v))+'</div>'+
       (v.recado?'<div class="ped" style="padding:8px 10px;margin-bottom:10px"><div class="rc" style="margin:0">'+esc(v.recado)+'</div></div>':'')+
       '<div style="margin-bottom:10px">Situação: <span class="chip '+v.status+'">'+st[0]+'</span>'+(v.status==="confirmada"&&v.hora_combinada?' · chega '+esc(v.hora_combinada):'')+(v.status==="recusada"&&v.resposta?' · '+esc(v.resposta):'')+(v.status==="recusada"&&v.alternativa?' · 🕒 consigo '+esc(v.alternativa):'')+'</div>'+
-      (v.status==="cancelada"?'<div class="msg err">A Caliman cancelou esse pedido.</div>':
+      (v.status==="cancelada"?'<div class="msg err">A Caliman cancelou esse pedido.</div>':!editar?'<button class="btn" id="lEd">Mudar minha resposta</button>':
       '<div class="fld"><b>Sua resposta</b><div class="opts" id="lOp">'+opc.map(o=>'<button data-v="'+o[0]+'" class="'+(quer===o[0]?"on":"")+'"'+(quer===o[0]&&o[0]==="recusada"?' style="background:#dc2626;border-color:#dc2626"':'')+'>'+o[1]+'</button>').join("")+'</div></div>'+
+      (!quer?'<div class="note">Escolha uma das opções acima.</div>':
       (quer==="confirmada"?'<div class="fld"><b>Que horas você chega? (opcional)</b><div class="row"><input type="time" id="lHora"></div></div>':'')+
       '<div class="fld"><b>'+(quer==="recusada"?"Justificativa (obrigatória, a Caliman vê)":"Recado (opcional)")+'</b>'+(quer==="recusada"?htmlMotivos("lTxt"):'')+'<textarea id="lTxt" rows="2" maxlength="1000"></textarea></div>'+(quer==="recusada"?htmlAlt("lA"):'')+
-      '<button class="btn '+(quer==="recusada"?"d":"p")+'" id="lS" style="width:100%;padding:12px;font-size:16px">Enviar resposta</button>')+
+      '<button class="btn '+(quer==="recusada"?"d":"p")+'" id="lS" style="width:100%;padding:12px;font-size:16px">Enviar resposta</button>'))+
       '<div class="msg" id="lM">'+(msg||"")+'</div>'+
-      (v.celular&&v.status!=="pendente"?'<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(v.celular,textoWaPessoa(v))+'">Mandar também pelo seu WhatsApp</a></div>':'')+htmlConversa(v.mensagens)+
+      htmlConversa(v.mensagens)+
       '<div style="margin-top:14px"><a href="'+location.pathname+'?p='+v.id+'">Abrir a página completa</a></div>';
+    if($("lEd"))$("lEd").onclick=()=>{editar=true;tela()};
     if(!$("lOp"))return;
-    $("lOp").querySelectorAll("button").forEach(b=>b.onclick=()=>{quer=b.dataset.v;tela()});ligaMotivos();
+    $("lOp").querySelectorAll("button").forEach(b=>b.onclick=()=>{quer=b.dataset.v;tela()});
+    if(!$("lS"))return;ligaMotivos();
     $("lS").onclick=async()=>{if(quer==="recusada"&&!$("lTxt").value.trim()){$("lM").className="msg err";$("lM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
       $("lS").disabled=true;$("lM").className="msg";$("lM").textContent="Enviando…";
       try{await rpc("vis_link_responder",{p_chave:chave,p_status:quer,p_texto:$("lTxt").value,p_hora:quer==="recusada"?altTxt("lA"):($("lHora")?$("lHora").value:null)});
-        v=await rpc("vis_link_ver",{p_chave:chave});tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página'+(v.celular?'. Se quiser, mande também pelo seu WhatsApp:':'.')+'</span>')}
+        v=await rpc("vis_link_ver",{p_chave:chave});editar=false;tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página'+'.</span>')}
       catch(e){$("lM").className="msg err";$("lM").textContent=e.message;$("lS").disabled=false}};
   }
   tela();
@@ -388,10 +392,10 @@ function acoes(p,eq,meu){
       a+='<button class="btn ok sm" data-a="feita" data-id="'+p.id+'">✔ Visitei</button><button class="btn d sm" data-a="recusada" data-id="'+p.id+'">Não vou conseguir mais</button>';
     }
     if(p.status!=="pendente"&&p.status!=="cancelada")a+='<button class="btn sm" data-a="pendente" data-id="'+p.id+'">Desfazer resposta</button>';
-    if(p.celular)a+='<a class="btn wa sm" target="_blank" rel="noopener" href="'+waLink(p.celular,textoWaPessoa(p))+'">WhatsApp '+esc(p.autor.split(" ")[0])+'</a>';
+    
   }else{
     if(meu&&(p.status==="pendente"||p.status==="confirmada"))a+='<button class="btn d sm" data-a="cancelar" data-id="'+p.id+'">Cancelar</button>';
-    if(D.config.whatsapp_dono&&p.status==="pendente")a+='<a class="btn wa sm" target="_blank" rel="noopener" href="'+waLink(D.config.whatsapp_dono,textoWaDono(p))+'">Lembrar no WhatsApp</a>';
+    
   }
   return a;
 }
@@ -452,7 +456,7 @@ function dlgResposta(p,st){
     try{await rpc("vis_responder",{p_token:TOKEN,p_id:p.id,p_status:st,p_texto:$("rTxt").value,p_hora:ok?$("rHora").value:altTxt("rA")});
       await carregar();const np=D.propostas.find(x=>x.id===p.id)||p;
       if(np.celular){$("dlg").querySelector(".db").innerHTML='<div class="msg ok" style="font-size:15px">Resposta salva. '+esc(np.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página.</div>'+
-        '<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(np.celular,textoWaPessoa(np))+'">Mandar também pelo seu WhatsApp</a><button class="btn" id="dF">Fechar</button></div>';$("dF").onclick=fechaDlg}
+        '<div class="acts"><button class="btn" id="dF">Fechar</button></div>';$("dF").onclick=fechaDlg}
       else fechaDlg();
     }catch(e){$("dM").className="msg err";$("dM").textContent=e.message;$("dS").disabled=false}};
 }
@@ -510,9 +514,9 @@ function dlgNovo(tipo){
     $("nS").disabled=true;$("nM").textContent="Enviando…";
     try{const id=await rpc("vis_propor",{p_token:TOKEN,p_dados:o});SEL.clear();await carregar();
       const p=D.propostas.find(x=>x.id===id);
-      $("nb").innerHTML='<div class="msg ok" style="font-size:16px">✅ Enviado! O '+esc(DONO())+(EQ()?"":" recebe por e-mail e")+' responde aqui na página.</div>'+
+      $("nb").innerHTML='<div class="msg ok" style="font-size:16px">✅ Enviado! O '+esc(DONO())+(EQ()?"":" recebe no WhatsApp e")+' responde por lá. A resposta chega no seu WhatsApp e aparece aqui na página.</div>'+
         '<div class="prev" style="margin-top:10px">'+esc(p?fraseJs(p):"")+'</div>'+
-        '<div class="acts">'+(!EQ()&&D.config.whatsapp_dono&&p?'<a class="btn wa" target="_blank" rel="noopener" href="'+waLink(D.config.whatsapp_dono,textoWaDono(p))+'">Mandar também no WhatsApp</a>':'')+
+        '<div class="acts">'+
         '<button class="btn" id="nF">Fechar</button></div>';$("nF").onclick=fechaDlg;
     }catch(e){$("nM").className="msg err";$("nM").textContent=e.message;$("nS").disabled=false}
   }
