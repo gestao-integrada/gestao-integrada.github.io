@@ -134,7 +134,7 @@ h2.sec .n{background:var(--grybg);border-radius:999px;padding:0 8px;font-size:12
       <li><b>Duas rotas</b>: o carro abriu uma rota, leu passageiros, fechou e abriu outra em menos de 1 h; os passageiros ficaram na rota errada. Se a 1ª abertura não leu ninguém, o motorista só corrigiu e não conta como erro.</li>
       <li><b>Dois carros</b>: o mesmo motorista aparece em 2 carros ao mesmo tempo (provável login de outro motorista).</li>
     </ol>
-    <p class="note">Clique na viagem para registrar a tratativa (motorista orientado, corrigida na TFleet ou estava certa) com a justificativa. Se a TFleet corrigir a viagem, ela some daqui sozinha na próxima coleta.</p>
+    <p class="note">Clique na viagem para registrar a tratativa (conversei com o motorista, orientei no DDS, orientação geral ou estava certa) com a justificativa e a evidência.</p>
   </details>
 </div>
 
@@ -146,7 +146,7 @@ const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
 const K_SESS="tf_solicitacoes", K_CENTRAL="tf_sessao";
 const REGRA={"1 SENTIDO":"Sentido","2 ROTA ESPECIAL":"Rota especial","3 REPETIDA":"Repetida","4 ROTA DUPLICADA":"Rota duplicada","5 DUAS ROTAS":"Duas rotas","6 DOIS CARROS":"Dois carros"};
 const GRAV={alta:0,media:1,verificar:2};
-const SIT={orientado:["Motorista orientado","c-ok"],corrigido:["Corrigida na TFleet","c-ok"],falso:["Estava certa","c-verificar"],aberto:["Em aberto","c-media"]};
+const SIT={orientado:["Motorista orientado","c-ok"],dds:["Orientado no DDS","c-ok"],geral:["Orientação geral","c-ok"],corrigido:["Tratada","c-ok"],falso:["Estava certa","c-verificar"],aberto:["Em aberto","c-media"]};
 let TOKEN=null,QUEM=null,DADOS=null,FILTRO={regra:null,mot:null,rota:null};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -212,7 +212,7 @@ function viagens(){
 }
 function filtrar(lista,ign){
   const q=$("fBusca").value.trim().toLowerCase(),g=$("fGrupo").value,s=$("fSit").value;
-  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!g||grupoDe(v)===g)&&(!s||(s==="tratada"?(v.sit==="orientado"||v.sit==="corrigido"):v.sit===s))
+  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!g||grupoDe(v)===g)&&(!s||(s==="tratada"?(v.sit!=="aberto"&&v.sit!=="falso"):v.sit===s))
     &&(ign==="regra"||!FILTRO.regra||v.regras.some(r=>r.regra===FILTRO.regra))
     &&(ign==="mot"||!FILTRO.mot||v.motorista===FILTRO.mot)&&(ign==="rota"||!FILTRO.rota||v.linha===FILTRO.rota));
 }
@@ -292,7 +292,7 @@ async function verEvid(id,alvo){try{const a=await rpc("abt_evidencia",{p_token:T
   else{const l=document.createElement("a");l.href=url;l.download=a.nome;document.body.appendChild(l);l.click();l.remove()}}catch(e){alert(e.message)}}
 function blocoEvid(v,eq,px){
   const ev=(v.regras[0].evid)||[];
-  return '<div style="margin-top:8px;font-weight:600">Evidência <span class="note" style="font-weight:400">(foto da conversa, print da TFleet corrigida ou PDF)</span></div>'+
+  return '<div style="margin-top:8px;font-weight:600">Evidência <span class="note" style="font-weight:400">(foto da conversa, da orientação ou lista de presença do DDS)</span></div>'+
     (ev.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">'+ev.map(e=>'<span style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:12px">📎 <a href="#" data-ev="'+e.id+'">'+esc(e.nome)+'</a> <span class="note">'+kbEv(e.tamanho)+(e.por?' · '+esc(e.por):'')+'</span>'+
       (eq?' <a href="#" data-evx="'+e.id+'" title="Apagar" style="color:#c0392b;text-decoration:none">×</a>':'')+'</span>').join("")+'</div>':'')+
     '<input type="file" id="'+px+'Arq" accept="image/*,application/pdf" multiple style="display:none">'+
@@ -311,7 +311,7 @@ function ligarEvid(v,px,raiz,depois){
 function tratar(id){
   const v=viagens().find(x=>x.viagem_id===id);if(!v)return;
   const r0=v.regras[0],cur=v.sit==="aberto"?"orientado":v.sit;
-  const ops=[["orientado","Conversei com o motorista","ele foi orientado a abrir certo"],["corrigido","Corrigido na TFleet","a viagem foi acertada no sistema"],["falso","Estava certa","não é erro (ex.: carro extra, troca de escala)"]];
+  const ops=[["orientado","Conversei com o motorista","orientei ele a abrir a viagem certa"],["dds","Orientei no DDS","assunto passado no DDS da equipe"],["geral","Orientação geral","orientação para todos os motoristas"],["falso","Estava certa","não é erro (ex.: carro extra, troca de escala)"]];
   $("dlg").innerHTML='<h2>Viagem '+dCurto(v.data)+' '+esc(v.hora)+' · carro '+esc(v.frota)+' <button class="btn sm" id="xF">✕ Fechar</button></h2>'
     +'<div><b>'+esc(nomeCurto(v.motorista))+'</b> · '+esc(v.linha)+' '+esc(v.tipo)+' · '+(v.ocupacao==null?"sem leitura":v.ocupacao+" passageiro(s)")+'</div>'
     +'<ul style="padding-left:18px">'+v.regras.map(r=>'<li style="margin:4px 0"><span class="chip c-'+r.gravidade+'">'+esc(REGRA[r.regra]||r.regra)+'</span> '+esc(r.problema)+'<div class="note">→ '+esc(r.sugestao)+'</div></li>').join("")+'</ul>'
@@ -326,7 +326,7 @@ function tratar(id){
   const pegaEvid=ligarEvid(v,"t",$("dlg"),carregar);
   const enviar=async(sit,obs)=>{msg("tMsg","Salvando…");
     try{const ev=sit==="aberto"?[]:await pegaEvid();
-      if((sit==="orientado"||sit==="corrigido")&&!ev.length&&!(r0.evid||[]).length)throw new Error("Anexe a evidência (foto da conversa, print da TFleet corrigida ou PDF).");
+      if((sit!=="aberto"&&sit!=="falso")&&!ev.length&&!(r0.evid||[]).length)throw new Error("Anexe a evidência (foto da conversa, da orientação ou lista de presença do DDS).");
       if(ev.length)msg("tMsg","Enviando evidência…");
       await rpc("abt_tratar",{p_token:TOKEN,p_viagem:id,p_situacao:sit,p_obs:obs,p_evid:ev});fechar();carregar()}catch(err){msg("tMsg",err.message,"err")}};
   $("tSalvar").onclick=()=>{const r=document.querySelector('input[name=tSit]:checked');enviar(r?r.value:"orientado",$("tObs").value)};

@@ -5,7 +5,7 @@
 (function(){
 const REGRA={"1 SENTIDO":"Sentido","2 ROTA ESPECIAL":"Rota especial","3 REPETIDA":"Repetida","4 ROTA DUPLICADA":"Rota duplicada","5 DUAS ROTAS":"Duas rotas","6 DOIS CARROS":"Dois carros"};
 const GRAV={alta:0,media:1,verificar:2};
-const SIT={orientado:["Motorista orientado","ab-ok"],corrigido:["Corrigida na TFleet","ab-ok"],falso:["Estava certa","ab-verificar"],aberto:["Em aberto","ab-media"]};
+const SIT={orientado:["Motorista orientado","ab-ok"],dds:["Orientado no DDS","ab-ok"],geral:["Orientação geral","ab-ok"],corrigido:["Tratada","ab-ok"],falso:["Estava certa","ab-verificar"],aberto:["Em aberto","ab-media"]};
 const hojeL=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
 const menos=(d,n)=>new Date(Date.parse(d+"T12:00:00Z")-n*864e5).toISOString().slice(0,10);
 const dm=s=>s?String(s).slice(8,10)+"/"+String(s).slice(5,7):"";
@@ -172,7 +172,7 @@ function montarAba(){
 function filtrar(lista,ign){
   const g=id=>document.getElementById(id).value;
   const q=g("abBusca").trim().toLowerCase(),gr=g("abGrupo"),s=g("abSit"),F=A.filtro;
-  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!gr||grupoDe(v)===gr)&&(!s||(s==="tratada"?(v.sit==="orientado"||v.sit==="corrigido"):v.sit===s))
+  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!gr||grupoDe(v)===gr)&&(!s||(s==="tratada"?(v.sit!=="aberto"&&v.sit!=="falso"):v.sit===s))
     &&(ign==="regra"||!F.regra||v.regras.some(r=>r.regra===F.regra))&&(ign==="mot"||!F.mot||v.motorista===F.mot)&&(ign==="rota"||!F.rota||v.linha===F.rota));
 }
 function desenharAba(){
@@ -247,7 +247,7 @@ async function verEvid(id,alvo){try{const a=await rpc("abt_evidencia",{p_token:T
   else{const l=document.createElement("a");l.href=url;l.download=a.nome;document.body.appendChild(l);l.click();l.remove()}}catch(e){alert(e.message)}}
 function blocoEvid(v,eq,px){
   const ev=(v.regras[0].evid)||[];
-  return '<div style="margin-top:8px;font-weight:600">Evidência <span class="note" style="font-weight:400">(foto da conversa, print da TFleet corrigida ou PDF)</span></div>'+
+  return '<div style="margin-top:8px;font-weight:600">Evidência <span class="note" style="font-weight:400">(foto da conversa, da orientação ou lista de presença do DDS)</span></div>'+
     (ev.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">'+ev.map(e=>'<span style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:12px">📎 <a href="#" data-ev="'+e.id+'">'+esc(e.nome)+'</a> <span class="note">'+kbEv(e.tamanho)+(e.por?' · '+esc(e.por):'')+'</span>'+
       (eq?' <a href="#" data-evx="'+e.id+'" title="Apagar" style="color:#c0392b;text-decoration:none">×</a>':'')+'</span>').join("")+'</div>':'')+
     '<input type="file" id="'+px+'Arq" accept="image/*,application/pdf" multiple style="display:none">'+
@@ -268,7 +268,7 @@ document.body.insertAdjacentHTML("beforeend",'<div id="abOv" class="ov hidden" s
 function tratar(id){
   const v=viagens(A.dados).find(x=>x.viagem_id===id);if(!v)return;
   const eq=EQ(), r0=v.regras[0], cur=v.sit==="aberto"?"orientado":v.sit;
-  const ops=[["orientado","Conversei com o motorista","ele foi orientado a abrir certo"],["corrigido","Corrigido na TFleet","a viagem foi acertada no sistema"]];
+  const ops=[["orientado","Conversei com o motorista","orientei ele a abrir a viagem certa"],["dds","Orientei no DDS","assunto passado no DDS da equipe"],["geral","Orientação geral","orientação para todos os motoristas"]];
   if(eq)ops.push(["falso","Estava certa","não é erro (ex.: carro extra, troca de escala)"]);
   const D2=document.getElementById("abDlg");
   D2.innerHTML='<h2 class="sec" style="margin-top:0;display:flex;gap:8px;align-items:center">Viagem '+dm(v.data)+' '+esc(v.hora)+' · carro '+esc(v.frota)+
@@ -291,7 +291,7 @@ function tratar(id){
   const pegaEvid=ligarEvid(v,"ab",D2,()=>{A.ontemEm=0;carregarAba()});
   const enviar=async(sit,obs)=>{const m=document.getElementById("abMsg");m.className="msg";m.textContent="Salvando…";
     try{const ev=sit==="aberto"?[]:await pegaEvid();
-      if((sit==="orientado"||sit==="corrigido")&&!ev.length&&!(r0.evid||[]).length)throw new Error("Anexe a evidência (foto da conversa, print da TFleet corrigida ou PDF).");
+      if((sit!=="aberto"&&sit!=="falso")&&!ev.length&&!(r0.evid||[]).length)throw new Error("Anexe a evidência (foto da conversa, da orientação ou lista de presença do DDS).");
       if(ev.length)m.textContent="Enviando evidência…";
       await rpc("abt_tratar",{p_token:TOKEN,p_viagem:id,p_situacao:sit,p_obs:obs,p_evid:ev});fechar();A.ontemEm=0;carregarAba()}
     catch(e){m.className="msg err";m.textContent=msgErro(e)}};

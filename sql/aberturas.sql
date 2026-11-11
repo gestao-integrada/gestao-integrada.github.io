@@ -69,7 +69,7 @@ create table if not exists public.abt_casos (
   detectado_em timestamptz not null default now(),
   avisado_em   timestamptz,
   cartao_id    bigint,
-  situacao     text not null default 'aberto' check (situacao in ('aberto','orientado','corrigido','falso')),
+  situacao     text not null default 'aberto' check (situacao in ('aberto','orientado','dds','geral','corrigido','falso')),
   obs          text,
   marcado_por  text,
   marcado_em   timestamptz,
@@ -92,7 +92,7 @@ create index if not exists abt_evidencias_viagem on public.abt_evidencias (viage
 alter table public.abt_evidencias enable row level security;
 revoke all on public.abt_evidencias from anon, authenticated;
 alter table public.abt_casos drop constraint if exists abt_casos_situacao_check;
-alter table public.abt_casos add constraint abt_casos_situacao_check check (situacao in ('aberto','orientado','corrigido','falso'));
+alter table public.abt_casos add constraint abt_casos_situacao_check check (situacao in ('aberto','orientado','dds','geral','corrigido','falso'));
 
 alter table public.abt_config    enable row level security;   -- sem policy: só pelas funções
 alter table public.abt_especiais enable row level security;
@@ -245,7 +245,7 @@ r5 as (                      -- mesmo carro, 2 rotas diferentes no mesmo sentido
          case when h.habitual = a.linha
               then 'Conferir a 2ª abertura (' || b.linha || '): o motorista costuma fazer ' || a.linha || '.'
               else 'Abriu a rota errada primeiro e corrigiu, mas os ' || a.ocupacao || ' passageiro(s) lidos ficaram contados em ' || a.linha
-                   || '. Acertar na TFleet (passar para ' || b.linha || ').' end
+                   || ' e não em ' || b.linha || '. Orientar o motorista a conferir a rota antes de começar a ler.' end
   from v a join v b on b.data_local = a.data_local and b.frota = a.frota and b.tipo = a.tipo and b.tipolinha = a.tipolinha
    and b.linha <> a.linha and b.saida_ts > a.saida_ts
    and b.saida_ts - a.saida_ts < make_interval(mins => (select min_duas_rotas from cfg))
@@ -446,7 +446,7 @@ create or replace function public.abt_marcar(p_token text, p_viagem text, p_regr
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := _abt_exige(p_token); d record;
 begin
-  if p_situacao not in ('aberto', 'orientado', 'corrigido', 'falso') then raise exception 'Situação inválida.'; end if;
+  if p_situacao not in ('aberto', 'orientado', 'dds', 'geral', 'falso') then raise exception 'Situação inválida.'; end if;
   if not exists (select 1 from abt_casos where viagem_id = p_viagem and regra = p_regra) then
     select * into d from abt_detectar((select data_local from viagens where id = p_viagem), (select data_local from viagens where id = p_viagem)) x
      where x.viagem_id = p_viagem and x.regra = p_regra;
@@ -486,13 +486,13 @@ language plpgsql security definer set search_path = public as $$
 declare q jsonb := _abt_quem(p_token); quem text := q->>'quem'; eq boolean := (q->>'eq')::boolean;
   d record; e jsonb; b bytea; n int := 0; nev int := 0; cid bigint; txt text; nomes text[] := '{}';
 begin
-  if p_situacao not in ('aberto', 'orientado', 'corrigido', 'falso') then raise exception 'Escolha o que foi feito.'; end if;
+  if p_situacao not in ('aberto', 'orientado', 'dds', 'geral', 'falso') then raise exception 'Escolha o que foi feito.'; end if;
   if p_situacao = 'falso' and not eq then raise exception 'Só a equipe marca que a viagem estava certa. Explique na justificativa.'; end if;
   if p_situacao <> 'aberto' and length(trim(coalesce(p_obs, ''))) < 5 then raise exception 'Escreva a justificativa (o que foi feito).'; end if;
   if jsonb_typeof(p_evid) = 'array' and jsonb_array_length(p_evid) > 5 then raise exception 'Mande no máximo 5 arquivos por vez.'; end if;
-  if p_situacao in ('orientado', 'corrigido') and coalesce(jsonb_array_length(case when jsonb_typeof(p_evid) = 'array' then p_evid end), 0) = 0
+  if p_situacao in ('orientado', 'dds', 'geral') and coalesce(jsonb_array_length(case when jsonb_typeof(p_evid) = 'array' then p_evid end), 0) = 0
      and not exists (select 1 from abt_evidencias where viagem_id = p_viagem) then
-    raise exception 'Anexe a evidência (foto da conversa, print da TFleet corrigida ou PDF).';
+    raise exception 'Anexe a evidência (foto da conversa, da orientação ou lista de presença do DDS).';
   end if;
   -- grava os casos da viagem que ainda não estão na tabela
   for d in select * from abt_detectar((select data_local from viagens where id = p_viagem), (select data_local from viagens where id = p_viagem)) x
@@ -528,7 +528,7 @@ begin
   if cid is not null and to_regclass('public.sol_historico') is not null then
     insert into sol_historico (cartao_id, quem, tipo, texto) values (cid, quem, 'comentario',
       'Tratativa da viagem ' || txt || ': ' ||
-      case p_situacao when 'orientado' then 'motorista orientado' when 'corrigido' then 'corrigida na TFleet'
+      case p_situacao when 'orientado' then 'motorista orientado' when 'dds' then 'orientado no DDS' when 'geral' then 'orientação geral aos motoristas'
                       when 'falso' then 'estava certa' else 'reaberta' end ||
       coalesce(' — ' || nullif(trim(p_obs), ''), '') ||
       case when nev > 0 then ' (evidência: ' || array_to_string(nomes, ', ') || ')' else '' end);
