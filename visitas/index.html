@@ -367,8 +367,8 @@ function htmlRotas(){
   if(!r.lista.length)return "";
   return '<h2 class="sec">⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span><span class="r note">dados da TFleet de '+hc+'</span></h2>'+
     '<div class="note" style="margin:-4px 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
-    '<div class="pedmini">'+r.lista.map(x=>'<div class="pm" style="cursor:default;--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
-      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span></div>').join("")+'</div>';
+    '<div class="pedmini">'+r.lista.map((x,i)=>'<div class="pm" data-rota="'+i+'" style="--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
+      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span><span class="q" style="color:var(--brand);font-weight:700">Toque para pedir visita →</span></div>').join("")+'</div>';
 }
 function porCarro(){
   const m=new Map();
@@ -509,6 +509,7 @@ function ligar(){
     const o=D.ocorrencias.find(x=>x.id===+b.dataset.oc), quer=b.dataset.v==="1";
     try{await rpc("vis_ocultar_salvar",{p_token:TOKEN,p_id:o.id,p_oculta:quer===!!o.oculta_auto?null:quer});await carregar()}catch(err){alert(err.message);b.disabled=false}});
   document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>acao(b.dataset.a,+b.dataset.id,b));
+  document.querySelectorAll("[data-rota]").forEach(b=>b.onclick=()=>dlgNovo("visita",D.rotas.lista[+b.dataset.rota]));
   document.querySelectorAll("[data-ped]").forEach(b=>b.onclick=()=>dlgPedido(+b.dataset.ped));
   document.querySelectorAll("[data-rec]").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();acao("rec",+i.dataset.rec,i)}});
 }
@@ -545,22 +546,25 @@ function dlgResposta(p,st){
     }catch(e){$("dM").className="msg err";$("dM").textContent=e.message;$("dS").disabled=false}};
 }
 
-function dlgNovo(tipo){
-  const F={tipo:tipo||"visita",tags:new Set(SEL),local:(D.config.locais||[])[0]||"",dia:null,ini:"",fim:"",recado:""};
+function dlgNovo(tipo,rota){
+  const F={tipo:tipo||"visita",tags:new Set(rota?(rota.frota?[rota.frota]:[]):SEL),local:(D.config.locais||[])[0]||"",dia:null,ini:"",fim:"",
+    recado:rota?"Rota "+rota.linha+" ("+rota.tipo+", costuma sair "+rota.hora+") não subiu hoje na TFleet.":""};
   const disp=proxDisp(6), dias=[D.hoje,dAdd(D.hoje,1)];disp.forEach(d=>{if(!dias.includes(d))dias.push(d)});dias.sort();
   if(F.tipo==="visita"){F.dia=disp.find(d=>d>=D.hoje)||D.hoje}else F.dia=D.hoje;
-  abreDlg('<div class="dh"><h3>'+(F.tags.size?"Pedido para "+(F.tags.size===1?"o carro ":"os carros ")+esc([...F.tags].join(", ")):"Outro aviso")+'</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db" id="nb"></div>');
+  abreDlg('<div class="dh"><h3>'+(rota?"Rota "+esc(rota.linha)+" não subiu":F.tags.size?"Pedido para "+(F.tags.size===1?"o carro ":"os carros ")+esc([...F.tags].join(", ")):"Outro aviso")+'</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db" id="nb"></div>');
   $("dX").onclick=fechaDlg;
-  if(!F.tags.size&&F.tipo!=="aviso")F.tipo="aviso";
+  if(!F.tags.size&&F.tipo!=="aviso"&&!rota)F.tipo="aviso";
   function render(){
     const agd=F.dia&&agDia(F.dia);
     const loc=D.config.locais||[];const locOutro=F.local&&!loc.includes(F.local);
     $("nb").innerHTML=
       '<div class="fld"><b>O que é?</b><div class="opts" id="oTipo">'+
         [["visita","🔧 Consegue vir olhar?","pedir para o "+DONO()+" vir"],["mudanca","🔁 Carro mudou","de lugar ou de turno"],["aviso","💬 Outro aviso","qualquer recado"]]
-        .map(x=>'<button data-v="'+x[0]+'" class="'+(F.tipo===x[0]?"on":"")+'"'+(x[0]!=="aviso"&&!F.tags.size?" disabled":"")+'>'+x[1]+'<span class="s">'+x[2]+'</span></button>').join("")+'</div>'+
-        (!F.tags.size?'<div class="note" style="margin-top:6px">Para pedir visita ou avisar mudança, feche aqui e toque nos carros na tela.</div>':'')+'</div>'+
-      (F.tags.size?'<div class="fld"><b>Carros</b><div class="prev">'+esc([...F.tags].sort((a,b)=>+a-+b).join(", "))+'</div></div>':'')+
+        .map(x=>'<button data-v="'+x[0]+'" class="'+(F.tipo===x[0]?"on":"")+'"'+(x[0]!=="aviso"&&!F.tags.size&&!rota?" disabled":"")+'>'+x[1]+'<span class="s">'+x[2]+'</span></button>').join("")+'</div>'+
+        (!F.tags.size&&!rota?'<div class="note" style="margin-top:6px">Para pedir visita ou avisar mudança, feche aqui e toque nos carros na tela.</div>':'')+'</div>'+
+      (rota?'<div class="fld"><b>Qual carro está hoje nessa rota?</b><div class="row"><input type="text" id="iCar" inputmode="numeric" maxlength="4" style="width:90px" value="'+esc([...F.tags][0]||"")+'"></div>'+
+        '<div class="note">'+(rota.frota?'Na última viagem registrada ('+dLbl(rota.ult_dia)+') foi o carro '+esc(rota.frota)+'. Se hoje é outro, troque aqui.':'Digite o número do carro.')+'</div></div>':
+      F.tags.size?'<div class="fld"><b>Carros</b><div class="prev">'+esc([...F.tags].sort((a,b)=>+a-+b).join(", "))+'</div></div>':'')+
       '<div class="fld"><b>Onde o carro vai estar</b><div class="opts" id="oLoc">'+
         loc.map(l=>'<button data-v="'+esc(l)+'" class="'+(F.local===l?"on":"")+'">'+esc(l)+'</button>').join("")+
         '<button data-v="__outro" class="'+(locOutro?"on":"")+'">Outro lugar</button></div>'+
@@ -582,10 +586,11 @@ function dlgNovo(tipo){
     $("oDia").querySelectorAll("button").forEach(b=>b.onclick=()=>{guardar();F.dia=b.dataset.v;render()});
     $("iDia").onchange=()=>{guardar();if($("iDia").value)F.dia=$("iDia").value;render()};
     $("oHr").querySelectorAll("button").forEach(b=>b.onclick=()=>{$("iIni").value=b.dataset.i;$("iFim").value=b.dataset.f;guardar();prev()});
-    ["iIni","iFim","iRec","iLoc"].forEach(i=>{if($(i))$(i).oninput=()=>{guardar();prev()}});
+    ["iIni","iFim","iRec","iLoc","iCar"].forEach(i=>{if($(i))$(i).oninput=()=>{guardar();prev()}});
     $("nC").onclick=fechaDlg;$("nS").onclick=enviar;
   }
-  function guardar(){F.ini=$("iIni")?$("iIni").value:F.ini;F.fim=$("iFim")?$("iFim").value:F.fim;F.recado=$("iRec")?$("iRec").value:F.recado;
+  function guardar(){if($("iCar")){const c=$("iCar").value.replace(/\D/g,"");F.tags=new Set(c?[c.padStart(2,"0")]:[])}
+    F.ini=$("iIni")?$("iIni").value:F.ini;F.fim=$("iFim")?$("iFim").value:F.fim;F.recado=$("iRec")?$("iRec").value:F.recado;
     if($("iLoc"))F.local=$("iLoc").value.trim()||"__outro"}
   function obj(){return {tipo:F.tipo,tags:[...F.tags].sort((a,b)=>+a-+b),local:F.local==="__outro"?"":F.local,dia:F.dia,hora_ini:F.ini,hora_fim:F.fim,recado:F.recado.trim()}}
   function prev(){const o=obj();const p=Object.assign({},o,{hora_ini:o.hora_ini||null,hora_fim:o.hora_fim||null});
