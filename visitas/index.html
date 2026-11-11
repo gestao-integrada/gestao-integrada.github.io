@@ -356,8 +356,8 @@ function desenhar(){
   $("fxPend").textContent="⏳ "+pend.length+(pend.length===1?" pedido aguardando sua resposta":" pedidos aguardando sua resposta")+" — toque para ver";
   $("fxPend").onclick=()=>{FILTRO="pendentes";desenhar();$("secPed").scrollIntoView({behavior:"smooth"})};
   document.title=(eq&&pend.length?"("+pend.length+") ":"")+"Visitas aos carros";
-  const blocoCarros=htmlCarros(), blocoPed=htmlPedidos(), blocoRotas=htmlRotas();
-  $("blocos").innerHTML=eq?blocoPed+blocoCarros+blocoRotas:blocoCarros+blocoRotas+blocoPed;
+  const blocoCarros=htmlCarros(), blocoPed=htmlPedidos(), blocoRotas=htmlRotas(), blocoAbt=window.htmlAberturas?htmlAberturas():"";
+  $("blocos").innerHTML=eq?blocoPed+blocoCarros+blocoAbt+blocoRotas:blocoCarros+blocoAbt+blocoRotas+blocoPed;
   ligar();
   $("fab").classList.toggle("hidden",SEL.size>0);
   barraSel();
@@ -730,5 +730,6 @@ function avisarNovos(){
 
 iniciar();
 </script>
+<script src="aberturas.js"></script>
 </body>
 </html>

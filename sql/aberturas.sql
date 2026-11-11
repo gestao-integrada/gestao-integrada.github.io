@@ -347,28 +347,49 @@ begin
 end $$;
 revoke execute on function public._abt_exige(text) from public, anon, authenticated;
 
-create or replace function public.abt_painel(p_token text, p_de date default null, p_ate date default null) returns json
-language plpgsql security definer set search_path = public as $$
-declare q jsonb := _abt_exige(p_token); de date := coalesce(p_de, _abt_hoje() - 6); ate date := coalesce(p_ate, _abt_hoje());
+-- dados do painel (usado pelo painel /aberturas/ e pela página Visitas aos carros)
+-- p_caliman = true: esconde os casos marcados "estava certa" e os e-mails dos ajustes
+create or replace function public._abt_dados(de date, ate date, p_caliman boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
 begin
   if ate - de > 62 then raise exception 'Escolha um período de até 2 meses.'; end if;
-  return json_build_object(
-    'quem', q, 'de', de, 'ate', ate,
-    'casos', (select coalesce(json_agg(json_build_object(
+  return jsonb_build_object(
+    'de', de, 'ate', ate, 'hoje', _abt_hoje(),
+    'casos', (select coalesce(jsonb_agg(jsonb_build_object(
         'viagem_id', d.viagem_id, 'regra', d.regra, 'gravidade', d.gravidade, 'data', d.data_local, 'hora', to_char(d.hora, 'HH24:MI'),
         'frota', d.frota, 'motorista', d.motorista, 'linha', d.linha, 'tipo', d.tipo, 'tipolinha', d.tipolinha,
         'ocupacao', d.ocupacao, 'problema', d.problema, 'sugestao', d.sugestao,
         'situacao', coalesce(c.situacao, 'aberto'), 'obs', c.obs, 'marcado_por', c.marcado_por,
-        'avisado_em', c.avisado_em, 'cartao_id', c.cartao_id) order by d.data_local desc, d.hora desc), '[]'::json)
-      from abt_detectar(de, ate) d left join abt_casos c on c.viagem_id = d.viagem_id and c.regra = d.regra),
+        'avisado_em', c.avisado_em, 'cartao_id', c.cartao_id) order by d.data_local desc, d.hora desc), '[]'::jsonb)
+      from abt_detectar(de, ate) d left join abt_casos c on c.viagem_id = d.viagem_id and c.regra = d.regra
+      where not (p_caliman and coalesce(c.situacao, 'aberto') = 'falso')),
     'viagens', (select count(*) from viagens where data_local between de and ate),
     'coleta', (select max(coletado_em) from viagens),
-    'demanda', (select json_build_object('id', s.id, 'status', s.status, 'prazo', s.prazo, 'responsavel', s.responsavel,
+    'demanda', (select jsonb_build_object('id', s.id, 'status', s.status, 'prazo', s.prazo, 'responsavel', s.responsavel,
                   'link', _sol_link(s)) from sol_cartoes s where s.criado_por = 'Robô aberturas' order by s.id desc limit 1),
-    'config', (select json_build_object('ativo', ativo, 'fornecedor', fornecedor, 'emails', emails, 'emails_cc', emails_cc,
-                  'hora_aviso', hora_aviso, 'ultimo_envio', ultimo_envio,
-                  'especiais', (select coalesce(json_agg(e order by e.id), '[]'::json) from abt_especiais e))
+    'config', (select jsonb_build_object('ativo', ativo, 'fornecedor', fornecedor, 'hora_aviso', hora_aviso, 'ultimo_envio', ultimo_envio,
+                  'especiais', (select coalesce(jsonb_agg(to_jsonb(e) order by e.id), '[]'::jsonb) from abt_especiais e))
+                  || case when p_caliman then '{}'::jsonb else jsonb_build_object('emails', emails, 'emails_cc', emails_cc) end
                from abt_config where id = 1));
+end $$;
+revoke execute on function public._abt_dados(date, date, boolean) from public, anon, authenticated;
+
+create or replace function public.abt_painel(p_token text, p_de date default null, p_ate date default null) returns json
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := _abt_exige(p_token);
+begin
+  return (jsonb_build_object('quem', q) || _abt_dados(coalesce(p_de, _abt_hoje() - 6), coalesce(p_ate, _abt_hoje())))::json;
+end $$;
+
+-- página Visitas aos carros: Caliman (celular/matrícula) e equipe (senha do Demandas) veem; só a equipe marca
+create or replace function public.abt_visitas(p_token text, p_de date default null, p_ate date default null) returns json
+language plpgsql security definer set search_path = public as $$
+declare q jsonb;
+begin
+  if to_regprocedure('public._vis_exige(text,text)') is null then raise exception 'Página Visitas não instalada.'; end if;
+  execute 'select public._vis_exige($1, null)' into q using p_token;
+  return (jsonb_build_object('quem', q) || _abt_dados(coalesce(p_de, _abt_hoje() - 6), coalesce(p_ate, _abt_hoje()),
+          q->>'tipo' <> 'equipe'))::json;
 end $$;
 
 -- marcar um caso: corrigido (a Caliman/TFleet ajustou) · falso (estava certo, ex. carro extra) · aberto (desfazer)
@@ -422,7 +443,7 @@ begin
   return abt_rodar(3, true);
 end $$;
 
-grant execute on function public.abt_painel(text, date, date), public.abt_marcar(text, text, text, text, text),
+grant execute on function public.abt_painel(text, date, date), public.abt_visitas(text, date, date), public.abt_marcar(text, text, text, text, text),
   public.abt_config_salvar(text, jsonb), public.abt_enviar_agora(text) to anon, authenticated;
 
 -- ---------------------------------------------------------------- agendamento (pg_cron): de hora em hora, aos 20 min
