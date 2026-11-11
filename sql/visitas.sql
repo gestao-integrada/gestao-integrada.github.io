@@ -324,9 +324,9 @@ begin
   select count(*) into n from vis_rotas_vigiadas;
   select max(coletado_em) into ult from viagens;
   select coalesce(jsonb_agg(jsonb_build_object('linha', w.linha, 'tipo', w.tipo, 'hora', to_char(w.hora, 'HH24:MI'), 'grupo', w.grupo,
-           'frota', u.frota, 'motorista', u.motorista) order by w.hora, w.linha), '[]'::jsonb) into r
+           'frota', u.frota, 'motorista', u.motorista, 'ult_dia', u.data_local, 'ult_hora', to_char(u.hora_saida, 'HH24:MI')) order by w.hora, w.linha), '[]'::jsonb) into r
     from vis_rotas_vigiadas w
-    left join lateral (select v.frota, v.motorista from viagens v
+    left join lateral (select v.frota, v.motorista, v.data_local, v.hora_saida from viagens v
                         where v.linha = w.linha and upper(v.tipo) = w.tipo and v.data_local >= hoje - 14 and v.data_local < hoje
                           and public._vis_prev(v.tipo, v.bruto, v.hora_saida) = w.prev
                         order by v.data_local desc, v.hora_saida desc limit 1) u on true
