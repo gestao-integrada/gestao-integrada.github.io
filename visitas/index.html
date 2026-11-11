@@ -368,7 +368,7 @@ function htmlRotas(){
   return '<h2 class="sec">⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span><span class="r note">dados da TFleet de '+hc+'</span></h2>'+
     '<div class="note" style="margin:-4px 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
     '<div class="pedmini">'+r.lista.map(x=>'<div class="pm" style="cursor:default;--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
-      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span></div>').join("")+'</div>';
+      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.ult_dia?'Última viagem registrada: '+dLbl(x.ult_dia)+(x.ult_hora?' às '+esc(x.ult_hora):'')+'<br>':'')+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span></div>').join("")+'</div>';
 }
 function porCarro(){
   const m=new Map();
