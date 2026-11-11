@@ -370,10 +370,9 @@ function htmlRotas(){
   const hm=t=>t?new Date(t).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
   const hc=hm(r.coleta), hp=hm(r.proxima);
   const dm=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7):"";
-  const ontem=r.modo==="ontem";
-  let info='🕐 TFleet atualiza de hora em hora · última às <b>'+hc+'</b>, próxima por volta das <b>'+hp+'</b>. '+
-    (ontem?'As viagens de hoje ainda não chegaram da TFleet, então a conferência é de <b>ontem ('+dm(r.dia)+')</b>: aparece a ida que não subiu ontem nem hoje. Quando as de hoje chegarem, muda sozinho para hoje.':
-     'Só entra aqui a ida que já passou do horário previsto e não veio na atualização.'+(r.aguardando?' '+r.aguardando+' ida'+(r.aguardando>1?'s':'')+' ainda no prazo.':''));
+  const ontem=true;
+  let info='🕐 Conferência de <b>'+dm(r.dia)+'</b> (dia anterior): aparece a ida vigiada que não abriu nesse dia. Ao lado, se ela já abriu hoje. TFleet atualiza de hora em hora · última às <b>'+hc+'</b>.';
+  if(r.coleta_ok&&!r.viagens_dia)info='⚠️ Ainda não chegou nenhuma viagem de '+dm(r.dia)+' da TFleet — a lista pode estar cheia por isso. Última atualização às <b>'+hc+'</b>.';
   if(!r.coleta_ok)info='⚠️ A atualização da TFleet não acontece desde as <b>'+hc+'</b>. A lista vale só até esse horário.';
   const L=r.lista;
   const grupos=[...new Set(L.map(x=>x.grupo))];if(ROTA_G&&!grupos.includes(ROTA_G))ROTA_G="";
@@ -384,6 +383,7 @@ function htmlRotas(){
     (ver.length?'<div class="note" style="margin:0 0 6px">Peça ao motorista para sincronizar a viagem no app ou ligar o celular. Toque na rota para pedir visita.</div>'+
       '<ul class="rbul">'+ver.map(x=>'<li data-rota="'+r.lista.indexOf(x)+'"><b>'+esc(x.linha)+'</b> <span class="note">prev. '+esc(x.prev||x.hora)+(grupos.length>1?' · '+esc(x.grupo):'')+'</span>'+
         (x.dias_sem>=2?' <span class="chip alta">não sobe há '+x.dias_sem+' dias</span>':'')+
+        (x.hoje_hora?' <span class="chip confirmada">abriu hoje '+esc(x.hoje_hora)+(x.hoje_frota?' · carro '+esc(x.hoje_frota):'')+'</span>':' <span class="chip pendente">hoje: ainda não</span>')+
         '<div class="note rult">'+(x.ult_dia?'últ. '+dm(x.ult_dia)+' '+esc(x.ult_hora||'')+' · carro <b>'+esc(x.frota||'?')+'</b> · '+esc(x.motorista||'motorista não informado'):'sem viagem nos últimos 30 dias')+'</div></li>').join("")+'</ul>':
       '<div class="note" style="margin-bottom:12px">✓ Nenhuma ida atrasada agora.</div>');
 }

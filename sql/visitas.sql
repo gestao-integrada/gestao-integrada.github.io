@@ -342,57 +342,51 @@ end $$;
 create or replace function public._vis_lnorm(p text) returns text
 language sql immutable as $$ select upper(regexp_replace(trim(coalesce(p, '')), '\s+', ' ', 'g')) $$;
 
--- rotas vigiadas (só IDA) que NÃO subiram.
--- Dia conferido: HOJE quando a TFleet já trouxe viagens de hoje; senão ONTEM (D-1), porque a TFleet
--- às vezes só libera as viagens do dia depois. Muda sozinho para hoje quando as de hoje chegarem.
--- Hoje: prazo de cada uma = horário previsto de chegada (ex.: 07:40) + 20 min; sem previsto, saída + 1 h;
---       só conta se a ÚLTIMA atualização da TFleet já foi depois do prazo e a viagem não veio.
--- D-1:  conta a que não veio ontem E também não veio hoje.
+-- rotas vigiadas (só IDA) que NÃO subiram no dia anterior (D-1), porque a TFleet só traz o dia completo depois.
+-- Dia conferido por rota: "uteis" = último dia útil antes de hoje (segunda confere sexta); "todos" = ontem;
+-- "fds" = último sábado/domingo. Para cada uma mostra também se já abriu HOJE (para conferir).
 -- A viagem vale para a rota se for a mesma linha+sentido e o mesmo previsto, ou se o horário dela
 -- for mais perto dessa rota do que de outra rota vigiada da mesma linha (ex.: 1º e 2º turno).
 create or replace function public._vis_rotas_pendentes() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
-declare hoje date := public._vis_hoje(); dref date; modo text; fds boolean;
-        ult timestamptz; ult_l timestamp; r jsonb; n int; nhoje int; nref int; naguarda int;
+declare hoje date := public._vis_hoje(); k int := extract(isodow from public._vis_hoje());
+        d_ut date; d_fds date; d_todos date; ult timestamptz; r jsonb; n int; nhoje int; nont int;
 begin
   if to_regclass('public.viagens') is null then return null; end if;
+  d_todos := hoje - 1;
+  d_ut := hoje - case k when 1 then 3 when 7 then 2 else 1 end;
+  d_fds := case when k = 7 then hoje - 1 else hoje - k end;          -- domingo -> sábado; seg..sáb -> domingo anterior
   select count(*) into n from vis_rotas_vigiadas where tipo = 'IDA';
   select max(coletado_em) into ult from viagens;
-  ult_l := ult at time zone 'America/Belem';
   select count(*) into nhoje from viagens where data_local = hoje and upper(tipo) = 'IDA';
-  -- hoje só vale quando já chegou um pedaço razoável das idas de hoje (evita 1 viagem solta virar a lista toda)
-  if nhoje >= greatest(3, ceil(n * 0.3)) then modo := 'hoje'; dref := hoje; else modo := 'ontem'; dref := hoje - 1; end if;
-  fds := extract(isodow from dref) in (6, 7);
-  select count(*) into nref from viagens where data_local = dref and upper(tipo) = 'IDA';
+  select count(*) into nont from viagens where data_local = d_ut and upper(tipo) = 'IDA';
   with w as (
-    select w.*, case when w.prev ~ '^\d{1,2}:\d{2}$' and abs(extract(epoch from w.prev::time - w.hora)) < 4 * 3600
-                     then greatest(w.prev::time, w.hora) + interval '20 min' else w.hora + interval '60 min' end as prazo
-      from vis_rotas_vigiadas w
-     where w.tipo = 'IDA' and (w.dias = 'todos' or (w.dias = 'uteis' and not fds) or (w.dias = 'fds' and fds))
-       and w.hora < time '22:30'),
-  pend as (
-    select w.* from w
-     where not exists (select 1 from viagens t
-                        where t.data_local in (dref, hoje) and public._vis_lnorm(t.linha) = public._vis_lnorm(w.linha) and upper(t.tipo) = 'IDA'
-                          and (public._vis_prev(t.tipo, t.bruto, t.hora_saida) = w.prev
-                               or w.id = (select w2.id from vis_rotas_vigiadas w2
-                                           where public._vis_lnorm(w2.linha) = public._vis_lnorm(w.linha) and w2.tipo = 'IDA'
-                                           order by abs(extract(epoch from t.hora_saida - w2.hora)), w2.id limit 1))))
-  select coalesce(jsonb_agg(x order by x->>'hora', x->>'linha') filter (where vencida), '[]'::jsonb),
-         count(*) filter (where not vencida) into r, naguarda
-    from (select ult_l is not null and (ult_l::date > dref or (ult_l::date = dref and ult_l::time > pend.prazo)) as vencida,
-                 jsonb_build_object('linha', pend.linha, 'tipo', pend.tipo, 'hora', to_char(pend.hora, 'HH24:MI'), 'prev', pend.prev,
-                   'grupo', coalesce(pend.grupo, 'Outras'), 'frota', u.frota, 'motorista', u.motorista, 'ult_dia', u.data_local,
-                   'ult_hora', to_char(u.hora_saida, 'HH24:MI'),
-                   'dias_sem', case when u.data_local is null then null else hoje - u.data_local end) as x
-            from pend
-            left join lateral (select v.frota, v.motorista, v.data_local, v.hora_saida from viagens v
-                                where public._vis_lnorm(v.linha) = public._vis_lnorm(pend.linha) and upper(v.tipo) = 'IDA'
-                                  and v.data_local >= hoje - 30 and v.data_local < dref
-                                order by (public._vis_prev(v.tipo, v.bruto, v.hora_saida) = pend.prev) desc,
-                                         v.data_local desc, abs(extract(epoch from v.hora_saida - pend.hora)) limit 1) u on true) z;
-  return jsonb_build_object('lista', r, 'vigiadas', n, 'viagens_hoje', nhoje, 'viagens_dia', nref, 'modo', modo, 'dia', dref,
-    'aguardando', naguarda, 'coleta', ult, 'proxima', ult + interval '1 hour', 'coleta_ok', ult > now() - interval '2 hours');
+    select w.*, case w.dias when 'todos' then d_todos when 'fds' then d_fds else d_ut end as dref
+      from vis_rotas_vigiadas w where w.tipo = 'IDA'),
+  m as (   -- viagens de IDA casadas com cada rota vigiada (d_ref até hoje)
+    select w.id, t.data_local, t.hora_saida, t.frota, t.motorista
+      from w join viagens t on t.data_local >= w.dref and t.data_local <= hoje and upper(t.tipo) = 'IDA'
+                           and public._vis_lnorm(t.linha) = public._vis_lnorm(w.linha)
+     where public._vis_prev(t.tipo, t.bruto, t.hora_saida) = w.prev
+        or w.id = (select w2.id from vis_rotas_vigiadas w2
+                    where public._vis_lnorm(w2.linha) = public._vis_lnorm(w.linha) and w2.tipo = 'IDA'
+                    order by abs(extract(epoch from t.hora_saida - w2.hora)), w2.id limit 1))
+  select coalesce(jsonb_agg(x order by x->>'grupo', x->>'hora', x->>'linha'), '[]'::jsonb) into r from (
+    select jsonb_build_object('linha', w.linha, 'tipo', w.tipo, 'hora', to_char(w.hora, 'HH24:MI'), 'prev', w.prev,
+             'grupo', coalesce(w.grupo, 'Outras'), 'dia_ref', w.dref,
+             'frota', u.frota, 'motorista', u.motorista, 'ult_dia', u.data_local, 'ult_hora', to_char(u.hora_saida, 'HH24:MI'),
+             'dias_sem', case when u.data_local is null then null else hoje - u.data_local end,
+             'hoje_hora', (select to_char(min(m.hora_saida), 'HH24:MI') from m where m.id = w.id and m.data_local = hoje),
+             'hoje_frota', (select m.frota from m where m.id = w.id and m.data_local = hoje order by m.hora_saida limit 1)) as x
+      from w
+      left join lateral (select v.frota, v.motorista, v.data_local, v.hora_saida from viagens v
+                          where public._vis_lnorm(v.linha) = public._vis_lnorm(w.linha) and upper(v.tipo) = 'IDA'
+                            and v.data_local >= hoje - 30 and v.data_local < w.dref
+                          order by (public._vis_prev(v.tipo, v.bruto, v.hora_saida) = w.prev) desc,
+                                   v.data_local desc, abs(extract(epoch from v.hora_saida - w.hora)) limit 1) u on true
+     where not exists (select 1 from m where m.id = w.id and m.data_local = w.dref)) z;
+  return jsonb_build_object('lista', r, 'vigiadas', n, 'viagens_hoje', nhoje, 'viagens_dia', nont, 'modo', 'ontem', 'dia', d_ut,
+    'coleta', ult, 'proxima', ult + interval '1 hour', 'coleta_ok', ult > now() - interval '2 hours');
 end $$;
 revoke execute on function public._vis_rotas_pendentes() from public, anon, authenticated;
 revoke execute on function public._vis_lnorm(text) from public, anon, authenticated;
