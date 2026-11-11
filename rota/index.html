@@ -279,10 +279,22 @@ function iniciarGps() {
   if (MODO === "acompanhar") return acompanhar();
   if (SIM) return simular();
   if (!("geolocation" in navigator)) { $("pProx").textContent = "Este aparelho não tem GPS no navegador."; return; }
-  navigator.geolocation.watchPosition(
-    pos => novaPosicao(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0, pos.coords.speed, pos.timestamp),
-    err => { $("pGps").textContent = "GPS: " + (err.code === 1 ? "permissão negada" : "sem sinal"); },
-    { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  let watchId = null, tentativa = null;
+  const ligar = () => {
+    if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(
+      pos => novaPosicao(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0, pos.coords.speed, pos.timestamp),
+      err => {
+        $("pGps").textContent = "GPS: " + (err.code === 1 ? "sem permissão" : "procurando sinal…");
+        if (err.code === 1) {
+          $("pProx").innerHTML = "O app está sem permissão de localização.<br><small>Android → Configurações → Apps → Rota do Ônibus → Permissões → Localização → <b>Permitir durante o uso</b> e <b>Usar localização precisa</b>. Depois volte aqui.</small>";
+          clearTimeout(tentativa); tentativa = setTimeout(ligar, 8000);
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  };
+  window.gpsLiberado = ligar;
+  ligar();
   setInterval(() => atualizarPainel(fixes[fixes.length - 1]), 15000);
 }
 /* simulação: percorre o traçado a 35 km/h (bairro) e 70 km/h (estrada), acelerado SIM vezes, com GPS a cada 10 s */
