@@ -25,6 +25,8 @@ create table if not exists public.vis_pessoas (            -- quem da Caliman en
   ultimo_acesso timestamptz
 );
 
+alter table public.vis_pessoas add column if not exists matricula text;
+
 create table if not exists public.vis_sessoes (
   token      text primary key,
   pessoa_id  bigint not null references public.vis_pessoas(id) on delete cascade,
@@ -199,6 +201,16 @@ language sql security definer set search_path = public as $$
 $$;
 
 revoke execute on function public._vis_oculta(bigint, text) from public, anon, authenticated;
+-- aviso para a pessoa da Caliman: WhatsApp (celular do cadastro, pelo robô da TV Box) e e-mail se tiver
+alter table public.vis_avisos add column if not exists numero text;
+create or replace function public._vis_avisar_pessoa(v public.vis_propostas, p_assunto text, p_texto text) returns void
+language sql security definer set search_path = public as $$
+  insert into vis_avisos (proposta_id, para, email, numero, assunto, texto)
+  select v.id, 'pessoa', pe.email, pe.celular, left(p_assunto, 200), p_texto
+  from vis_pessoas pe where pe.id = v.pessoa_id and pe.ativo;
+$$;
+revoke execute on function public._vis_avisar_pessoa(public.vis_propostas, text, text) from public, anon, authenticated;
+
 revoke execute on function public._vis_quem(text), public._vis_exige(text, text),
   public._vis_avisar(bigint, text, text, text, text), public._vis_json(public.vis_propostas, boolean)
   from public, anon, authenticated;
@@ -272,7 +284,7 @@ begin
     'propostas', coalesce((select jsonb_agg(public._vis_json(v, eq) order by v.dia desc, v.id desc)
                  from vis_propostas v
                  where v.dia >= public._vis_hoje() - 30 or v.status = 'pendente'), '[]'::jsonb),
-    'pessoas', case when eq then coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nome', p.nome, 'celular', p.celular,
+    'pessoas', case when eq then coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'nome', p.nome, 'celular', p.celular, 'matricula', p.matricula,
                  'empresa', p.empresa, 'email', p.email, 'ativo', p.ativo, 'ultimo_acesso', p.ultimo_acesso) order by p.ativo desc, p.nome)
                  from vis_pessoas p), '[]'::jsonb) end);
 end $$;
@@ -348,11 +360,8 @@ begin
     perform public._vis_avisar(v.id, 'dono', null, '[Recado] ' || (q->>'nome') || ' sobre: ' || public._vis_frase(v),
       (q->>'nome') || ' escreveu:' || chr(10) || trim(p_texto) || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
   else
-    select email into em from vis_pessoas where id = v.pessoa_id and email is not null;
-    if em is not null then
-      perform public._vis_avisar(v.id, 'pessoa', em, 'Recado de ' || (q->>'nome') || ': ' || public._vis_frase(v),
-        (q->>'nome') || ' escreveu:' || chr(10) || trim(p_texto) || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
-    end if;
+    perform public._vis_avisar_pessoa(v, 'Recado de ' || (q->>'nome') || ': ' || public._vis_frase(v),
+      '💬 ' || (q->>'nome') || ' escreveu: ' || trim(p_texto) || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
   end if;
   return 'ok';
 end $$;
@@ -375,11 +384,11 @@ begin
                        when 'feita' then 'Visita feita' else 'Voltou para pendente' end;
   insert into vis_mensagens (proposta_id, quem, lado, texto)
     values (p_id, q->>'nome', 'equipe', txt || coalesce(': ' || v.resposta, '.'));
-  select email into em from vis_pessoas where id = v.pessoa_id and email is not null;
-  if em is not null and p_status in ('confirmada', 'recusada') then
-    perform public._vis_avisar(v.id, 'pessoa', em,
-      (case p_status when 'confirmada' then 'Confirmado: ' else 'Não vai dar: ' end) || public._vis_frase(v),
-      (q->>'nome') || ' respondeu: ' || txt || coalesce(': ' || v.resposta, '.') || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
+  if p_status in ('confirmada', 'recusada', 'ciente') then
+    perform public._vis_avisar_pessoa(v,
+      (case p_status when 'confirmada' then 'Confirmado: ' when 'ciente' then 'Ciente: ' else 'Não vai dar: ' end) || public._vis_frase(v),
+      (case p_status when 'confirmada' then '✅ ' when 'ciente' then '👍 ' else '❌ ' end) || (q->>'nome') || ': ' || txt ||
+      coalesce(': ' || v.resposta, '.') || chr(10) || chr(10) || 'Pedido: ' || public._vis_frase(v));
   end if;
   return 'ok';
 end $$;
@@ -418,11 +427,12 @@ end $$;
 grant execute on function public.vis_link_ver(text), public.vis_link_responder(text, text, text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------- equipe: pessoas e ajustes
+drop function if exists public.vis_pessoa_salvar(text, bigint, text, text, text, boolean, text);
 create or replace function public.vis_pessoa_salvar(p_token text, p_id bigint, p_nome text, p_celular text,
-  p_email text default null, p_ativo boolean default true, p_empresa text default null) returns bigint
+  p_email text default null, p_ativo boolean default true, p_empresa text default null, p_matricula text default null) returns bigint
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._vis_exige(p_token, 'equipe'); c text := public._vis_cel(p_celular); novo bigint;
-        e text := nullif(lower(trim(coalesce(p_email, ''))), '');
+        e text := nullif(lower(trim(coalesce(p_email, ''))), ''); m text := nullif(left(trim(coalesce(p_matricula, '')), 30), '');
 begin
   if coalesce(trim(p_nome), '') = '' then raise exception 'Preencha o nome.'; end if;
   if length(c) not in (10, 11) then raise exception 'Celular precisa ter DDD + número (10 ou 11 dígitos).'; end if;
@@ -431,15 +441,39 @@ begin
     raise exception 'Esse celular já está cadastrado.';
   end if;
   if p_id is null then
-    insert into vis_pessoas (nome, celular, email, ativo, empresa)
-      values (trim(p_nome), c, e, coalesce(p_ativo, true), coalesce(nullif(trim(p_empresa), ''), 'Caliman')) returning id into novo;
+    insert into vis_pessoas (nome, celular, email, ativo, empresa, matricula)
+      values (trim(p_nome), c, e, coalesce(p_ativo, true), coalesce(nullif(trim(p_empresa), ''), 'Caliman'), m) returning id into novo;
   else
-    update vis_pessoas set nome = trim(p_nome), celular = c, email = e, ativo = coalesce(p_ativo, true),
+    update vis_pessoas set nome = trim(p_nome), celular = c, email = e, ativo = coalesce(p_ativo, true), matricula = m,
       empresa = coalesce(nullif(trim(p_empresa), ''), empresa) where id = p_id returning id into novo;
     if not coalesce(p_ativo, true) then delete from vis_sessoes where pessoa_id = p_id; end if;
   end if;
   perform public._central_log(null, q->>'nome', 'cadastro', 'visitas', 'Acesso de visitas: ' || trim(p_nome));
   return novo;
+end $$;
+
+-- importar a lista (nome, matrícula, celular): quem já tem o celular é atualizado, o resto é criado
+create or replace function public.vis_pessoas_importar(p_token text, p_linhas jsonb) returns json
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token, 'equipe'); r jsonb; c text; nv int := 0; at int := 0; er jsonb := '[]'::jsonb; i int := 0;
+begin
+  for r in select * from jsonb_array_elements(coalesce(p_linhas, '[]'::jsonb)) loop
+    i := i + 1;
+    c := public._vis_cel(r->>'celular');
+    if coalesce(trim(r->>'nome'), '') = '' or length(c) not in (10, 11) then
+      er := er || jsonb_build_object('linha', i, 'nome', r->>'nome', 'celular', r->>'celular'); continue;
+    end if;
+    if exists (select 1 from vis_pessoas where celular = c) then
+      update vis_pessoas set nome = left(trim(r->>'nome'), 120),
+        matricula = coalesce(nullif(left(trim(coalesce(r->>'matricula', '')), 30), ''), matricula) where celular = c;
+      at := at + 1;
+    else
+      insert into vis_pessoas (nome, celular, matricula) values (left(trim(r->>'nome'), 120), c, nullif(left(trim(coalesce(r->>'matricula', '')), 30), ''));
+      nv := nv + 1;
+    end if;
+  end loop;
+  perform public._central_log(null, q->>'nome', 'cadastro', 'visitas', 'Importou lista: ' || nv || ' novos, ' || at || ' atualizados');
+  return json_build_object('novos', nv, 'atualizados', at, 'erros', er);
 end $$;
 
 create or replace function public.vis_pessoa_remover(p_token text, p_id bigint) returns text
@@ -494,7 +528,8 @@ begin
     'avisos', coalesce((select json_agg(json_build_object('id', a.id, 'para', a.para, 'email', a.email,
         'assunto', a.assunto, 'texto', a.texto, 'proposta_id', a.proposta_id,
         'tipo', v.tipo, 'status', v.status, 'chave', case when a.para = 'dono' then v.chave_resposta end) order by a.id)
-      from (select * from vis_avisos where enviado_em is null and tentativas < 5 order by id limit 20) a
+      from (select * from vis_avisos where enviado_em is null and tentativas < 5 and (para = 'dono' or email is not null)
+            order by id limit 20) a
       left join vis_propostas v on v.id = a.proposta_id), '[]'::json));
 end $$;
 
@@ -519,19 +554,19 @@ language plpgsql security definer set search_path = public as $$
 declare c vis_config;
 begin
   select * into c from vis_config where id = 1;
-  if c.whatsapp_dono is null then return jsonb_build_object('avisos', '[]'::jsonb, 'motivo', 'sem número em Ajustes'); end if;
-  return jsonb_build_object('avisos', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'numero', '55' || c.whatsapp_dono, 'texto', x.txt) order by x.id)
-    from (select a.id,
+  return jsonb_build_object('avisos', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'numero', '55' || x.numero, 'texto', x.txt) order by x.id)
+    from (select a.id, case when a.para = 'dono' then c.whatsapp_dono else a.numero end as numero,
       '🚌 *Visitas aos carros*' || chr(10) || chr(10) || a.texto ||
-      case when v.status = 'pendente' and v.tipo = 'visita' then
+      case when a.para = 'dono' and v.status = 'pendente' and v.tipo = 'visita' then
              chr(10) || chr(10) || '✅ Consigo ir:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=confirmada' ||
              chr(10) || chr(10) || '❌ Não consigo:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=recusada'
-           when v.status = 'pendente' then
+           when a.para = 'dono' and v.status = 'pendente' then
              chr(10) || chr(10) || '👍 Ciente:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=ciente'
            else '' end ||
       chr(10) || chr(10) || 'Abrir: ' || c.link || coalesce('?p=' || a.proposta_id, '') as txt
       from vis_avisos a left join vis_propostas v on v.id = a.proposta_id
-      where a.para = 'dono' and a.whats_em is null and a.whats_tentativas < 3 and a.criado_em > now() - interval '6 hours'
+      where a.whats_em is null and a.whats_tentativas < 3 and a.criado_em > now() - interval '6 hours'
+        and ((a.para = 'dono' and c.whatsapp_dono is not null) or (a.para = 'pessoa' and a.numero is not null))
       order by a.id limit greatest(1, least(coalesce(p_limite, 5), 20))) x), '[]'::jsonb));
 end $$;
 
@@ -548,7 +583,8 @@ grant execute on function public.vis_whats_pendentes(integer), public.vis_whats_
 grant execute on function public.vis_entrar(text), public.vis_sessao(text), public.vis_sair(text), public.vis_painel(text),
   public.vis_propor(text, jsonb), public.vis_cancelar(text, bigint), public.vis_mensagem(text, bigint, text),
   public.vis_responder(text, bigint, text, text, text),
-  public.vis_pessoa_salvar(text, bigint, text, text, text, boolean, text), public.vis_pessoa_remover(text, bigint),
+  public.vis_pessoa_salvar(text, bigint, text, text, text, boolean, text, text), public.vis_pessoa_remover(text, bigint),
+  public.vis_pessoas_importar(text, jsonb),
   public.vis_config_salvar(text, jsonb), public.vis_avisos_pendentes(text), public.vis_aviso_marcar(text, bigint, boolean, text)
   to anon, authenticated;
 
