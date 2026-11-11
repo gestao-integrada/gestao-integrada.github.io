@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aberturas erradas · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<style>
+/* mesmo visual do quadro Demandas (tema claro fixo) */
+:root{--bg:#f4f6fb;--card:#fff;--card2:#f8fafc;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06);
+  --red:#dc2626;--redbg:#fdecec;--ora:#c2410c;--orabg:#fff1e6;--yel:#a16207;--yelbg:#fef6d8;--grn:#15803d;--grnbg:#e7f6ec;
+  --blu:#1d4ed8;--blubg:#e8efff;--gry:#64748b;--grybg:#eef2f7;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px 80px}
+header.top{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:16px 0 6px}
+header.top .tt{margin-right:auto;min-width:0}
+header.top h1{font-size:20px;margin:0}
+header.top .sub{color:var(--mut);font-size:13px;margin:0}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;font:600 13px system-ui,sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+.btn:hover{border-color:#c9d1de}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.6;cursor:default}
+.who{font-size:13px;color:var(--mut)}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.bar input,.bar select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 10px;min-width:0}
+.bar input[type=search]{flex:1 1 200px;max-width:320px}
+.faixa{border-radius:10px;padding:9px 12px;margin:8px 0;font-size:14px;border:1px solid var(--line);background:var(--card)}
+.faixa.warn{background:var(--orabg);border-color:#f6c9a8;color:var(--ora);font-weight:600}
+.faixa.dem{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.faixa.dem .r{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:10px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);cursor:pointer;text-align:left}
+.kpi.on{outline:2px solid var(--brand);outline-offset:-1px}
+.kpi b{display:block;font-size:24px;line-height:1.1}
+.kpi span{font-size:12px;color:var(--mut)}
+.kpi small{display:block;font-size:11px;color:var(--mut)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;min-width:0}
+.box h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:0 0 6px}
+.rk{width:100%;border-collapse:collapse;font-size:13px}
+.rk td{padding:4px 4px;border-top:1px solid var(--line)}
+.rk tr{cursor:pointer}.rk tr:hover td{background:var(--card2)}
+.rk td.n{text-align:right;font-weight:700;width:40px}
+.rk .barra{height:6px;background:var(--blubg);border-radius:3px;margin-top:2px}.rk .barra i{display:block;height:6px;background:var(--brand);border-radius:3px}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:18px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+h2.sec .n{background:var(--grybg);border-radius:999px;padding:0 8px;font-size:12px;color:var(--ink)}
+.casos{display:flex;flex-direction:column;gap:8px}
+.caso{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--ora);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);min-width:0}
+.caso.alta{border-left-color:var(--red)}.caso.verificar{border-left-color:var(--gry)}
+.caso.ok{opacity:.6;border-left-color:var(--grn)}
+.caso .l1{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.caso .l1 b{font-size:15px}
+.caso .l1 .h{color:var(--mut);font-size:13px}
+.caso .rota{font-weight:700}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.c-alta{background:var(--redbg);color:var(--red)}.c-media{background:var(--orabg);color:var(--ora)}.c-verificar{background:var(--grybg);color:var(--gry)}
+.c-ok{background:var(--grnbg);color:var(--grn)}.c-blu{background:var(--blubg);color:var(--blu)}
+.caso ul{margin:6px 0 0;padding:0;list-style:none;font-size:14px}
+.caso li{padding:4px 0;border-top:1px dashed var(--line)}
+.caso li .sg{color:var(--mut);font-size:13px;display:block}
+.caso .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+.caso .acts .info{font-size:12px;color:var(--mut);margin-right:auto}
+.vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:14px;color:var(--mut);text-align:center}
+.note{font-size:12px;color:var(--mut)}
+.login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.login h2{margin:0 0 6px;font-size:19px}
+.login input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin:10px 0}
+.login .btn{width:100%;justify-content:center;padding:9px}
+.msg{font-size:13px;margin-top:8px}.msg.err{color:var(--red)}.msg.ok{color:var(--grn)}
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow-y:auto;z-index:20}
+.dlg{background:var(--card);border-radius:14px;max-width:640px;width:100%;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.dlg h2{margin:0 0 8px;font-size:18px;display:flex;align-items:center;gap:8px}.dlg h2 .btn{margin-left:auto}
+.dlg label{display:block;font-size:13px;color:var(--mut);margin:10px 0 3px}
+.dlg input,.dlg textarea,.dlg select{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff}
+.dlg table{width:100%;border-collapse:collapse;font-size:13px}
+.dlg td{padding:3px 2px}.dlg td input,.dlg td select{padding:5px 6px}
+.dlg .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.regras{font-size:13px;color:var(--mut);margin:6px 0 0;padding-left:18px}
+</style>
+</head>
+<body>
+<div id="vLogin" class="login hidden">
+  <h2>Aberturas erradas de viagem</h2>
+  <div class="note">Use a mesma senha do quadro Demandas (senha pessoal da Central).</div>
+  <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha" required>
+  <button class="btn p">Entrar</button></form>
+  <div id="lMsg" class="msg"></div>
+</div>
+
+<div id="vApp" class="wrap hidden">
+  <header class="top">
+    <div class="tt"><h1>Aberturas erradas de viagem</h1>
+      <p class="sub">Viagens que o motorista abriu com sentido, rota ou horário errado no app (dados da TFleet)</p></div>
+    <span class="who" id="who"></span>
+    <button class="btn" id="bAjustes">⚙ Ajustes</button>
+    <button class="btn" id="bSair">Sair</button>
+  </header>
+
+  <div class="bar">
+    <label class="note">De <input type="date" id="fDe"></label>
+    <label class="note">até <input type="date" id="fAte"></label>
+    <button class="btn" id="bAtual">Atualizar</button>
+    <input type="search" id="fBusca" placeholder="Buscar motorista, carro ou rota">
+    <select id="fGrupo"><option value="">Todos os grupos</option><option value="ADM">ADM</option><option value="CT">CT (terceiros)</option><option value="TURNO">Turno</option></select>
+    <select id="fSit"><option value="aberto">Em aberto</option><option value="">Todas</option><option value="corrigido">Corrigidas</option><option value="falso">Estavam certas</option></select>
+    <button class="btn" id="bCsv">⬇ Planilha</button>
+  </div>
+
+  <div id="coleta" class="faixa hidden"></div>
+  <div id="demanda" class="faixa dem hidden"></div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="cols">
+    <div class="box"><h3>Motoristas com mais erros</h3><table class="rk" id="rkMot"></table></div>
+    <div class="box"><h3>Rotas com mais erros</h3><table class="rk" id="rkRota"></table></div>
+  </div>
+
+  <h2 class="sec">Viagens <span class="n" id="nCasos">0</span><span id="filtroTxt" class="note"></span></h2>
+  <div class="casos" id="casos"></div>
+
+  <details class="box" style="margin-top:18px"><summary style="cursor:pointer;font-weight:600">Como o painel decide que a abertura está errada</summary>
+    <ol class="regras">
+      <li><b>Sentido</b>: no ADM, IDA aberta depois das 11h (era VOLTA) ou VOLTA antes das 10h (era IDA). Aprendiz, Extra e In Haus têm horário próprio e ficam fora. No turno, horário que bate com o outro sentido da mesma rota.</li>
+      <li><b>Rota especial</b>: rota que em certo horário tem outro nome (CT7 entre 06:30 e 08:30 = CT7 INTERNO). Muda em Ajustes.</li>
+      <li><b>Repetida</b>: o mesmo carro abriu a mesma rota e sentido 2 vezes no dia.</li>
+      <li><b>Rota duplicada</b>: 2 carros na mesma rota e sentido no mesmo período. Fica marcado o carro que menos costuma fazer essa rota, com a rota provável (a que ele abriu no outro sentido do dia ou a que ele mais faz nos últimos 30 dias).</li>
+      <li><b>Duas rotas</b>: o mesmo carro abriu 2 rotas diferentes no mesmo sentido em menos de 1 h (abriu errado e depois corrigiu; os passageiros lidos na 1ª ficaram na rota errada).</li>
+      <li><b>Dois carros</b>: o mesmo motorista aparece em 2 carros ao mesmo tempo (provável login de outro motorista).</li>
+    </ol>
+    <p class="note">Se a TFleet corrigir a viagem, ela some daqui sozinha na próxima coleta. "Estava certa" tira o caso da lista e da próxima cobrança.</p>
+  </details>
+</div>
+
+<div id="ov" class="ov hidden"><div class="dlg" id="dlg"></div></div>
+
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const K_SESS="tf_solicitacoes", K_CENTRAL="tf_sessao";
+const REGRA={"1 SENTIDO":"Sentido","2 ROTA ESPECIAL":"Rota especial","3 REPETIDA":"Repetida","4 ROTA DUPLICADA":"Rota duplicada","5 DUAS ROTAS":"Duas rotas","6 DOIS CARROS":"Dois carros"};
+const GRAV={alta:0,media:1,verificar:2};
+let TOKEN=null,QUEM=null,DADOS=null,FILTRO={regra:null,mot:null,rota:null};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const dBR=s=>s?String(s).slice(0,10).split("-").reverse().join("/"):"—";
+const dCurto=s=>s?String(s).slice(5,10).split("-").reverse().join("/"):"";
+const dtBR=s=>{if(!s)return"";const d=new Date(s);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})};
+const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+const menosDias=(d,n)=>new Date(Date.parse(d+"T12:00:00Z")-n*864e5).toISOString().slice(0,10);
+const nomeCurto=n=>String(n||"?").toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+const grupoDe=c=>/^CT\d/i.test(c.linha)?"CT":/^TURNO/i.test(c.tipolinha)?"TURNO":"ADM";
+function msg(id,t,cl){const m=$(id);if(m){m.textContent=t;m.className="msg "+(cl||"")}}
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}throw new Error(m)}
+  return j;
+}
+
+/* ---------------- entrar ---------------- */
+async function iniciar(){
+  $("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("sol_sessao",{p_token:s.token});if(q&&!q.erro&&q.tipo==="interno"){entrar(s.token,q);return}}catch(e){}}
+  mostrarLogin();
+}
+function mostrarLogin(){$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
+  try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:null});
+    if(r.erro){msg("lMsg",r.erro,"err");return}
+    if(r.tipo&&r.tipo!=="interno"){msg("lMsg","Este painel é só da equipe.","err");return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token,r);
+  }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
+function entrar(tk,q){TOKEN=tk;QUEM=q;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");
+  $("who").textContent=q.nome||"";$("bAjustes").classList.toggle("hidden",!q.edita);carregar()}
+$("bSair").onclick=async()=>{try{await rpc("sol_sair",{p_token:TOKEN})}catch(e){}ls.del(K_SESS);location.reload()};
+
+/* ---------------- dados ---------------- */
+async function carregar(){
+  $("casos").innerHTML='<div class="vazio">Carregando…</div>';
+  try{DADOS=await rpc("abt_painel",{p_token:TOKEN,p_de:$("fDe").value||null,p_ate:$("fAte").value||null});desenhar()}
+  catch(err){$("casos").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
+}
+$("bAtual").onclick=carregar;$("fDe").onchange=carregar;$("fAte").onchange=carregar;
+["fBusca","fGrupo","fSit"].forEach(i=>$(i).addEventListener("input",desenhar));
+
+// junta as regras da mesma viagem
+function viagens(){
+  const m=new Map();
+  for(const c of DADOS.casos||[]){
+    let v=m.get(c.viagem_id);
+    if(!v){v={...c,regras:[],grav:c.gravidade,sit:"aberto"};m.set(c.viagem_id,v)}
+    v.regras.push(c);if(GRAV[c.gravidade]<GRAV[v.grav])v.grav=c.gravidade;
+  }
+  for(const v of m.values()){
+    const s=v.regras.map(r=>r.situacao);
+    v.sit=s.every(x=>x==="falso")?"falso":s.every(x=>x!=="aberto")?"corrigido":"aberto";
+    v.avisado=v.regras.find(r=>r.avisado_em)||null;
+  }
+  return [...m.values()];
+}
+function filtrar(lista,ign){
+  const q=$("fBusca").value.trim().toLowerCase(),g=$("fGrupo").value,s=$("fSit").value;
+  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!g||grupoDe(v)===g)&&(!s||v.sit===s)
+    &&(ign==="regra"||!FILTRO.regra||v.regras.some(r=>r.regra===FILTRO.regra))
+    &&(ign==="mot"||!FILTRO.mot||v.motorista===FILTRO.mot)&&(ign==="rota"||!FILTRO.rota||v.linha===FILTRO.rota));
+}
+function desenhar(){
+  if(!DADOS)return;
+  // coleta
+  const col=DADOS.coleta?new Date(DADOS.coleta):null,atraso=col?(Date.now()-col)/36e5:99;
+  $("coleta").classList.toggle("hidden",atraso<2);
+  $("coleta").className="faixa warn"+(atraso<2?" hidden":"");
+  $("coleta").textContent=col?"⚠ A coleta da TFleet está parada desde "+dtBR(DADOS.coleta)+": viagens depois disso ainda não entram aqui.":"⚠ Ainda não há viagens coletadas da TFleet.";
+  // demanda
+  const d=DADOS.demanda,cf=DADOS.config||{};
+  const semEmail=!(cf.emails||[]).length;
+  $("demanda").classList.remove("hidden");
+  $("demanda").innerHTML=(d?'<span>📋 Demanda da '+esc(cf.fornecedor||"Caliman")+' <b>#'+d.id+'</b>: <span class="chip c-blu">'+esc(d.status)+'</span></span>'
+      +'<span>Responsável: <b>'+esc(d.responsavel||"—")+'</b></span><span>Prazo: <b>'+dBR(d.prazo)+'</b></span>'
+      :'<span>Nenhuma demanda criada ainda.</span>')
+    +'<span class="note">'+(cf.ativo?(semEmail?"⚠ sem e-mail da Caliman em Ajustes: a demanda é criada, mas o e-mail não sai":"Casos novos vão sozinhos todo dia às "+cf.hora_aviso+"h"):"Aviso automático desligado")+'</span>'
+    +'<span class="r">'+(d?'<a class="btn sm" target="_blank" rel="noopener" href="'+esc(d.link)+'">Abrir demanda</a>':'')
+    +(QUEM.edita?'<button class="btn sm p" id="bAgora">Mandar agora para a Caliman</button>':'')+'</span>';
+  if($("bAgora"))$("bAgora").onclick=async()=>{if(!confirm("Mandar agora os casos de dias anteriores que ainda não foram avisados?"))return;
+    try{alert(await rpc("abt_enviar_agora",{p_token:TOKEN}));carregar()}catch(err){alert(err.message)}};
+
+  const todas=viagens();
+  // kpis
+  const baseK=filtrar(todas,"regra"),cont={};
+  baseK.forEach(v=>new Set(v.regras.map(r=>r.regra)).forEach(r=>cont[r]=(cont[r]||0)+1));
+  const pct=DADOS.viagens?Math.round(1000*baseK.length/DADOS.viagens)/10:0;
+  $("kpis").innerHTML='<button class="kpi'+(!FILTRO.regra?" on":"")+'" data-r=""><b>'+baseK.length+'</b><span>viagens com erro</span><small>'+pct+'% de '+DADOS.viagens+' viagens</small></button>'
+    +Object.keys(REGRA).map(r=>'<button class="kpi'+(FILTRO.regra===r?" on":"")+'" data-r="'+r+'"><b>'+(cont[r]||0)+'</b><span>'+REGRA[r]+'</span></button>').join("");
+  $("kpis").querySelectorAll(".kpi").forEach(b=>b.onclick=()=>{FILTRO.regra=b.dataset.r||null;desenhar()});
+  // rankings
+  rank("rkMot",filtrar(todas,"mot"),v=>v.motorista,"mot",nomeCurto);
+  rank("rkRota",filtrar(todas,"rota"),v=>v.linha,"rota",x=>x);
+  // lista
+  const lista=filtrar(todas).sort((a,b)=>(b.data+b.hora).localeCompare(a.data+a.hora));
+  $("nCasos").textContent=lista.length;
+  const f=[FILTRO.regra&&REGRA[FILTRO.regra],FILTRO.mot&&nomeCurto(FILTRO.mot),FILTRO.rota].filter(Boolean);
+  $("filtroTxt").innerHTML=f.length?'filtro: '+esc(f.join(" · "))+' <button class="btn sm" id="bLimpa">limpar</button>':"";
+  if($("bLimpa"))$("bLimpa").onclick=()=>{FILTRO={regra:null,mot:null,rota:null};desenhar()};
+  $("casos").innerHTML=lista.length?lista.map(cartao).join(""):'<div class="vazio">Nenhuma abertura errada nesse período e filtro. 👍</div>';
+  $("casos").querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>marcar(b.dataset.v,b.dataset.m));
+}
+function rank(id,lista,chave,campo,fmt){
+  const c={};lista.forEach(v=>c[chave(v)]=(c[chave(v)]||0)+1);
+  const arr=Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,8),max=arr.length?arr[0][1]:1;
+  $(id).innerHTML=arr.length?arr.map(([k,n])=>'<tr data-k="'+esc(k)+'"'+(FILTRO[campo]===k?' style="background:var(--blubg)"':'')+'><td>'+esc(fmt(k))
+    +'<div class="barra"><i style="width:'+Math.round(100*n/max)+'%"></i></div></td><td class="n">'+n+'</td></tr>').join(""):'<tr><td class="note">—</td></tr>';
+  $(id).querySelectorAll("tr[data-k]").forEach(t=>t.onclick=()=>{FILTRO[campo]=FILTRO[campo]===t.dataset.k?null:t.dataset.k;desenhar()});
+}
+function cartao(v){
+  const ok=v.sit!=="aberto",gv=v.grav;
+  return '<div class="caso '+(ok?"ok":gv)+'"><div class="l1"><b>'+dCurto(v.data)+' '+esc(v.hora)+'</b><span>carro <b>'+esc(v.frota)+'</b></span>'
+    +'<span>'+esc(nomeCurto(v.motorista))+'</span><span class="rota">'+esc(v.linha)+' · '+esc(v.tipo)+'</span>'
+    +'<span class="h">'+(v.ocupacao==null?"sem leitura":v.ocupacao+" passageiro(s)")+' · '+esc(v.tipolinha)+'</span></div>'
+    +'<ul>'+v.regras.map(r=>'<li><span class="chip c-'+r.gravidade+'">'+esc(REGRA[r.regra]||r.regra)+'</span> '+esc(r.problema)
+      +'<span class="sg">→ '+esc(r.sugestao)+'</span></li>').join("")+'</ul>'
+    +'<div class="acts"><span class="info">'+(v.sit==="falso"?'<span class="chip c-ok">Estava certa</span> ':v.sit==="corrigido"?'<span class="chip c-ok">Corrigida</span> ':'')
+      +(v.regras[0].obs?esc(v.regras[0].obs)+' · ':'')+(v.regras[0].marcado_por&&ok?'por '+esc(v.regras[0].marcado_por)+' · ':'')
+      +(v.avisado?'avisada na demanda #'+v.avisado.cartao_id+' em '+dtBR(v.avisado.avisado_em):'ainda não avisada')+'</span>'
+    +(QUEM.edita?(ok?'<button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="aberto">Reabrir</button>'
+      :'<button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="corrigido">✓ Corrigida</button><button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="falso">Estava certa</button>'):'')
+    +'</div></div>';
+}
+async function marcar(id,sit){
+  const v=viagens().find(x=>x.viagem_id===id);if(!v)return;
+  let obs=null;
+  if(sit!=="aberto"){obs=prompt(sit==="falso"?"Por que estava certa? (ex.: carro extra, troca de escala)":"Observação (opcional)","");if(obs===null)return}
+  try{for(const r of v.regras)await rpc("abt_marcar",{p_token:TOKEN,p_viagem:id,p_regra:r.regra,p_situacao:sit,p_obs:obs});carregar()}
+  catch(err){alert(err.message)}
+}
+
+/* ---------------- planilha ---------------- */
+$("bCsv").onclick=()=>{
+  if(!DADOS)return;
+  const lin=[["Data","Hora","Carro","Motorista","Rota","Sentido","Grupo","Passageiros","Regra","Problema","O que fazer","Situação","Avisada em"]];
+  for(const v of filtrar(viagens()))for(const r of v.regras)
+    lin.push([dBR(v.data),v.hora,v.frota,v.motorista,v.linha,v.tipo,v.tipolinha,v.ocupacao??"",REGRA[r.regra]||r.regra,r.problema,r.sugestao,r.situacao,r.avisado_em?dtBR(r.avisado_em):""]);
+  const csv="﻿"+lin.map(l=>l.map(x=>{x=String(x??"");return /[;"\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(";")).join("\r\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  a.download="aberturas-erradas_"+$("fDe").value+"_a_"+$("fAte").value+".csv";a.click();
+};
+
+/* ---------------- ajustes ---------------- */
+function fechar(){$("ov").classList.add("hidden")}
+$("bAjustes").onclick=()=>{
+  const c=DADOS&&DADOS.config||{};
+  const esp=(c.especiais||[]).map(e=>linhaEsp(e)).join("");
+  $("dlg").innerHTML='<h2>Ajustes <button class="btn sm" id="xF">✕ Fechar</button></h2>'
+    +'<label><input type="checkbox" id="aAtivo" style="width:auto"'+(c.ativo?" checked":"")+'> Mandar os casos novos para a demanda todo dia</label>'
+    +'<label>Fornecedor no quadro Demandas</label><input id="aForn" value="'+esc(c.fornecedor||"CALIMAN")+'">'
+    +'<label>E-mails da Caliman (separados por vírgula)</label><input id="aEm" value="'+esc((c.emails||[]).join(", "))+'">'
+    +'<label>Cópia (você, supervisão)</label><input id="aCc" value="'+esc((c.emails_cc||[]).join(", "))+'">'
+    +'<label>Hora do aviso (Belém)</label><input id="aHora" type="number" min="0" max="23" value="'+(c.hora_aviso??9)+'">'
+    +'<label>Rotas especiais (em certo horário a rota tem outro nome)</label>'
+    +'<table><thead><tr class="note"><td>Rota contém</td><td>Sentido</td><td>Das</td><td>Até</td><td>Deveria ser</td><td></td></tr></thead><tbody id="aEsp">'+esp+'</tbody></table>'
+    +'<button class="btn sm" id="aMais" style="margin-top:6px">+ Rota especial</button>'
+    +'<p class="note">Último envio: '+dBR(c.ultimo_envio)+'. O e-mail sai pelo robô do quadro Demandas, com a planilha dos casos anexa.</p>'
+    +'<div class="acts"><button class="btn" id="aCanc">Cancelar</button><button class="btn p" id="aSalvar">Salvar</button></div><div id="aMsg" class="msg"></div>';
+  $("ov").classList.remove("hidden");
+  $("xF").onclick=fechar;$("aCanc").onclick=fechar;
+  $("aMais").onclick=()=>$("aEsp").insertAdjacentHTML("beforeend",linhaEsp({}));
+  $("aEsp").onclick=e=>{if(e.target.dataset.del!==undefined)e.target.closest("tr").remove()};
+  $("aSalvar").onclick=async()=>{
+    const lista=s=>s.split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean);
+    const esp=[...$("aEsp").querySelectorAll("tr")].map(t=>{const i=t.querySelectorAll("input,select");return{linha:i[0].value,tipo:i[1].value,das:i[2].value||"00:00",ate:i[3].value||"23:59",correta:i[4].value}}).filter(e=>e.linha&&e.correta);
+    try{await rpc("abt_config_salvar",{p_token:TOKEN,p_dados:{ativo:$("aAtivo").checked,fornecedor:$("aForn").value,emails:lista($("aEm").value),emails_cc:lista($("aCc").value),hora_aviso:+$("aHora").value,especiais:esp}});
+      fechar();carregar()}catch(err){msg("aMsg",err.message,"err")}};
+};
+function linhaEsp(e){
+  const t=(e.tipo||"").toUpperCase(),hm=x=>x?String(x).slice(0,5):"";
+  return '<tr><td><input value="'+esc(e.linha||"")+'" placeholder="CT7"></td><td><select><option value=""'+(t?"":" selected")+'>Os dois</option><option'+(t==="IDA"?" selected":"")+'>IDA</option><option'+(t==="VOLTA"?" selected":"")+'>VOLTA</option></select></td>'
+    +'<td><input type="time" value="'+hm(e.das)+'"></td><td><input type="time" value="'+hm(e.ate)+'"></td><td><input value="'+esc(e.correta||"")+'" placeholder="CT7 INTERNO"></td>'
+    +'<td><button class="btn sm" data-del title="Tirar">✕</button></td></tr>';
+}
+iniciar();
+</script>
+</body>
+</html>
