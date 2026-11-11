@@ -5,7 +5,9 @@
 --   1 SENTIDO        ADM aberta como IDA à tarde (era VOLTA) ou VOLTA de manhã (era IDA);
 --                    turno com horário de outro sentido.
 --   2 ROTA ESPECIAL  rota que, em certo horário, tem outro nome (CT7 às 7h = CT7 INTERNO).
---   3 REPETIDA       mesmo carro abriu a mesma rota e sentido 2 vezes no dia.
+--   3 REPETIDA       mesmo carro abriu a mesma rota e sentido 2 vezes com 3 h ou mais entre elas
+--                    (uma deveria ser o outro sentido). Reabrir logo depois (KM/horário errado) não conta;
+--                    se a regra do sentido já explica (ida aberta de novo à tarde), só a da tarde aparece, como Sentido.
 --   4 ROTA DUPLICADA mesma rota e sentido aberta por 2 carros no mesmo período:
 --                    o carro que não costuma fazer essa rota provavelmente abriu a rota errada.
 --   5 DUAS ROTAS     mesmo carro abriu 2 rotas diferentes no mesmo sentido em menos de 1 h.
@@ -162,10 +164,11 @@ v as (                       -- só o período pedido, com o sentido "corrigido"
     end as tipo_certo
   from base b cross join cfg
   where b.data_local between p_de and p_ate
-    -- abriu a rota errada SEM ler ninguém, fechou e abriu a certa logo depois: o motorista corrigiu, não é erro
+    -- abriu SEM ler ninguém, fechou e abriu de novo logo depois (outra rota, ou a mesma com KM/horário certo):
+    -- o motorista corrigiu, não é erro
     and not (coalesce(b.ocupacao, 0) = 0 and exists (
           select 1 from base c where c.data_local = b.data_local and c.frota = b.frota and c.tipo = b.tipo
-             and c.tipolinha = b.tipolinha and c.linha <> b.linha and c.saida_ts > b.saida_ts
+             and c.tipolinha = b.tipolinha and c.saida_ts > b.saida_ts
              and c.saida_ts - b.saida_ts < make_interval(mins => cfg.min_duas_rotas)))
 ),
 v2 as (select v.*, coalesce(v.tipo_certo, v.tipo) as tipo_ef,
@@ -189,13 +192,16 @@ r2 as (
   from v join abt_especiais e on e.ativo and v.linha like '%' || _abt_lin(e.linha) || '%'
    and (e.tipo is null or upper(e.tipo) = v.tipo) and v.hora between e.das and e.ate
 ),
-r3 as (                      -- 2ª abertura da mesma rota + sentido no mesmo carro (a especial já explica, não repete)
+r3 as (                      -- mesma rota + sentido no mesmo carro de novo, 3 h ou mais depois, sem outra regra que explique:
+                             -- uma das duas deveria ser o outro sentido. Reaberta logo depois (KM/horário) não conta.
   select x.id, '3 REPETIDA', 'alta',
-         'Mesmo carro abriu ' || x.linha || ' ' || x.tipo || ' de novo (a 1ª foi às ' || to_char(x.primeira, 'HH24:MI') || ')',
-         'Uma das duas aberturas está errada (sentido ou rota). Conferir qual o carro realmente fez.'
-  from (select v.*, row_number() over w as n, first_value(v.hora) over w as primeira
-          from v window w as (partition by v.data_local, v.frota, v.linha, v.tipolinha, v.tipo order by v.hora)) x
-  where x.n > 1 and not exists (select 1 from r2 where r2.id = x.id)
+         'Abriu ' || x.linha || ' ' || x.tipo || ' às ' || to_char(x.ant, 'HH24:MI') || ' e de novo às ' || to_char(x.hora, 'HH24:MI'),
+         'Uma das duas deveria ser ' || case when x.tipo = 'IDA' then 'VOLTA' else 'IDA' end || '. Conferir com o motorista qual era.'
+  from (select v.*, lag(v.hora) over w as ant, lag(v.id) over w as ant_id, lag(v.saida_ts) over w as ant_ts
+          from v window w as (partition by v.data_local, v.frota, v.linha, v.tipolinha, v.tipo order by v.saida_ts)) x
+  where x.ant_id is not null and x.saida_ts - x.ant_ts >= interval '3 hours'
+    and not exists (select 1 from r1 where r1.id in (x.id, x.ant_id))
+    and not exists (select 1 from r2 where r2.id in (x.id, x.ant_id))
 ),
 grp as (                     -- mesma rota + sentido (corrigido) + período, carros diferentes
   select v2.*, (min(v2.frota) over pp <> max(v2.frota) over pp) as varios,
