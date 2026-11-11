@@ -218,20 +218,36 @@ revoke execute on function public._vis_quem(text), public._vis_exige(text, text)
 -- ---------------------------------------------------------------- entrar / sessão / sair
 create or replace function public.vis_entrar(p_celular text) returns json
 language plpgsql security definer set search_path = public, extensions as $$
-declare c text := public._vis_cel(p_celular); p vis_pessoas; tk text;
+declare c text := public._vis_cel(p_celular); p vis_pessoas; tk text; m text;
 begin
   if (select count(*) from central_acessos_log where evento = 'senha_errada' and painel = 'visitas'
       and ts > now() - interval '10 minutes') >= 30 then
     return json_build_object('erro', 'Muitas tentativas erradas. Espere 10 minutos.');
   end if;
-  if length(c) not in (10, 11) then
-    return json_build_object('erro', 'Digite o DDD + número do celular (ex.: 91 98888-7777).');
-  end if;
-  select * into p from vis_pessoas where celular = c and ativo;
-  if p.id is null then
-    perform public._central_log(null, null, 'senha_errada', 'visitas', 'Celular não cadastrado: final ' || right(c, 4));
-    return json_build_object('erro', 'Esse celular não está cadastrado. Peça para o ' ||
-      (select nome_dono from vis_config where id = 1) || ' liberar o seu número.');
+  -- aceita celular (10/11 dígitos) OU matrícula (só números, até 9 dígitos)
+  if length(c) in (10, 11) then
+    select * into p from vis_pessoas where celular = c and ativo;
+    if p.id is null then
+      perform public._central_log(null, null, 'senha_errada', 'visitas', 'Celular não cadastrado: final ' || right(c, 4));
+      return json_build_object('erro', 'Esse celular não está cadastrado. Peça para o ' ||
+        (select nome_dono from vis_config where id = 1) || ' liberar o seu número.');
+    end if;
+  elsif length(c) between 1 and 9 then
+    m := ltrim(c, '0');
+    if (select count(*) from vis_pessoas where ativo and matricula is not null
+        and ltrim(regexp_replace(matricula, '\D', '', 'g'), '0') = m and m <> '') > 1 then
+      perform public._central_log(null, null, 'senha_errada', 'visitas', 'Matrícula repetida: ' || c);
+      return json_build_object('erro', 'Essa matrícula está em mais de uma pessoa. Entre com o número do celular.');
+    end if;
+    select * into p from vis_pessoas where ativo and matricula is not null and m <> ''
+      and ltrim(regexp_replace(matricula, '\D', '', 'g'), '0') = m;
+    if p.id is null then
+      perform public._central_log(null, null, 'senha_errada', 'visitas', 'Matrícula não cadastrada: ' || c);
+      return json_build_object('erro', 'Essa matrícula não está cadastrada. Entre com o celular ou peça para o ' ||
+        (select nome_dono from vis_config where id = 1) || ' liberar você.');
+    end if;
+  else
+    return json_build_object('erro', 'Digite o celular com DDD (ex.: 91 98888-7777) ou a sua matrícula.');
   end if;
   tk := 'tfv_' || encode(gen_random_bytes(24), 'hex');
   insert into vis_sessoes (token, pessoa_id, expira_em) values (tk, p.id, now() + interval '120 days');
@@ -314,35 +330,50 @@ begin
 end $$;
 grant execute on function public.vis_rotas_candidatas(text), public.vis_rotas_salvar(text, jsonb) to anon, authenticated;
 
--- situação de HOJE de cada rota vigiada: subiu / nao_subiu (passou 1 h do horário) / aguardando
+-- quando cada viagem APARECEU pela 1ª vez na coleta (para aprender a que horas a TFleet libera as viagens)
+do $$ begin
+  if to_regclass('public.viagens') is not null then
+    alter table public.viagens add column if not exists visto_em timestamptz;      -- antigas ficam vazias (não sabemos)
+    alter table public.viagens alter column visto_em set default now();             -- novas: hora em que a coleta viu
+  end if;
+end $$;
+
+-- rotas vigiadas que NÃO subiram hoje. Prazo de cada uma = horário de saída + o atraso que a TFleet costuma ter
+-- para mostrar essa viagem (aprendido de visto_em; mínimo 1 h). Sem histórico: viagens da manhã só cobram depois das 08:30.
 create or replace function public._vis_rotas_pendentes() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare hoje date := public._vis_hoje(); agora time := (now() at time zone 'America/Belem')::time;
-        fds boolean := extract(isodow from public._vis_hoje()) in (6, 7); ult timestamptz; todas jsonb; n int;
+        fds boolean := extract(isodow from public._vis_hoje()) in (6, 7); ult timestamptz; r jsonb; n int; nhoje int;
+        atraso interval; libera time;
 begin
   if to_regclass('public.viagens') is null then return null; end if;
   select count(*) into n from vis_rotas_vigiadas;
   select max(coletado_em) into ult from viagens;
-  select coalesce(jsonb_agg(x order by x->>'hora', x->>'linha'), '[]'::jsonb) into todas from (
-    select jsonb_build_object('linha', w.linha, 'tipo', w.tipo, 'hora', to_char(w.hora, 'HH24:MI'), 'grupo', w.grupo,
+  select count(*) into nhoje from viagens where data_local = hoje;
+  -- atraso típico (80%) entre a saída e a viagem aparecer na coleta, últimos 14 dias
+  select percentile_cont(0.8) within group (order by visto_em - saida_ts) into atraso
+    from viagens where visto_em is not null and saida_ts is not null and visto_em > saida_ts
+     and visto_em < saida_ts + interval '20 hours' and data_local >= hoje - 14;
+  libera := case when atraso is null then time '08:30' end;
+  select coalesce(jsonb_agg(x order by x->>'hora', x->>'linha'), '[]'::jsonb) into r from (
+    select jsonb_build_object('linha', w.linha, 'tipo', w.tipo, 'hora', to_char(w.hora, 'HH24:MI'), 'grupo', coalesce(w.grupo, 'Outras'),
              'frota', u.frota, 'motorista', u.motorista, 'ult_dia', u.data_local, 'ult_hora', to_char(u.hora_saida, 'HH24:MI'),
-             'hoje_hora', to_char(t.hora_saida, 'HH24:MI'), 'hoje_frota', t.frota, 'hoje_motorista', t.motorista,
-             'situacao', case when t.hora_saida is not null then 'subiu'
-                              when agora > w.hora + interval '60 min' and w.hora < time '23:00' then 'nao_subiu'
-                              else 'aguardando' end) as x
+             'dias_sem', case when u.data_local is null then null else hoje - u.data_local end) as x
       from vis_rotas_vigiadas w
       left join lateral (select v.frota, v.motorista, v.data_local, v.hora_saida from viagens v
-                          where v.linha = w.linha and upper(v.tipo) = w.tipo and v.data_local >= hoje - 14 and v.data_local < hoje
+                          where v.linha = w.linha and upper(v.tipo) = w.tipo and v.data_local >= hoje - 30 and v.data_local < hoje
                             and public._vis_prev(v.tipo, v.bruto, v.hora_saida) = w.prev
                           order by v.data_local desc, v.hora_saida desc limit 1) u on true
-      left join lateral (select v.frota, v.motorista, v.hora_saida from viagens v
-                          where v.data_local = hoje and v.linha = w.linha and upper(v.tipo) = w.tipo
-                            and (public._vis_prev(v.tipo, v.bruto, v.hora_saida) = w.prev
-                                 or abs(extract(epoch from v.hora_saida - w.hora)) < 5400)
-                          order by abs(extract(epoch from v.hora_saida - w.hora)) limit 1) t on true
-     where w.dias = 'todos' or (w.dias = 'uteis' and not fds) or (w.dias = 'fds' and fds)) z;
-  return jsonb_build_object('lista', (select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(todas) e where e->>'situacao' = 'nao_subiu'),
-    'todas', todas, 'vigiadas', n, 'coleta', ult, 'proxima', ult + interval '1 hour', 'coleta_ok', ult > now() - interval '3 hours');
+     where (w.dias = 'todos' or (w.dias = 'uteis' and not fds) or (w.dias = 'fds' and fds))
+       and w.hora < time '23:00'
+       and agora > greatest(w.hora + greatest(interval '60 min', coalesce(atraso, interval '0')),
+                            case when libera is not null and w.hora < libera then libera else time '00:00' end)
+       and not exists (select 1 from viagens t where t.data_local = hoje and t.linha = w.linha and upper(t.tipo) = w.tipo
+                         and (public._vis_prev(t.tipo, t.bruto, t.hora_saida) = w.prev
+                              or abs(extract(epoch from t.hora_saida - w.hora)) < 5400))) z;
+  return jsonb_build_object('lista', r, 'vigiadas', n, 'viagens_hoje', nhoje, 'coleta', ult, 'proxima', ult + interval '1 hour',
+    'coleta_ok', ult > now() - interval '3 hours', 'libera', to_char(libera, 'HH24:MI'),
+    'atraso_min', round(extract(epoch from atraso) / 60));
 end $$;
 revoke execute on function public._vis_rotas_pendentes() from public, anon, authenticated;
 
