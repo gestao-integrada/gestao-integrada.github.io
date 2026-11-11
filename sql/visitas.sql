@@ -507,6 +507,43 @@ begin
   return 'ok';
 end $$;
 
+-- ---------------------------------------------------------------- WhatsApp para você (n8n da TV Box + Evolution)
+-- O fluxo "Visitas — WhatsApp" (a cada 1 min) pega aqui os avisos para você e manda pelo chip do robô
+-- para o número em Ajustes (vis_config.whatsapp_dono). O e-mail continua indo junto (reserva).
+alter table public.vis_avisos add column if not exists whats_em timestamptz;
+alter table public.vis_avisos add column if not exists whats_tentativas int not null default 0;
+alter table public.vis_avisos add column if not exists whats_erro text;
+
+create or replace function public.vis_whats_pendentes(p_limite integer default 5) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare c vis_config;
+begin
+  select * into c from vis_config where id = 1;
+  if c.whatsapp_dono is null then return jsonb_build_object('avisos', '[]'::jsonb, 'motivo', 'sem número em Ajustes'); end if;
+  return jsonb_build_object('avisos', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'numero', '55' || c.whatsapp_dono, 'texto', x.txt) order by x.id)
+    from (select a.id,
+      '🚌 *Visitas aos carros*' || chr(10) || chr(10) || a.texto ||
+      case when v.status = 'pendente' and v.tipo = 'visita' then
+             chr(10) || chr(10) || '✅ Consigo ir:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=confirmada' ||
+             chr(10) || chr(10) || '❌ Não consigo:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=recusada'
+           when v.status = 'pendente' then
+             chr(10) || chr(10) || '👍 Ciente:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=ciente'
+           else '' end ||
+      chr(10) || chr(10) || 'Abrir: ' || c.link || coalesce('?p=' || a.proposta_id, '') as txt
+      from vis_avisos a left join vis_propostas v on v.id = a.proposta_id
+      where a.para = 'dono' and a.whats_em is null and a.whats_tentativas < 3 and a.criado_em > now() - interval '6 hours'
+      order by a.id limit greatest(1, least(coalesce(p_limite, 5), 20))) x), '[]'::jsonb));
+end $$;
+
+create or replace function public.vis_whats_marcar(p_id bigint, p_ok boolean, p_erro text default null) returns text
+language sql security definer set search_path = public as $$
+  update vis_avisos set whats_em = case when p_ok then now() end, whats_tentativas = whats_tentativas + 1,
+    whats_erro = case when p_ok then null else left(p_erro, 500) end where id = p_id;
+  select 'ok';
+$$;
+revoke all on function public.vis_whats_pendentes(integer), public.vis_whats_marcar(bigint, boolean, text) from public, anon, authenticated;
+grant execute on function public.vis_whats_pendentes(integer), public.vis_whats_marcar(bigint, boolean, text) to service_role;
+
 -- ---------------------------------------------------------------- permissões
 grant execute on function public.vis_entrar(text), public.vis_sessao(text), public.vis_sair(text), public.vis_painel(text),
   public.vis_propor(text, jsonb), public.vis_cancelar(text, bigint), public.vis_mensagem(text, bigint, text),
