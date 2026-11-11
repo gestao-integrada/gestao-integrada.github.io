@@ -95,10 +95,25 @@ alter table public.vis_config add column if not exists agenda jsonb not null def
   {"d":4,"onde":"Mina","ini":"08:00","fim":"17:00","obs":"pode ir ao terminal"},
   {"d":5,"onde":"Garagem","ini":"08:00","fim":"17:00","obs":""}]'::jsonb;
 
--- ocorrências que NÃO aparecem para a Caliman (só se resolvem trocando o celular)
-create or replace function public._vis_oculta(p_categoria text, p_problema text) returns boolean
+-- ocorrências que NÃO aparecem para a Caliman (só se resolvem trocando o celular):
+-- automático pelo texto (bateria inchada/estufada, tela trincada/quebrada/rachada) ou escolhido na mão pela equipe
+create table if not exists public.vis_ocultar (
+  ocorrencia_id bigint primary key,
+  oculta        boolean not null,          -- true = esconder, false = mostrar mesmo que o texto bata
+  por           text,
+  em            timestamptz not null default now()
+);
+alter table public.vis_ocultar enable row level security;
+revoke all on public.vis_ocultar from anon, authenticated;
+
+drop function if exists public._vis_oculta(text, text);
+create or replace function public._vis_oculta_auto(p_problema text) returns boolean
 language sql immutable as $$
-  select coalesce(p_problema, '') ~* '(bateria inchad|inchad|tela trincad|tela quebrad|trincad|carca[cç]a)'
+  select coalesce(p_problema, '') ~* '(inchad|estufad|trincad|rachad|tela quebrad|quebrou a tela|tela partid|carca[cç]a)'
+$$;
+create or replace function public._vis_oculta(p_id bigint, p_problema text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select oculta from vis_ocultar where ocorrencia_id = p_id), public._vis_oculta_auto(p_problema))
 $$;
 
 alter table public.vis_pessoas   enable row level security;   -- sem policy: só pelas funções
@@ -181,7 +196,7 @@ language sql security definer set search_path = public as $$
   insert into vis_avisos (proposta_id, para, email, assunto, texto) values (p_prop, p_para, p_email, left(p_assunto, 200), p_texto);
 $$;
 
-revoke execute on function public._vis_oculta(text, text) from anon, authenticated;
+revoke execute on function public._vis_oculta(bigint, text) from public, anon, authenticated;
 revoke execute on function public._vis_quem(text), public._vis_exige(text, text),
   public._vis_avisar(bigint, text, text, text, text), public._vis_json(public.vis_propostas, boolean)
   from public, anon, authenticated;
@@ -234,17 +249,17 @@ begin
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'tag', o.tag, 'categoria', o.categoria, 'problema', o.problema,
              'status', o.status, 'prioridade', o.prioridade, 'reincidencias', o.reincidencias,
-             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.categoria, o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
+             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.id, o.problema), 'oculta_auto', public._vis_oculta_auto(o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
       into oc
       from v_ocorrencias_cruzadas o where o.status in ('aberta', 'em_andamento') and o.tag is not null
-        and (eq or not public._vis_oculta(o.categoria, o.problema));
+        and (eq or not public._vis_oculta(o.id, o.problema));
   exception when others then      -- view antiga/sem prioridade: lê direto da tabela
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'tag', o.tag, 'categoria', o.categoria, 'problema', o.problema,
              'status', o.status, 'prioridade', o.urgencia, 'reincidencias', o.reincidencias,
-             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.categoria, o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
+             'desde', coalesce(o.primeira_msg_em, o.criado_em), 'oculta', public._vis_oculta(o.id, o.problema), 'oculta_auto', public._vis_oculta_auto(o.problema)) order by o.tag, o.criado_em), '[]'::jsonb)
       into oc
       from ocorrencias o where o.status in ('aberta', 'em_andamento') and o.tag is not null
-        and (eq or not public._vis_oculta(o.categoria, o.problema));
+        and (eq or not public._vis_oculta(o.id, o.problema));
   end;
   return json_build_object(
     'quem', q,
@@ -421,6 +436,19 @@ begin
   where id = 1;
   return 'ok';
 end $$;
+
+-- esconder / mostrar uma ocorrência para a Caliman (p_oculta null = volta ao automático)
+create or replace function public.vis_ocultar_salvar(p_token text, p_id bigint, p_oculta boolean) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token, 'equipe');
+begin
+  if p_oculta is null then delete from vis_ocultar where ocorrencia_id = p_id;
+  else insert into vis_ocultar (ocorrencia_id, oculta, por) values (p_id, p_oculta, q->>'nome')
+       on conflict (ocorrencia_id) do update set oculta = excluded.oculta, por = excluded.por, em = now();
+  end if;
+  return 'ok';
+end $$;
+grant execute on function public.vis_ocultar_salvar(text, bigint, boolean) to anon, authenticated;
 
 -- ---------------------------------------------------------------- robô de e-mail (mesma chave do quadro de demandas)
 create or replace function public.vis_avisos_pendentes(p_chave text) returns json

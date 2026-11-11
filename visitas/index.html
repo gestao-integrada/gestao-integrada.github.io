@@ -184,7 +184,7 @@ const CAT={carregamento:"Não carrega",abrir_viagem:"App não abre viagem",conta
 const ST={pendente:["Aguardando resposta","#c2410c"],confirmada:["Confirmada","#15803d"],recusada:["Não vai dar","#dc2626"],
   ciente:["Ciente","#1d4ed8"],feita:["Visita feita","#15803d"],cancelada:["Cancelada","#94a3b8"]};
 const TIPO={visita:"🔧 Pedido de visita",mudanca:"🔁 Carro mudou de lugar/turno",aviso:"💬 Aviso"};
-let TOKEN=null, D=null, SEL=new Set(), FILTRO="ativos", ALVO=null, TIMER=null;
+let COMO_CAL=false, TOKEN=null, D=null, SEL=new Set(), FILTRO="ativos", ALVO=null, TIMER=null;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
@@ -280,12 +280,14 @@ function desenhar(){
 }
 function porCarro(){
   const m=new Map();
-  for(const o of D.ocorrencias){if(!m.has(o.tag))m.set(o.tag,[]);m.get(o.tag).push(o)}
+  for(const o of D.ocorrencias){if(COMO_CAL&&o.oculta)continue;if(!m.has(o.tag))m.set(o.tag,[]);m.get(o.tag).push(o)}
   return [...m.entries()].sort((a,b)=>{const g=x=>x[1].some(o=>o.prioridade==="alta")?0:1;return g(a)-g(b)||(+a[0])-(+b[0])||a[0].localeCompare(b[0])});
 }
 function htmlCarros(){
   const cs=porCarro();
-  let h='<h2 class="sec">Carros com ocorrência aberta <span class="n">'+cs.length+'</span><span class="r note">toque nos carros para selecionar</span></h2>';
+  const eq=EQ(), nOc=D.ocorrencias.filter(o=>o.oculta).length;
+  let h='<h2 class="sec">Carros com ocorrência aberta <span class="n">'+cs.length+'</span><span class="r note">'+
+    (eq?'<label style="cursor:pointer"><input type="checkbox" id="cCal"'+(COMO_CAL?" checked":"")+'> ver como a Caliman vê ('+nOc+' escondida'+(nOc===1?'':'s')+')</label>':'toque nos carros para selecionar')+'</span></h2>';
   if(!cs.length)return h+'<div class="vazio">Nenhuma ocorrência aberta agora. 👌</div>';
   h+='<div class="cars">';
   for(const [tag,os] of cs){
@@ -295,7 +297,8 @@ function htmlCarros(){
     h+='<div class="car'+(alta?" alta":"")+(SEL.has(tag)?" sel":"")+'" data-tag="'+esc(tag)+'"><div class="ck">'+(SEL.has(tag)?"✓":"")+'</div>'+
       '<div class="num">Carro '+esc(tag)+'<small>'+haQuanto(antigo)+'</small></div><ul>'+
       os.map(o=>'<li><b>'+esc(CAT[o.categoria]||o.categoria)+'</b>'+(o.prioridade==="alta"?' <span class="chip alta">grave</span>':'')+(o.oculta?' <span class="chip cancelada">não aparece p/ Caliman</span>':'')+
-        (o.problema?'<br><span class="note">'+esc(o.problema)+'</span>':'')+'</li>').join("")+'</ul>'+
+        (o.problema?'<br><span class="note">'+esc(o.problema)+'</span>':'')+
+        (eq&&!COMO_CAL?'<br><button class="btn sm" style="margin-top:4px;padding:2px 8px;font-size:12px" data-oc="'+o.id+'" data-v="'+(o.oculta?"0":"1")+'">'+(o.oculta?"👁 Mostrar p/ Caliman":"🙈 Esconder da Caliman")+'</button>':'')+'</li>').join("")+'</ul>'+
       (ag?'<div class="ag"><span class="chip '+ag.status+'">📅 '+(ag.status==="confirmada"?"visita confirmada":"aguardando "+esc(DONO()))+' · '+esc(dLbl(ag.dia))+'</span></div>':'')+
       '</div>';
   }
@@ -368,6 +371,10 @@ function ligar(){
   document.querySelectorAll(".car").forEach(el=>el.onclick=()=>{const t=el.dataset.tag;SEL.has(t)?SEL.delete(t):SEL.add(t);
     el.classList.toggle("sel",SEL.has(t));el.querySelector(".ck").textContent=SEL.has(t)?"✓":"";barraSel();$("fab").classList.toggle("hidden",SEL.size>0)});
   document.querySelectorAll(".flt button").forEach(b=>b.onclick=()=>{FILTRO=b.dataset.f;desenhar()});
+  if($("cCal"))$("cCal").onchange=()=>{COMO_CAL=$("cCal").checked;desenhar()};
+  document.querySelectorAll("[data-oc]").forEach(b=>b.onclick=async e=>{e.stopPropagation();b.disabled=true;
+    const o=D.ocorrencias.find(x=>x.id===+b.dataset.oc), quer=b.dataset.v==="1";
+    try{await rpc("vis_ocultar_salvar",{p_token:TOKEN,p_id:o.id,p_oculta:quer===!!o.oculta_auto?null:quer});await carregar()}catch(err){alert(err.message);b.disabled=false}});
   document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>acao(b.dataset.a,+b.dataset.id,b));
   document.querySelectorAll("[data-rec]").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();acao("rec",+i.dataset.rec,i)}});
 }
