@@ -74,6 +74,21 @@ create table if not exists public.abt_casos (
   primary key (viagem_id, regra)
 );
 create index if not exists abt_casos_data on public.abt_casos (data_local desc);
+
+-- evidências da tratativa (foto da conversa, print da TFleet corrigida, PDF...), por viagem
+create table if not exists public.abt_evidencias (
+  id          bigserial primary key,
+  viagem_id   text not null,
+  nome        text not null,
+  tipo        text,
+  tamanho     int not null,
+  dados       bytea not null,
+  enviado_por text,
+  enviado_em  timestamptz not null default now()
+);
+create index if not exists abt_evidencias_viagem on public.abt_evidencias (viagem_id);
+alter table public.abt_evidencias enable row level security;
+revoke all on public.abt_evidencias from anon, authenticated;
 alter table public.abt_casos drop constraint if exists abt_casos_situacao_check;
 alter table public.abt_casos add constraint abt_casos_situacao_check check (situacao in ('aberto','orientado','corrigido','falso'));
 
@@ -383,7 +398,9 @@ begin
         'viagem_id', d.viagem_id, 'regra', d.regra, 'gravidade', d.gravidade, 'data', d.data_local, 'hora', to_char(d.hora, 'HH24:MI'),
         'frota', d.frota, 'motorista', d.motorista, 'linha', d.linha, 'tipo', d.tipo, 'tipolinha', d.tipolinha,
         'ocupacao', d.ocupacao, 'problema', d.problema, 'sugestao', d.sugestao,
-        'situacao', coalesce(c.situacao, 'aberto'), 'obs', c.obs, 'marcado_por', c.marcado_por,
+        'situacao', coalesce(c.situacao, 'aberto'), 'obs', c.obs, 'marcado_por', c.marcado_por, 'marcado_em', c.marcado_em,
+        'evid', (select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'nome', e.nome, 'tipo', e.tipo, 'tamanho', e.tamanho,
+                   'por', e.enviado_por, 'em', e.enviado_em) order by e.id), '[]'::jsonb) from abt_evidencias e where e.viagem_id = d.viagem_id),
         'avisado_em', c.avisado_em, 'cartao_id', c.cartao_id) order by d.data_local desc, d.hora desc), '[]'::jsonb)
       from abt_detectar(de, ate) d left join abt_casos c on c.viagem_id = d.viagem_id and c.regra = d.regra
       where not (p_caliman and coalesce(c.situacao, 'aberto') = 'falso')),
@@ -436,12 +453,10 @@ begin
   return 'ok';
 end $$;
 
--- tratativa de uma viagem (todas as regras dela), pela página Visitas aos carros ou pelo painel:
---   orientado = conversou com o motorista · corrigido = acertado na TFleet · falso = estava certa (só equipe) · aberto = desfazer
--- justificativa obrigatória (menos para reabrir). Se a viagem já foi para a demanda, a tratativa entra como comentário nela.
-create or replace function public.abt_tratar(p_token text, p_viagem text, p_situacao text, p_obs text) returns text
+-- quem está usando: Caliman (celular, token tfv_) ou equipe (senha do Demandas). Devolve q + eq + quem (nome para o histórico)
+create or replace function public._abt_quem(p_token text) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare q jsonb; quem text; eq boolean; d record; n int := 0; cid bigint; txt text;
+declare q jsonb; eq boolean;
 begin
   if p_token like 'tfv_%' then
     execute 'select public._vis_exige($1, null)' into q using p_token;
@@ -449,10 +464,30 @@ begin
   else
     q := _abt_exige(p_token); eq := true;
   end if;
-  quem := (q->>'nome') || case when eq then '' else ' (' || coalesce(nullif(q->>'empresa', ''), 'Caliman') || ')' end;
+  return q || jsonb_build_object('eq', eq, 'quem',
+    (q->>'nome') || case when eq then '' else ' (' || coalesce(nullif(q->>'empresa', ''), 'Caliman') || ')' end);
+end $$;
+revoke execute on function public._abt_quem(text) from public, anon, authenticated;
+
+-- tratativa de uma viagem (todas as regras dela), pela página Visitas aos carros ou pelo painel:
+--   orientado = conversou com o motorista · corrigido = acertado na TFleet · falso = estava certa (só equipe) · aberto = desfazer
+-- justificativa obrigatória (menos para reabrir) e, para orientado/corrigido, pelo menos 1 evidência (foto, print ou PDF).
+-- p_evid = [{nome, tipo, base64}] (até 5 arquivos de 5 MB). Se a viagem já foi para a demanda, a tratativa entra como
+-- comentário nela e as evidências vão como documentos do cartão.
+drop function if exists public.abt_tratar(text, text, text, text);
+create or replace function public.abt_tratar(p_token text, p_viagem text, p_situacao text, p_obs text, p_evid jsonb default null) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := _abt_quem(p_token); quem text := q->>'quem'; eq boolean := (q->>'eq')::boolean;
+  d record; e jsonb; b bytea; n int := 0; nev int := 0; cid bigint; txt text; nomes text[] := '{}';
+begin
   if p_situacao not in ('aberto', 'orientado', 'corrigido', 'falso') then raise exception 'Escolha o que foi feito.'; end if;
   if p_situacao = 'falso' and not eq then raise exception 'Só a equipe marca que a viagem estava certa. Explique na justificativa.'; end if;
   if p_situacao <> 'aberto' and length(trim(coalesce(p_obs, ''))) < 5 then raise exception 'Escreva a justificativa (o que foi feito).'; end if;
+  if jsonb_typeof(p_evid) = 'array' and jsonb_array_length(p_evid) > 5 then raise exception 'Mande no máximo 5 arquivos por vez.'; end if;
+  if p_situacao in ('orientado', 'corrigido') and coalesce(jsonb_array_length(case when jsonb_typeof(p_evid) = 'array' then p_evid end), 0) = 0
+     and not exists (select 1 from abt_evidencias where viagem_id = p_viagem) then
+    raise exception 'Anexe a evidência (foto da conversa, print da TFleet corrigida ou PDF).';
+  end if;
   -- grava os casos da viagem que ainda não estão na tabela
   for d in select * from abt_detectar((select data_local from viagens where id = p_viagem), (select data_local from viagens where id = p_viagem)) x
             where x.viagem_id = p_viagem loop
@@ -466,13 +501,53 @@ begin
   if n = 0 then raise exception 'Viagem não encontrada.'; end if;
   select max(cartao_id), max(to_char(data_local, 'DD/MM') || ' ' || to_char(hora, 'HH24:MI') || ' · carro ' || frota || ' · ' || linha || ' ' || tipo)
     into cid, txt from abt_casos where viagem_id = p_viagem;
+  -- evidências
+  if jsonb_typeof(p_evid) = 'array' then
+    for e in select * from jsonb_array_elements(p_evid) loop
+      b := decode(coalesce(e->>'base64', ''), 'base64');
+      if length(b) = 0 then continue; end if;
+      if length(b) > 5 * 1024 * 1024 then raise exception 'O arquivo % passa de 5 MB.', coalesce(e->>'nome', ''); end if;
+      insert into abt_evidencias (viagem_id, nome, tipo, tamanho, dados, enviado_por)
+      values (p_viagem, coalesce(nullif(trim(e->>'nome'), ''), 'evidencia'), nullif(e->>'tipo', ''), length(b), b, quem);
+      nev := nev + 1; nomes := nomes || coalesce(nullif(trim(e->>'nome'), ''), 'evidencia');
+      -- também como documento do cartão da demanda (se o quadro tiver documentos)
+      if cid is not null and exists (select 1 from information_schema.columns where table_schema = 'public'
+                                       and table_name = 'sol_anexos' and column_name = 'cartao_id') then
+        execute 'insert into sol_anexos (cartao_id, nome, tipo, tamanho, dados, enviado_por) values ($1, $2, $3, $4, $5, $6)'
+          using cid, 'Viagem ' || replace(split_part(txt, ' · ', 1), '/', '-') || ' carro ' || split_part(split_part(txt, ' · carro ', 2), ' ', 1)
+                     || ' - ' || coalesce(nullif(trim(e->>'nome'), ''), 'evidencia'), nullif(e->>'tipo', ''), length(b), b, quem;
+      end if;
+    end loop;
+  end if;
   if cid is not null and to_regclass('public.sol_historico') is not null then
     insert into sol_historico (cartao_id, quem, tipo, texto) values (cid, quem, 'comentario',
       'Tratativa da viagem ' || txt || ': ' ||
       case p_situacao when 'orientado' then 'motorista orientado' when 'corrigido' then 'corrigida na TFleet'
                       when 'falso' then 'estava certa' else 'reaberta' end ||
-      coalesce(' — ' || nullif(trim(p_obs), ''), ''));
+      coalesce(' — ' || nullif(trim(p_obs), ''), '') ||
+      case when nev > 0 then ' (evidência: ' || array_to_string(nomes, ', ') || ')' else '' end);
   end if;
+  return 'ok';
+end $$;
+
+-- baixar/ver uma evidência (Caliman e equipe)
+create or replace function public.abt_evidencia(p_token text, p_id bigint) returns json
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := _abt_quem(p_token); r record;
+begin
+  select e.nome, e.tipo, encode(e.dados, 'base64') as b into r from abt_evidencias e where e.id = p_id
+     and ((q->>'eq')::boolean or not exists (select 1 from abt_casos c where c.viagem_id = e.viagem_id and c.situacao = 'falso'));
+  if r.nome is null then raise exception 'Evidência não encontrada.'; end if;
+  return json_build_object('nome', r.nome, 'tipo', r.tipo, 'base64', replace(r.b, E'\n', ''));
+end $$;
+
+-- apagar uma evidência errada: só a equipe, ou quem mandou
+create or replace function public.abt_evidencia_remover(p_token text, p_id bigint) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := _abt_quem(p_token);
+begin
+  delete from abt_evidencias where id = p_id and ((q->>'eq')::boolean or enviado_por = q->>'quem');
+  if not found then raise exception 'Sem permissão para apagar essa evidência.'; end if;
   return 'ok';
 end $$;
 
@@ -509,8 +584,9 @@ begin
   return abt_rodar(3, true);
 end $$;
 
-grant execute on function public.abt_painel(text, date, date), public.abt_visitas(text, date, date), public.abt_tratar(text, text, text, text), public.abt_marcar(text, text, text, text, text),
-  public.abt_config_salvar(text, jsonb), public.abt_enviar_agora(text) to anon, authenticated;
+grant execute on function public.abt_painel(text, date, date), public.abt_visitas(text, date, date), public.abt_tratar(text, text, text, text, jsonb), public.abt_marcar(text, text, text, text, text),
+  public.abt_config_salvar(text, jsonb), public.abt_enviar_agora(text),
+  public.abt_evidencia(text, bigint), public.abt_evidencia_remover(text, bigint) to anon, authenticated;
 
 -- ---------------------------------------------------------------- agendamento (pg_cron): de hora em hora, aos 20 min
 create extension if not exists pg_cron;

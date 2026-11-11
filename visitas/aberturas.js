@@ -225,11 +225,44 @@ function cartao(v,eq){
     '<span>'+esc(nome(v.motorista))+'</span><b>'+esc(v.linha)+' · '+esc(v.tipo)+'</b>'+
     '<span class="note">'+(v.ocupacao==null?"sem leitura":v.ocupacao+" passageiro(s)")+' · '+esc(v.tipolinha)+'</span></div>'+
     '<ul>'+v.regras.map(r=>'<li><span class="ab-chip ab-'+r.gravidade+'">'+esc(REGRA[r.regra]||r.regra)+'</span> '+esc(r.problema)+'<span class="sg">→ '+esc(r.sugestao)+'</span></li>').join("")+'</ul>'+
-    '<div class="acts"><span class="info">'+(ok?'<span class="ab-chip '+st[1]+'">'+st[0]+'</span> '+(r0.obs?'“'+esc(r0.obs)+'” ':'')+(r0.marcado_por?'· '+esc(r0.marcado_por)+' ':''):'')+
+    '<div class="acts"><span class="info">'+(ok?'<span class="ab-chip '+st[1]+'">'+st[0]+'</span> '+(r0.obs?'“'+esc(r0.obs)+'” ':'')+(r0.marcado_por?'· '+esc(r0.marcado_por)+' ':'')+((r0.evid||[]).length?'· 📎 '+r0.evid.length+' evidência(s) ':''):'')+
       (v.avisado?'· enviada na demanda #'+v.avisado.cartao_id+' em '+dtBR(v.avisado.avisado_em):'· ainda não enviada para a demanda')+'</span>'+
     '<button class="btn sm'+(ok?'':' p')+'">'+(ok?'Ver / mudar tratativa':'Registrar tratativa')+'</button></div></div>';
 }
-/* pop-up da viagem: tratativa com justificativa (Caliman e equipe) */
+/* evidências da tratativa: foto vira JPEG de até 1600 px (fica leve no 4G); PDF e outros vão como estão (até 5 MB) */
+function lerEvid(f){return new Promise((ok,er)=>{
+  const rd=new FileReader();rd.onerror=()=>er(new Error("Não consegui ler "+f.name));
+  rd.onload=()=>{const url=rd.result,cru=()=>f.size>5*1048576?er(new Error(f.name+" passa de 5 MB.")):ok({nome:f.name,tipo:f.type,base64:url.split(",")[1]});
+    if(!/^image\//.test(f.type))return cru();
+    const im=new Image();im.onerror=cru;im.onload=()=>{const k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");
+      c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+      ok({nome:(f.name||"foto").replace(/\.[^.]+$/,"")+".jpg",tipo:"image/jpeg",base64:c.toDataURL("image/jpeg",.8).split(",")[1]})};im.src=url};
+  rd.readAsDataURL(f)})}
+const kbEv=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
+async function verEvid(id,alvo){try{const a=await rpc("abt_evidencia",{p_token:TOKEN,p_id:id});
+  const bin=atob(a.base64),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+  const url=URL.createObjectURL(new Blob([u],{type:a.tipo||"application/octet-stream"}));
+  if(/^image\//.test(a.tipo||"")&&alvo){alvo.innerHTML='<img src="'+url+'" style="max-width:100%;max-height:60vh;border-radius:8px;margin-top:8px;display:block">'}
+  else{const l=document.createElement("a");l.href=url;l.download=a.nome;document.body.appendChild(l);l.click();l.remove()}}catch(e){alert(e.message)}}
+function blocoEvid(v,eq,px){
+  const ev=(v.regras[0].evid)||[];
+  return '<div style="margin-top:8px;font-weight:600">Evidência <span class="note" style="font-weight:400">(foto da conversa, print da TFleet corrigida ou PDF)</span></div>'+
+    (ev.length?'<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">'+ev.map(e=>'<span style="border:1px solid var(--line);border-radius:8px;padding:3px 8px;font-size:12px">📎 <a href="#" data-ev="'+e.id+'">'+esc(e.nome)+'</a> <span class="note">'+kbEv(e.tamanho)+(e.por?' · '+esc(e.por):'')+'</span>'+
+      (eq?' <a href="#" data-evx="'+e.id+'" title="Apagar" style="color:#c0392b;text-decoration:none">×</a>':'')+'</span>').join("")+'</div>':'')+
+    '<input type="file" id="'+px+'Arq" accept="image/*,application/pdf" multiple style="display:none">'+
+    '<button type="button" class="btn sm" id="'+px+'ArqB" style="margin:4px 0">📷 Anexar foto ou arquivo</button>'+
+    '<div id="'+px+'ArqL" class="note"></div><div id="'+px+'Prev"></div>';
+}
+function ligarEvid(v,px,raiz,depois){
+  const prev=document.getElementById(px+"Prev"),arq=document.getElementById(px+"Arq"),lst=document.getElementById(px+"ArqL");
+  raiz.querySelectorAll("[data-ev]").forEach(a=>a.onclick=e=>{e.preventDefault();verEvid(+a.dataset.ev,prev)});
+  raiz.querySelectorAll("[data-evx]").forEach(a=>a.onclick=async e=>{e.preventDefault();if(!confirm("Apagar essa evidência?"))return;
+    try{await rpc("abt_evidencia_remover",{p_token:TOKEN,p_id:+a.dataset.evx});a.parentNode.remove();depois&&depois()}catch(err){alert(err.message)}});
+  document.getElementById(px+"ArqB").onclick=()=>arq.click();
+  arq.onchange=()=>{lst.textContent=[...arq.files].map(f=>"📎 "+f.name+" ("+kbEv(f.size)+")").join("  ")};
+  return async()=>{const fs=[...arq.files];if(fs.length>5)throw new Error("Mande no máximo 5 arquivos por vez.");return Promise.all(fs.map(lerEvid))};
+}
+/* pop-up da viagem: tratativa com justificativa e evidência (Caliman e equipe) */
 document.body.insertAdjacentHTML("beforeend",'<div id="abOv" class="ov hidden" style="z-index:60"><div class="dlg" id="abDlg" style="padding:16px 18px"></div></div>');
 function tratar(id){
   const v=viagens(A.dados).find(x=>x.viagem_id===id);if(!v)return;
@@ -246,6 +279,7 @@ function tratar(id){
     ops.map(o=>'<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;cursor:pointer"><input type="radio" name="abSitR" value="'+o[0]+'"'+(o[0]===cur?" checked":"")+' style="margin-top:4px"><span><b>'+o[1]+'</b><br><span class="note">'+o[2]+'</span></span></label>').join("")+
     '<div style="margin-top:8px;font-weight:600">Justificativa</div>'+
     '<textarea id="abObs" rows="3" style="width:100%;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:8px;padding:8px" placeholder="Ex.: conversei com o motorista em 11/11, ele vai abrir VOLTA à tarde">'+esc(v.sit!=="aberto"?r0.obs||"":"")+'</textarea>'+
+    blocoEvid(v,eq,"ab")+
     (v.avisado?'<div class="note">Vai também como comentário na demanda #'+v.avisado.cartao_id+'.</div>':'')+
     '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">'+
       (v.sit!=="aberto"&&eq?'<button class="btn" id="abReab">Reabrir</button>':'')+
@@ -253,8 +287,12 @@ function tratar(id){
   const ov=document.getElementById("abOv");ov.classList.remove("hidden");
   const fechar=()=>ov.classList.add("hidden");
   document.getElementById("abX").onclick=fechar;
+  const pegaEvid=ligarEvid(v,"ab",D2,()=>{A.ontemEm=0;carregarAba()});
   const enviar=async(sit,obs)=>{const m=document.getElementById("abMsg");m.className="msg";m.textContent="Salvando…";
-    try{await rpc("abt_tratar",{p_token:TOKEN,p_viagem:id,p_situacao:sit,p_obs:obs});fechar();A.ontemEm=0;carregarAba()}
+    try{const ev=sit==="aberto"?[]:await pegaEvid();
+      if((sit==="orientado"||sit==="corrigido")&&!ev.length&&!(r0.evid||[]).length)throw new Error("Anexe a evidência (foto da conversa, print da TFleet corrigida ou PDF).");
+      if(ev.length)m.textContent="Enviando evidência…";
+      await rpc("abt_tratar",{p_token:TOKEN,p_viagem:id,p_situacao:sit,p_obs:obs,p_evid:ev});fechar();A.ontemEm=0;carregarAba()}
     catch(e){m.className="msg err";m.textContent=msgErro(e)}};
   document.getElementById("abSalvar").onclick=()=>{const r=D2.querySelector('input[name=abSitR]:checked');
     enviar(r?r.value:"orientado",document.getElementById("abObs").value)};
