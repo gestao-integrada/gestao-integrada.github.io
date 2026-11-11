@@ -344,12 +344,23 @@ function desenhar(){
   $("fxPend").textContent="⏳ "+pend.length+(pend.length===1?" pedido aguardando sua resposta":" pedidos aguardando sua resposta")+" — toque para ver";
   $("fxPend").onclick=()=>{FILTRO="pendentes";desenhar();$("secPed").scrollIntoView({behavior:"smooth"})};
   document.title=(eq&&pend.length?"("+pend.length+") ":"")+"Visitas aos carros";
-  const blocoCarros=htmlCarros(), blocoPed=htmlPedidos();
-  $("blocos").innerHTML=eq?blocoPed+blocoCarros:blocoCarros+blocoPed;
+  const blocoCarros=htmlCarros(), blocoPed=htmlPedidos(), blocoRotas=htmlRotas();
+  $("blocos").innerHTML=blocoRotas+(eq?blocoPed+blocoCarros:blocoCarros+blocoPed);
   ligar();
   $("fab").classList.toggle("hidden",SEL.size>0);
   barraSel();
   if(ALVO){const el=document.querySelector('.ped[data-id="'+ALVO+'"]');if(el){el.classList.add("alvo");el.scrollIntoView({block:"center"})}ALVO=null}
+}
+function htmlRotas(){
+  const r=D.rotas;if(!r||!r.lista)return "";
+  const hc=r.coleta?new Date(r.coleta).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"—";
+  if(!r.coleta_ok)return '<h2 class="sec">Rotas de hoje</h2><div class="vazio">⚠️ Os dados da TFleet não chegam desde '+hc+'. Não dá para saber agora quais rotas subiram.</div>';
+  if(!r.lista.length)return "";
+  return '<h2 class="sec">⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span><span class="r note">dados da TFleet de '+hc+'</span></h2>'+
+    '<div class="note" style="margin:-4px 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
+    '<div class="cars">'+r.lista.map(x=>'<div class="car" style="cursor:default;border-left-color:#f59e0b"><div class="num" style="font-size:17px">'+esc(x.linha)+'<small>'+esc(x.tipo)+' · costuma sair '+esc(x.hora)+'</small></div>'+
+      '<div class="note">'+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</div>'+
+      '<div class="note" style="opacity:.7">rodou em '+x.vezes+' de '+x.dias+' dias parecidos</div></div>').join("")+'</div>';
 }
 function porCarro(){
   const m=new Map();
