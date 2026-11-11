@@ -235,6 +235,7 @@ function desenhar(){
   if($("bAgora"))$("bAgora").onclick=async()=>{if(!confirm("Mandar agora os casos de dias anteriores que ainda não foram avisados?"))return;
     try{alert(await rpc("abt_enviar_agora",{p_token:TOKEN}));carregar()}catch(err){alert(err.message)}};
 
+  $("demanda").insertAdjacentHTML("beforeend",'<span class="note" style="flex-basis:100%">'+(DADOS.rotas_vigiadas?'Só as '+DADOS.rotas_vigiadas+' rotas vigiadas (escolhidas em Visitas aos carros → Rotas vigiadas).':'Nenhuma rota vigiada escolhida em Visitas aos carros: mostrando todas as rotas.')+'</span>');
   const todas=viagens();
   // kpis
   const baseK=filtrar(todas,"regra"),cont={};

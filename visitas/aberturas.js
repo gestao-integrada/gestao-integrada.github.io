@@ -186,6 +186,7 @@ function desenharAba(){
     '<span class="note">'+(cf.ativo?'Casos novos vão sozinhos para a demanda todo dia às '+cf.hora_aviso+'h':'Envio automático desligado')+'</span>'+
     '<span class="r">'+(d?'<a class="btn sm" target="_blank" rel="noopener" href="'+esc(d.link)+'">Abrir demanda</a>':'')+
     (eq?'<button class="btn sm p" id="abAgora">Mandar agora para a Caliman</button><a class="btn sm" href="../aberturas/" target="_blank" rel="noopener">⚙ Ajustes</a>':'')+'</span></div>';
+  fx+='<div class="note" style="margin:0 0 6px">'+(X.rotas_vigiadas?'Só as <b>'+X.rotas_vigiadas+' rotas vigiadas</b> (as mesmas das idas que não subiram'+(eq?'; muda em "Rotas vigiadas"':'')+').':'Nenhuma rota vigiada escolhida: mostrando todas as rotas.')+'</div>';
   $$("abFx").innerHTML=fx;
   if($$("abAgora"))$$("abAgora").onclick=async()=>{if(!confirm("Mandar agora os casos de dias anteriores que ainda não foram avisados?"))return;
     try{alert(await rpc("abt_enviar_agora",{p_token:TOKEN}));carregarAba()}catch(e){alert(msgErro(e))}};

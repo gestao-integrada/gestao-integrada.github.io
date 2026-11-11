@@ -87,6 +87,17 @@ language sql stable as $$ select (now() at time zone 'America/Belem')::date $$;
 create or replace function public._abt_lin(p text) returns text
 language sql immutable as $$ select regexp_replace(upper(trim(coalesce(p, ''))), '\s+', ' ', 'g') $$;
 
+-- rotas escolhidas em "Rotas vigiadas" na página Visitas aos carros (mesma lista das idas que não subiram).
+-- Devolve as linhas normalizadas; null = nenhuma escolhida (ou Visitas não instalada) → olha todas.
+create or replace function public._abt_vigiadas() returns text[]
+language plpgsql stable security definer set search_path = public as $$
+declare r text[];
+begin
+  if to_regclass('public.vis_rotas_vigiadas') is null then return null; end if;
+  execute 'select array_agg(distinct public._abt_lin(linha)) from public.vis_rotas_vigiadas' into r;
+  return r;
+end $$;
+
 -- ---------------------------------------------------------------- detecção
 -- Devolve 1 linha por viagem + regra no período. Usa 30 dias antes para aprender o costume
 -- de cada motorista (rota mais feita) e o horário normal de cada rota de turno.
@@ -222,6 +233,8 @@ todas as (select * from r1 union all select * from r2 union all select * from r3
 select t.id, t.regra, t.grav, v.data_local, v.hora, v.frota, v.motorista, v.linha, v.tipo, v.tipolinha, v.ocupacao,
        t.problema, t.sugestao
 from todas t join v on v.id = t.id
+cross join (select public._abt_vigiadas() as l) vg
+where vg.l is null or v.linha = any (vg.l)          -- só as rotas escolhidas em "Rotas vigiadas" (Visitas)
 order by v.data_local desc, v.hora, t.regra;
 $$;
 revoke execute on function public.abt_detectar(date, date) from public, anon, authenticated;
@@ -363,7 +376,9 @@ begin
         'avisado_em', c.avisado_em, 'cartao_id', c.cartao_id) order by d.data_local desc, d.hora desc), '[]'::jsonb)
       from abt_detectar(de, ate) d left join abt_casos c on c.viagem_id = d.viagem_id and c.regra = d.regra
       where not (p_caliman and coalesce(c.situacao, 'aberto') = 'falso')),
-    'viagens', (select count(*) from viagens where data_local between de and ate),
+    'viagens', (select count(*) from viagens, (select _abt_vigiadas() as l) vg where data_local between de and ate
+                  and (vg.l is null or _abt_lin(linha) = any (vg.l))),
+    'rotas_vigiadas', coalesce(cardinality(_abt_vigiadas()), 0),
     'coleta', (select max(coletado_em) from viagens),
     'demanda', (select jsonb_build_object('id', s.id, 'status', s.status, 'prazo', s.prazo, 'responsavel', s.responsavel,
                   'link', _sol_link(s)) from sol_cartoes s where s.criado_por = 'Robô aberturas' order by s.id desc limit 1),
