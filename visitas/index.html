@@ -557,7 +557,7 @@ function dlgAjustes(){
         '<td><input type="time" class="ag-i" value="'+esc(a.ini||"")+'"></td><td><input type="time" class="ag-f" value="'+esc(a.fim||"")+'"></td><td><input class="ag-b" value="'+esc(a.obs||"")+'" placeholder="ex.: nem sempre vai ao terminal" style="width:100%;min-width:140px"></td></tr>'}).join("")+
       '</table></div><div class="note">Deixe "Onde" vazio nos dias em que você não trabalha.</div></div>'+
     '<div class="fld"><b>Seu WhatsApp (opcional)</b><div class="row"><input type="tel" id="aWa" value="'+esc(fmtCel(c.whatsapp_dono||""))+'" placeholder="(91) 98888-7777"></div>'+
-      '<div class="note">Se preencher, aparece o botão “Mandar também no WhatsApp” para a Caliman depois de enviar.</div></div>'+
+      '<div class="note">Os avisos da Caliman chegam neste número pelo robô da TV Box (com os botões de resposta), e a Caliman ganha o botão “Mandar também no WhatsApp”.</div></div>'+
     '<div class="fld"><b>Lugares (separe por vírgula)</b><input class="full" id="aLoc" value="'+esc((c.locais||[]).join(", "))+'"></div>'+
     '<div class="acts" style="justify-content:flex-end"><button class="btn p" id="aS">Salvar</button></div><div class="msg" id="aM"></div></div>');
   $("dX").onclick=fechaDlg;
