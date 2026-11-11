@@ -256,39 +256,86 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- tela (tudo de uma vez)
--- ---------------------------------------------------------------- rotas que ainda não subiram hoje (TFleet → tabela viagens, coleta de hora em hora)
--- "Esperada" = a mesma linha + sentido + horário previsto rodou em pelo menos 60% dos dias parecidos (dia útil x fim de semana)
--- dos últimos 14 dias. Entra na lista quando já passou 1 h do horário típico de saída e não há viagem dela hoje.
+-- ---------------------------------------------------------------- rotas vigiadas: as que VOCÊ escolhe (ADM, turno...) e que precisam subir todo dia
+-- Dados: tabela viagens (coleta TFleet de hora em hora). Uma rota = linha + sentido + horário previsto.
+create table if not exists public.vis_rotas_vigiadas (
+  id         bigserial primary key,
+  linha      text not null,
+  tipo       text not null,                      -- IDA / VOLTA
+  prev       text not null,                      -- horário previsto (HH:MI) que identifica a viagem
+  hora       time not null,                      -- horário em que costuma sair (a partir dele + 1 h, cobra)
+  dias       text not null default 'uteis' check (dias in ('uteis', 'todos', 'fds')),
+  grupo      text,                               -- ADM, TURNO... (só para organizar)
+  criado_em  timestamptz not null default now(),
+  unique (linha, tipo, prev)
+);
+alter table public.vis_rotas_vigiadas enable row level security;
+revoke all on public.vis_rotas_vigiadas from anon, authenticated;
+
+create or replace function public._vis_prev(p_tipo text, p_bruto jsonb, p_hora time) returns text
+language sql immutable as $$
+  select coalesce(lpad(substring(case when upper(p_tipo) = 'VOLTA' then p_bruto->>'saidaprevista' else p_bruto->>'entradaprevista' end
+                                 from '(\d{1,2}:\d{2})'), 5, '0'),
+                  to_char(date_trunc('hour', p_hora) + interval '30 min' * floor(extract(minute from p_hora) / 30), 'HH24:MI'))
+$$;
+
+-- lista para escolher (equipe): tudo que rodou nos últimos 14 dias
+create or replace function public.vis_rotas_candidatas(p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token, 'equipe'); r jsonb;
+begin
+  if to_regclass('public.viagens') is null then return '[]'::jsonb; end if;
+  with v as (select linha, upper(coalesce(tipo, '')) as tipo, public._vis_prev(tipo, bruto, hora_saida) as prev, data_local, hora_saida,
+                    frota, coalesce(tipolinha, '') as tipolinha
+               from viagens where data_local >= public._vis_hoje() - 14 and linha is not null and hora_saida is not null),
+  g as (select linha, tipo, prev, count(distinct data_local) as vezes, percentile_disc(0.5) within group (order by hora_saida) as hora,
+               mode() within group (order by frota) as frota, mode() within group (order by tipolinha) as tipolinha
+          from v group by linha, tipo, prev)
+  select coalesce(jsonb_agg(jsonb_build_object('linha', coalesce(g.linha, w.linha), 'tipo', coalesce(g.tipo, w.tipo), 'prev', coalesce(g.prev, w.prev),
+           'hora', to_char(coalesce(g.hora, w.hora), 'HH24:MI'), 'vezes', coalesce(g.vezes, 0), 'frota', g.frota,
+           'grupo', coalesce(w.grupo, nullif(g.tipolinha, '')), 'vigiada', w.id is not null, 'dias', coalesce(w.dias, 'uteis'))
+           order by coalesce(w.grupo, g.tipolinha), coalesce(g.hora, w.hora), coalesce(g.linha, w.linha)), '[]'::jsonb) into r
+    from g full join vis_rotas_vigiadas w on w.linha = g.linha and w.tipo = g.tipo and w.prev = g.prev
+   where g.vezes >= 2 or w.id is not null;
+  return r;
+end $$;
+
+create or replace function public.vis_rotas_salvar(p_token text, p_lista jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token, 'equipe');
+begin
+  delete from vis_rotas_vigiadas;
+  insert into vis_rotas_vigiadas (linha, tipo, prev, hora, dias, grupo)
+  select distinct on (x->>'linha', upper(x->>'tipo'), x->>'prev') x->>'linha', upper(x->>'tipo'), x->>'prev', (x->>'hora')::time,
+         case when x->>'dias' in ('uteis', 'todos', 'fds') then x->>'dias' else 'uteis' end, nullif(left(trim(x->>'grupo'), 30), '')
+    from jsonb_array_elements(coalesce(p_lista, '[]'::jsonb)) x
+   where coalesce(x->>'linha', '') <> '' and coalesce(x->>'prev', '') <> '' and coalesce(x->>'hora', '') <> '';
+  return 'ok';
+end $$;
+grant execute on function public.vis_rotas_candidatas(text), public.vis_rotas_salvar(text, jsonb) to anon, authenticated;
+
+-- as vigiadas que já passaram 1 h do horário e não têm viagem hoje
 create or replace function public._vis_rotas_pendentes() returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare hoje date := public._vis_hoje(); agora time := (now() at time zone 'America/Belem')::time;
-        fds boolean := extract(isodow from public._vis_hoje()) in (6, 7); ult timestamptz; r jsonb;
+        fds boolean := extract(isodow from public._vis_hoje()) in (6, 7); ult timestamptz; r jsonb; n int;
 begin
   if to_regclass('public.viagens') is null then return null; end if;
+  select count(*) into n from vis_rotas_vigiadas;
   select max(coletado_em) into ult from viagens;
-  with v as (
-    select data_local, linha, upper(coalesce(tipo, '')) as tipo, hora_saida, frota, motorista,
-           coalesce(substring(case when upper(tipo) = 'VOLTA' then bruto->>'saidaprevista' else bruto->>'entradaprevista' end from '(\d{1,2}:\d{2})'),
-                    to_char(date_trunc('hour', hora_saida) + interval '30 min' * floor(extract(minute from hora_saida) / 30), 'HH24:MI')) as prev
-      from viagens
-     where data_local between hoje - 14 and hoje and linha is not null and hora_saida is not null),
-  dias as (select count(distinct data_local) as n from v
-            where data_local < hoje and (extract(isodow from data_local) in (6, 7)) = fds),
-  h as (select linha, tipo, prev, count(distinct data_local) as vezes,
-               percentile_disc(0.5) within group (order by hora_saida) as hora_tipica,
-               mode() within group (order by frota) as frota,
-               (array_agg(motorista order by data_local desc, hora_saida desc))[1] as motorista
-          from v where data_local < hoje and (extract(isodow from data_local) in (6, 7)) = fds
-         group by linha, tipo, prev)
-  select coalesce(jsonb_agg(jsonb_build_object('linha', h.linha, 'tipo', h.tipo, 'hora', to_char(h.hora_tipica, 'HH24:MI'),
-           'frota', h.frota, 'motorista', h.motorista, 'vezes', h.vezes, 'dias', d.n) order by h.hora_tipica, h.linha), '[]'::jsonb)
-    into r
-    from h, dias d
-   where d.n >= 3 and h.vezes >= greatest(2, ceil(d.n * 0.6))
-     and agora > h.hora_tipica + interval '60 min' and h.hora_tipica < time '23:00'
-     and not exists (select 1 from v t where t.data_local = hoje and t.linha = h.linha and t.tipo = h.tipo
-                       and (t.prev = h.prev or abs(extract(epoch from t.hora_saida - h.hora_tipica)) < 5400));
-  return jsonb_build_object('lista', r, 'coleta', ult, 'coleta_ok', ult > now() - interval '3 hours');
+  select coalesce(jsonb_agg(jsonb_build_object('linha', w.linha, 'tipo', w.tipo, 'hora', to_char(w.hora, 'HH24:MI'), 'grupo', w.grupo,
+           'frota', u.frota, 'motorista', u.motorista) order by w.hora, w.linha), '[]'::jsonb) into r
+    from vis_rotas_vigiadas w
+    left join lateral (select v.frota, v.motorista from viagens v
+                        where v.linha = w.linha and upper(v.tipo) = w.tipo and v.data_local >= hoje - 14 and v.data_local < hoje
+                          and public._vis_prev(v.tipo, v.bruto, v.hora_saida) = w.prev
+                        order by v.data_local desc, v.hora_saida desc limit 1) u on true
+   where (w.dias = 'todos' or (w.dias = 'uteis' and not fds) or (w.dias = 'fds' and fds))
+     and agora > w.hora + interval '60 min' and w.hora < time '23:00'
+     and not exists (select 1 from viagens t where t.data_local = hoje and t.linha = w.linha and upper(t.tipo) = w.tipo
+                       and (public._vis_prev(t.tipo, t.bruto, t.hora_saida) = w.prev
+                            or abs(extract(epoch from t.hora_saida - w.hora)) < 5400));
+  return jsonb_build_object('lista', r, 'vigiadas', n, 'coleta', ult, 'coleta_ok', ult > now() - interval '3 hours');
 end $$;
 revoke execute on function public._vis_rotas_pendentes() from public, anon, authenticated;
 

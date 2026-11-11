@@ -75,6 +75,13 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
 .peds{display:flex;flex-direction:column;gap:10px}
 .ped{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#94a3b8);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow)}
 .ped.alvo{outline:3px solid var(--brand)}
+.dlg .ped{box-shadow:none;border-top:0;border-right:0;border-bottom:0;border-radius:0;padding:0 0 0 12px}
+.pedmini{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.pm{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,#94a3b8);border-radius:10px;padding:8px 10px}
+.pm:hover{border-color:var(--brand)}
+.pm .h{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.pm .tp{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--mut)}
+.pm .fr{font-size:14px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pm .q{font-size:12px;color:var(--mut)}
 .ped .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ped .h .tp{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
 .ped .h .q{margin-left:auto;font-size:12px;color:var(--mut)}
@@ -158,6 +165,7 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
     <div class="tt"><h1>Visitas aos carros</h1><p class="sub" id="sub">Ocorrências abertas e horários para olhar os carros</p></div>
     <span class="who" id="who"></span>
     <button class="btn hidden" id="bPessoas">Pessoas da Caliman</button>
+    <button class="btn hidden" id="bRotas">Rotas vigiadas</button>
     <button class="btn hidden" id="bAjustes">Ajustes</button>
     <button class="btn" id="bSair">Sair</button>
   </header>
@@ -332,7 +340,7 @@ function ativa(p){return (p.status==="pendente"||p.status==="confirmada")&&p.dia
 function desenhar(){
   const eq=EQ();
   $("who").textContent=D.quem.nome+(eq?" · equipe":"");
-  $("bPessoas").classList.toggle("hidden",!eq);$("bAjustes").classList.toggle("hidden",!eq);
+  $("bPessoas").classList.toggle("hidden",!eq);$("bAjustes").classList.toggle("hidden",!eq);$("bRotas").classList.toggle("hidden",!eq);
   $("sub").textContent=eq?"Pedidos da Caliman para olhar os carros":"Ocorrências abertas dos carros e horários para o "+DONO()+" vir olhar";
   // agenda da semana
   const ag=agenda(), hojeD=dDow(D.hoje);
@@ -349,18 +357,18 @@ function desenhar(){
   ligar();
   $("fab").classList.toggle("hidden",SEL.size>0);
   barraSel();
-  if(ALVO){const el=document.querySelector('.ped[data-id="'+ALVO+'"]');if(el){el.classList.add("alvo");el.scrollIntoView({block:"center"})}ALVO=null}
+  if(ALVO){if(D.propostas.some(x=>x.id===ALVO))dlgPedido(ALVO);ALVO=null}
 }
 function htmlRotas(){
   const r=D.rotas;if(!r||!r.lista)return "";
+  if(!r.vigiadas)return EQ()?'<div class="vazio" style="margin-bottom:10px">🚌 Escolha em <b>Rotas vigiadas</b> quais viagens precisam subir todo dia (ADM, turno…). As que não subirem aparecem aqui para a Caliman.</div>':"";
   const hc=r.coleta?new Date(r.coleta).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}):"—";
   if(!r.coleta_ok)return '<h2 class="sec">Rotas de hoje</h2><div class="vazio">⚠️ Os dados da TFleet não chegam desde '+hc+'. Não dá para saber agora quais rotas subiram.</div>';
   if(!r.lista.length)return "";
   return '<h2 class="sec">⚠️ Rotas que ainda não subiram hoje <span class="n">'+r.lista.length+'</span><span class="r note">dados da TFleet de '+hc+'</span></h2>'+
     '<div class="note" style="margin:-4px 0 8px">A viagem não foi aberta ou ainda não chegou no servidor. Peça ao motorista para <b>sincronizar a viagem no app</b> ou <b>ligar o celular</b>.</div>'+
-    '<div class="cars">'+r.lista.map(x=>'<div class="car" style="cursor:default;border-left-color:#f59e0b"><div class="num" style="font-size:17px">'+esc(x.linha)+'<small>'+esc(x.tipo)+' · costuma sair '+esc(x.hora)+'</small></div>'+
-      '<div class="note">'+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</div>'+
-      '<div class="note" style="opacity:.7">rodou em '+x.vezes+' de '+x.dias+' dias parecidos</div></div>').join("")+'</div>';
+    '<div class="pedmini">'+r.lista.map(x=>'<div class="pm" style="cursor:default;--c:#f59e0b"><span class="h">'+(x.grupo?'<span class="tp">'+esc(x.grupo)+'</span>':'')+'<span class="tp">'+esc(x.tipo)+' · '+esc(x.hora)+'</span></span>'+
+      '<span class="fr">'+esc(x.linha)+'</span><span class="q">'+(x.frota?'Carro '+esc(x.frota):'')+(x.motorista?' · '+esc(x.motorista):'')+'</span></div>').join("")+'</div>';
 }
 function porCarro(){
   const m=new Map();
@@ -399,10 +407,17 @@ function htmlPedidos(){
   let h='<h2 class="sec" id="secPed">Pedidos e avisos <span class="n">'+ps.length+'</span><span class="r flt">'+
     f.map(x=>'<button data-f="'+x[0]+'" class="'+(FILTRO===x[0]?"on":"")+'">'+x[1]+'</button>').join("")+'</span></h2>';
   if(!ps.length)return h+'<div class="vazio">'+(eq?"Nada por aqui.":"Nenhum pedido em aberto. Toque nos carros acima e depois em “Pedir visita” ou “Mudou de lugar/turno”.")+'</div>';
-  h+='<div class="peds">';
+  h+='<div class="pedmini">';
   for(const p of ps){
-    const st=ST[p.status]||[p.status,"#94a3b8"], meu=p.pessoa_id&&p.pessoa_id===D.quem.pessoa_id;
-    h+='<div class="ped" data-id="'+p.id+'" style="--c:'+st[1]+'"><div class="h"><span class="tp">'+TIPO[p.tipo]+'</span><span class="chip '+p.status+'">'+st[0]+'</span>'+
+    const st=ST[p.status]||[p.status,"#94a3b8"], nm=p.mensagens.length;
+    h+='<button class="pm" data-ped="'+p.id+'" style="--c:'+st[1]+'"><span class="h"><span class="tp">'+TIPO[p.tipo]+'</span><span class="chip '+p.status+'">'+st[0]+'</span></span>'+
+      '<span class="fr">'+esc(fraseJs(p))+'</span><span class="q">'+esc(p.autor.split(" ")[0])+' · '+quando(p.criado_em)+(nm?' · 💬 '+nm:'')+'</span></button>';
+  }
+  return h+'</div>';
+}
+function htmlPedidoFull(p){
+  const eq=EQ(), st=ST[p.status]||[p.status,"#94a3b8"], meu=p.pessoa_id&&p.pessoa_id===D.quem.pessoa_id;
+  return '<div class="ped" data-id="'+p.id+'" style="--c:'+st[1]+'"><div class="h"><span class="tp">'+TIPO[p.tipo]+'</span><span class="chip '+p.status+'">'+st[0]+'</span>'+
       '<span class="q">'+esc(p.autor)+' · '+quando(p.criado_em)+'</span></div>'+
       '<div class="fr">'+esc(fraseJs(p))+'</div>'+
       (p.tipo==="visita"&&p.status==="pendente"?'<div class="note">'+esc(DONO())+', consegue vir olhar?</div>':'')+
@@ -413,8 +428,39 @@ function htmlPedidos(){
       '<div class="acts">'+acoes(p,eq,meu)+'</div>'+
       (p.status!=="cancelada"?'<div class="rec"><input placeholder="Escrever recado…" data-rec="'+p.id+'" maxlength="1000"><button class="btn sm" data-a="rec" data-id="'+p.id+'">Enviar</button></div>':'')+
       '</div>';
-  }
-  return h+'</div>';
+}
+let PED_ABERTO=null;
+async function dlgRotas(){
+  abreDlg('<div class="dh"><h3>Rotas vigiadas</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db"><div class="note">Carregando as rotas dos últimos 14 dias…</div></div>');
+  $("dX").onclick=fechaDlg;
+  let L;try{L=await rpc("vis_rotas_candidatas",{p_token:TOKEN})}catch(e){$("dlg").querySelector(".db").innerHTML='<div class="msg err">'+esc(e.message)+'</div>';return}
+  const DL={uteis:"seg a sex",todos:"todo dia",fds:"sáb e dom"};
+  const linha=(x,i)=>'<tr data-i="'+i+'"><td><input type="checkbox" class="rv"'+(x.vigiada?" checked":"")+'></td><td><b>'+esc(x.linha)+'</b><div class="note">'+esc(x.tipo)+' · previsto '+esc(x.prev)+(x.frota?' · carro '+esc(x.frota):'')+'</div></td>'+
+    '<td style="white-space:nowrap">'+esc(x.hora)+'</td><td class="note">'+x.vezes+'/15 dias</td>'+
+    '<td><select class="rd">'+Object.entries(DL).map(([k,t])=>'<option value="'+k+'"'+(x.dias===k?" selected":"")+'>'+t+'</option>').join("")+'</select></td>'+
+    '<td><input class="rg" value="'+esc(x.grupo||"")+'" style="width:80px" maxlength="30"></td></tr>';
+  $("dlg").querySelector(".db").innerHTML='<div class="note">Marque as viagens que precisam subir para a TFleet. Se uma delas não aparecer até 1 hora depois do horário em que costuma sair, ela vai para o topo da página da Caliman pedindo para o motorista sincronizar ou ligar o celular.</div>'+
+    '<div class="row" style="margin:10px 0;gap:6px;flex-wrap:wrap"><input type="text" id="rbF" placeholder="Filtrar (ex.: ADM, TURNO, CT6)" style="flex:1"><button class="btn sm" id="rbT">Marcar as filtradas</button><button class="btn sm" id="rbN">Desmarcar as filtradas</button></div>'+
+    (L.length?'<div style="overflow:auto;max-height:55vh"><table class="tbl" style="width:100%;font-size:14px"><thead><tr><th></th><th>Rota</th><th>Sai</th><th>Rodou</th><th>Dias</th><th>Grupo</th></tr></thead><tbody id="rbL">'+L.map(linha).join("")+'</tbody></table></div>':'<div class="vazio">Nenhuma viagem nos últimos 14 dias na tabela da TFleet.</div>')+
+    '<div class="acts" style="justify-content:space-between;align-items:center"><span class="note" id="rbC"></span><span><button class="btn" id="dC">Voltar</button> <button class="btn ok" id="dS">Salvar</button></span></div><div class="msg" id="dM"></div>';
+  const rows=()=>[...document.querySelectorAll("#rbL tr")], vis=()=>rows().filter(tr=>tr.style.display!=="none");
+  const conta=()=>{$("rbC").textContent=rows().filter(tr=>tr.querySelector(".rv").checked).length+" rota(s) vigiada(s)"};conta();
+  document.querySelectorAll(".rv").forEach(c=>c.onchange=conta);
+  $("rbF").oninput=()=>{const f=$("rbF").value.trim().toLowerCase();rows().forEach(tr=>{const x=L[+tr.dataset.i];tr.style.display=!f||(x.linha+" "+x.tipo+" "+(x.grupo||"")+" "+tr.querySelector(".rg").value).toLowerCase().includes(f)?"":"none"})};
+  $("rbT").onclick=()=>{vis().forEach(tr=>tr.querySelector(".rv").checked=true);conta()};
+  $("rbN").onclick=()=>{vis().forEach(tr=>tr.querySelector(".rv").checked=false);conta()};
+  $("dC").onclick=fechaDlg;
+  $("dS").onclick=async()=>{$("dS").disabled=true;
+    const lista=rows().filter(tr=>tr.querySelector(".rv").checked).map(tr=>{const x=L[+tr.dataset.i];return {linha:x.linha,tipo:x.tipo,prev:x.prev,hora:x.hora,dias:tr.querySelector(".rd").value,grupo:tr.querySelector(".rg").value}});
+    try{await rpc("vis_rotas_salvar",{p_token:TOKEN,p_lista:lista});await carregar();fechaDlg()}catch(e){$("dM").className="msg err";$("dM").textContent=e.message;$("dS").disabled=false}};
+}
+function dlgPedido(id){
+  const p=D.propostas.find(x=>x.id===id);if(!p)return;
+  abreDlg('<div class="dh"><h3>'+TIPO[p.tipo]+'</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db">'+htmlPedidoFull(p)+'</div>',true);
+  PED_ABERTO=id;$("dX").onclick=fechaDlg;
+  const dl=$("dlg"), depois=async(a,i,el)=>{await acao(a,i,el);if(PED_ABERTO===id)dlgPedido(id)};
+  dl.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>depois(b.dataset.a,+b.dataset.id,b));
+  dl.querySelectorAll("[data-rec]").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();depois("rec",+i.dataset.rec,i)}});
 }
 function acoes(p,eq,meu){
   let a="";
@@ -463,6 +509,7 @@ function ligar(){
     const o=D.ocorrencias.find(x=>x.id===+b.dataset.oc), quer=b.dataset.v==="1";
     try{await rpc("vis_ocultar_salvar",{p_token:TOKEN,p_id:o.id,p_oculta:quer===!!o.oculta_auto?null:quer});await carregar()}catch(err){alert(err.message);b.disabled=false}});
   document.querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>acao(b.dataset.a,+b.dataset.id,b));
+  document.querySelectorAll("[data-ped]").forEach(b=>b.onclick=()=>dlgPedido(+b.dataset.ped));
   document.querySelectorAll("[data-rec]").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();acao("rec",+i.dataset.rec,i)}});
 }
 async function acao(a,id,el){
@@ -478,7 +525,7 @@ async function acao(a,id,el){
 }
 
 /* ---------- diálogos ---------- */
-function abreDlg(html,small){$("dlg").className="dlg"+(small?" small":"");$("dlg").innerHTML=html;$("ov").classList.remove("hidden");document.body.style.overflow="hidden"}
+function abreDlg(html,small){PED_ABERTO=null;$("dlg").className="dlg"+(small?" small":"");$("dlg").innerHTML=html;$("ov").classList.remove("hidden");document.body.style.overflow="hidden"}
 function fechaDlg(){$("ov").classList.add("hidden");document.body.style.overflow=""}
 function dlgResposta(p,st){
   const ok=st==="confirmada";
@@ -636,6 +683,7 @@ function dlgAjustes(){
 }
 $("bPessoas").onclick=()=>dlgPessoas();
 $("bAjustes").onclick=()=>dlgAjustes();
+$("bRotas").onclick=()=>dlgRotas();
 
 /* ---------- aviso no navegador (equipe: pedido novo; Caliman: resposta nova) ---------- */
 function avisarNovos(){
