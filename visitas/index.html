@@ -283,7 +283,7 @@ async function linkResposta(chave,quer){
     $("lS").onclick=async()=>{if(quer==="recusada"&&!$("lTxt").value.trim()){$("lM").className="msg err";$("lM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
       $("lS").disabled=true;$("lM").className="msg";$("lM").textContent="Enviando…";
       try{await rpc("vis_link_responder",{p_chave:chave,p_status:quer,p_texto:$("lTxt").value,p_hora:$("lHora")?$("lHora").value:null});
-        v=await rpc("vis_link_ver",{p_chave:chave});tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' vê na página'+(v.celular?'; se quiser, avise também no WhatsApp:':'.')+'</span>')}
+        v=await rpc("vis_link_ver",{p_chave:chave});tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página'+(v.celular?'. Se quiser, mande também pelo seu WhatsApp:':'.')+'</span>')}
       catch(e){$("lM").className="msg err";$("lM").textContent=e.message;$("lS").disabled=false}};
   }
   tela();
@@ -445,8 +445,8 @@ function dlgResposta(p,st){
     $("dS").disabled=true;
     try{await rpc("vis_responder",{p_token:TOKEN,p_id:p.id,p_status:st,p_texto:$("rTxt").value,p_hora:ok?$("rHora").value:null});
       await carregar();const np=D.propostas.find(x=>x.id===p.id)||p;
-      if(np.celular){$("dlg").querySelector(".db").innerHTML='<div class="msg ok" style="font-size:15px">Resposta salva. '+esc(np.autor)+' vê na página'+(st==="confirmada"?" (e por e-mail, se tiver cadastrado)":"")+'.</div>'+
-        '<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(np.celular,textoWaPessoa(np))+'">Avisar '+esc(np.autor.split(" ")[0])+' no WhatsApp</a><button class="btn" id="dF">Fechar</button></div>';$("dF").onclick=fechaDlg}
+      if(np.celular){$("dlg").querySelector(".db").innerHTML='<div class="msg ok" style="font-size:15px">Resposta salva. '+esc(np.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página.</div>'+
+        '<div class="acts"><a class="btn wa" target="_blank" rel="noopener" href="'+waLink(np.celular,textoWaPessoa(np))+'">Mandar também pelo seu WhatsApp</a><button class="btn" id="dF">Fechar</button></div>';$("dF").onclick=fechaDlg}
       else fechaDlg();
     }catch(e){$("dM").className="msg err";$("dM").textContent=e.message;$("dS").disabled=false}};
 }
@@ -524,25 +524,46 @@ function dlgPessoas(ed){
   abreDlg('<div class="dh"><h3>Pessoas da Caliman</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db">'+
     '<div class="note" style="margin-bottom:10px">Cada pessoa entra só com o celular cadastrado aqui (DDD + número). Link para mandar: <b>'+esc(link)+'</b></div>'+
     '<div class="tblw"><table class="tbl"><tr><th>Nome</th><th>Celular</th><th>Último acesso</th><th></th></tr>'+
-    (ps.length?ps.map(p=>'<tr style="'+(p.ativo?"":"opacity:.5")+'"><td><b>'+esc(p.nome)+'</b>'+(p.email?'<br><span class="note">'+esc(p.email)+'</span>':'')+(p.ativo?'':' <span class="chip cancelada">desativado</span>')+'</td>'+
+    (ps.length?ps.map(p=>'<tr style="'+(p.ativo?"":"opacity:.5")+'"><td><b>'+esc(p.nome)+'</b>'+(p.matricula?' <span class="note">mat. '+esc(p.matricula)+'</span>':'')+(p.email?'<br><span class="note">'+esc(p.email)+'</span>':'')+(p.ativo?'':' <span class="chip cancelada">desativado</span>')+'</td>'+
       '<td>'+fmtCel(p.celular)+'</td><td class="note">'+(p.ultimo_acesso?quando(p.ultimo_acesso):"nunca entrou")+'</td>'+
       '<td style="white-space:nowrap"><a class="btn wa sm" target="_blank" rel="noopener" href="'+waLink(p.celular,"Oi "+p.nome.split(" ")[0]+", por esse link você vê as ocorrências abertas dos carros e me avisa quando dá para eu ir olhar: "+link+" (entra com o seu número de celular)")+'">Convite</a> '+
       '<button class="btn sm" data-ed="'+p.id+'">Editar</button></td></tr>').join(""):'<tr><td colspan="4" class="note">Ninguém cadastrado ainda.</td></tr>')+
     '</table></div>'+
     '<h2 class="sec" id="pTit">'+(ed?"Editar pessoa":"Cadastrar pessoa")+'</h2>'+
     '<div class="fld"><b>Nome</b><input class="full" id="pNome" placeholder="Nome e sobrenome"></div>'+
-    '<div class="fld"><b>Celular (DDD + número)</b><div class="row"><input type="tel" id="pCel" inputmode="numeric" placeholder="(91) 98888-7777"></div></div>'+
-    '<div class="fld"><b>E-mail (opcional)</b><div class="row"><input type="email" id="pEm" placeholder="recebe a sua resposta por e-mail" style="flex:1"></div></div>'+
+    '<div class="fld"><b>Celular (DDD + número) e matrícula</b><div class="row"><input type="tel" id="pCel" inputmode="numeric" placeholder="(91) 98888-7777"><input type="text" id="pMat" placeholder="matrícula (opcional)" style="width:170px"></div></div>'+
+    '<div class="fld"><b>E-mail (opcional)</b><div class="row"><input type="email" id="pEm" placeholder="a resposta já vai pelo WhatsApp; e-mail é extra" style="flex:1"></div></div>'+
     '<label class="note"><input type="checkbox" id="pAt" checked> Ativo (pode entrar)</label>'+
-    '<div class="acts"><button class="btn p" id="pS">Salvar</button><button class="btn hidden" id="pN">Novo</button><button class="btn d hidden" id="pR">Remover</button></div><div class="msg" id="pM"></div></div>');
+    '<div class="acts"><button class="btn p" id="pS">Salvar</button><button class="btn hidden" id="pN">Novo</button><button class="btn d hidden" id="pR">Remover</button></div><div class="msg" id="pM"></div>'+
+    '<h2 class="sec">Importar a lista toda</h2>'+
+    '<div class="note" style="margin-bottom:6px">Copie do Excel as colunas <b>nome, matrícula e celular</b> (pode ser em qualquer ordem, com ou sem cabeçalho) e cole aqui. Quem já tiver o celular cadastrado é só atualizado. Também aceita arquivo .csv.</div>'+
+    '<textarea id="iLista" rows="5" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--card2);color:var(--ink)" placeholder="João da Silva\t12345\t(91) 98888-7777"></textarea>'+
+    '<div class="acts"><label class="btn sm" style="cursor:pointer">📄 Abrir .csv<input type="file" id="iCsv" accept=".csv,.txt" class="hidden"></label><span class="note" id="iPrev"></span><button class="btn p" id="iImp" disabled>Importar</button></div><div class="msg" id="iM"></div></div>');
   $("dX").onclick=fechaDlg;
-  let cur=null;
-  const preencher=p=>{cur=p;$("pNome").value=p?p.nome:"";$("pCel").value=p?fmtCel(p.celular):"";$("pEm").value=p&&p.email||"";$("pAt").checked=p?p.ativo:true;
+  let cur=null, LISTA=[];
+  const lerLista=t=>{LISTA=[];const ruins=[];
+    t.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+      const cs=l.split(/\t|;|,(?=\s*\S)/).map(x=>x.trim().replace(/^"|"$/g,"")).filter(x=>x!=="");
+      let cel=null,nome=null,mat=null;
+      cs.forEach(x=>{const d=x.replace(/\D/g,"");
+        if(!cel&&/^\D*\d[\d\s().+-]*$/.test(x)&&(d.length>=10&&d.length<=13))cel=x;
+        else if(!nome&&/[a-zà-ú]{2}/i.test(x))nome=x;
+        else if(!mat&&/\d/.test(x))mat=x;});
+      if(cel&&nome)LISTA.push({nome,matricula:mat||"",celular:cel});else if(!/nome|celular|telefone|matr/i.test(l))ruins.push(l);});
+    $("iPrev").textContent=LISTA.length?LISTA.length+" pessoa(s) prontas"+(ruins.length?" · "+ruins.length+" linha(s) sem nome ou celular":""):(t.trim()?"Não achei nome + celular nas linhas":"");
+    $("iImp").disabled=!LISTA.length};
+  $("iLista").oninput=()=>lerLista($("iLista").value);
+  $("iCsv").onchange=()=>{const f=$("iCsv").files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("iLista").value=r.result;lerLista(r.result)};r.readAsText(f)};
+  $("iImp").onclick=async()=>{$("iImp").disabled=true;$("iM").className="msg";$("iM").textContent="Importando…";
+    try{const r=await rpc("vis_pessoas_importar",{p_token:TOKEN,p_linhas:LISTA});await carregar();dlgPessoas();
+      $("iM").className="msg ok";$("iM").textContent=r.novos+" cadastrada(s), "+r.atualizados+" atualizada(s)"+(r.erros.length?" · "+r.erros.length+" com celular inválido: "+r.erros.map(e=>e.nome).join(", "):"")+".";}
+    catch(e){$("iM").className="msg err";$("iM").textContent=e.message;$("iImp").disabled=false}};
+  const preencher=p=>{cur=p;$("pNome").value=p?p.nome:"";$("pMat").value=p&&p.matricula||"";$("pCel").value=p?fmtCel(p.celular):"";$("pEm").value=p&&p.email||"";$("pAt").checked=p?p.ativo:true;
     $("pTit").textContent=p?"Editar "+p.nome:"Cadastrar pessoa";$("pN").classList.toggle("hidden",!p);$("pR").classList.toggle("hidden",!p);$("pM").textContent=""};
   document.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>{preencher(ps.find(x=>x.id===+b.dataset.ed));$("pNome").focus()});
   $("pN").onclick=()=>preencher(null);
   $("pS").onclick=async()=>{$("pS").disabled=true;
-    try{await rpc("vis_pessoa_salvar",{p_token:TOKEN,p_id:cur?cur.id:null,p_nome:$("pNome").value,p_celular:$("pCel").value,p_email:$("pEm").value,p_ativo:$("pAt").checked,p_empresa:null});
+    try{await rpc("vis_pessoa_salvar",{p_token:TOKEN,p_id:cur?cur.id:null,p_nome:$("pNome").value,p_celular:$("pCel").value,p_email:$("pEm").value,p_ativo:$("pAt").checked,p_empresa:null,p_matricula:$("pMat").value});
       await carregar();dlgPessoas()}catch(e){$("pM").className="msg err";$("pM").textContent=e.message;$("pS").disabled=false}};
   $("pR").onclick=async()=>{if(!cur||!confirm("Remover "+cur.nome+"? Os pedidos que a pessoa mandou continuam aparecendo."))return;
     try{await rpc("vis_pessoa_remover",{p_token:TOKEN,p_id:cur.id});await carregar();dlgPessoas()}catch(e){$("pM").className="msg err";$("pM").textContent=e.message}};
