@@ -52,6 +52,8 @@ create table if not exists public.vis_propostas (
   atualizado_em  timestamptz not null default now()
 );
 create index if not exists vis_propostas_dia on public.vis_propostas (dia desc, id desc);
+-- chave secreta do pedido: vai só no e-mail para você responder com 1 toque, sem senha
+alter table public.vis_propostas add column if not exists chave_resposta text unique default encode(extensions.gen_random_bytes(16), 'hex');
 
 create table if not exists public.vis_mensagens (
   id           bigserial primary key,
@@ -183,7 +185,7 @@ $$;
 
 create or replace function public._vis_json(v public.vis_propostas, p_equipe boolean) returns jsonb
 language sql stable security definer set search_path = public as $$
-  select to_jsonb(v) || jsonb_build_object(
+  select (to_jsonb(v) - 'chave_resposta') || jsonb_build_object(
     'frase', public._vis_frase(v),
     'celular', case when p_equipe then (select celular from vis_pessoas where id = v.pessoa_id) end,
     'mensagens', coalesce((select jsonb_agg(jsonb_build_object('ts', m.ts, 'quem', m.quem, 'lado', m.lado, 'texto', m.texto) order by m.ts)
@@ -357,12 +359,12 @@ end $$;
 
 -- ---------------------------------------------------------------- equipe: responder
 -- p_status: confirmada | recusada | ciente | feita | pendente (desfazer)
-create or replace function public.vis_responder(p_token text, p_id bigint, p_status text, p_texto text default null,
-  p_hora text default null) returns text
+create or replace function public._vis_responder(p_id bigint, p_status text, p_texto text, p_hora text, p_nome text) returns text
 language plpgsql security definer set search_path = public as $$
-declare q jsonb := public._vis_exige(p_token, 'equipe'); v vis_propostas; em text; txt text;
+declare q jsonb := jsonb_build_object('nome', p_nome); v vis_propostas; em text; txt text;
 begin
   if p_status not in ('confirmada', 'recusada', 'ciente', 'feita', 'pendente') then raise exception 'Resposta inválida.'; end if;
+  if p_status = 'recusada' and coalesce(trim(p_texto), '') = '' then raise exception 'Escreva o motivo de não poder ir.'; end if;
   update vis_propostas set status = p_status, resposta = nullif(left(trim(p_texto), 1000), ''),
     hora_combinada = case when p_status = 'confirmada' then nullif(left(trim(p_hora), 40), '') else hora_combinada end,
     respondido_por = q->>'nome', respondido_em = now(), atualizado_em = now()
@@ -381,6 +383,39 @@ begin
   end if;
   return 'ok';
 end $$;
+
+revoke execute on function public._vis_responder(bigint, text, text, text, text) from public, anon, authenticated;
+
+create or replace function public.vis_responder(p_token text, p_id bigint, p_status text, p_texto text default null,
+  p_hora text default null) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token, 'equipe');
+begin
+  return public._vis_responder(p_id, p_status, p_texto, p_hora, q->>'nome');
+end $$;
+
+-- responder pelo botão do e-mail (link com a chave secreta do pedido, sem senha)
+create or replace function public.vis_link_ver(p_chave text) returns json
+language plpgsql security definer set search_path = public as $$
+declare v vis_propostas;
+begin
+  select * into v from vis_propostas where chave_resposta = p_chave and length(coalesce(p_chave, '')) >= 32;
+  if v.id is null then return json_build_object('erro', 'Link inválido ou pedido apagado.'); end if;
+  return (public._vis_json(v, true) - 'chave_resposta' || jsonb_build_object('hoje', public._vis_hoje(),
+    'nome_dono', (select nome_dono from vis_config where id = 1)))::json;
+end $$;
+
+create or replace function public.vis_link_responder(p_chave text, p_status text, p_texto text default null, p_hora text default null) returns text
+language plpgsql security definer set search_path = public as $$
+declare v vis_propostas;
+begin
+  if p_status not in ('confirmada', 'recusada', 'ciente', 'feita') then raise exception 'Resposta inválida.'; end if;
+  select * into v from vis_propostas where chave_resposta = p_chave and length(coalesce(p_chave, '')) >= 32;
+  if v.id is null then raise exception 'Link inválido ou pedido apagado.'; end if;
+  if v.status = 'cancelada' then raise exception 'A Caliman cancelou esse pedido.'; end if;
+  return public._vis_responder(v.id, p_status, p_texto, p_hora, (select nome_dono from vis_config where id = 1));
+end $$;
+grant execute on function public.vis_link_ver(text), public.vis_link_responder(text, text, text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------- equipe: pessoas e ajustes
 create or replace function public.vis_pessoa_salvar(p_token text, p_id bigint, p_nome text, p_celular text,
@@ -457,8 +492,10 @@ begin
   if not exists (select 1 from sol_config where id = 1 and chave_robo = p_chave) then raise exception 'Chave do robô inválida.'; end if;
   return json_build_object('link', (select link from vis_config where id = 1),
     'avisos', coalesce((select json_agg(json_build_object('id', a.id, 'para', a.para, 'email', a.email,
-        'assunto', a.assunto, 'texto', a.texto, 'proposta_id', a.proposta_id) order by a.id)
-      from (select * from vis_avisos where enviado_em is null and tentativas < 5 order by id limit 20) a), '[]'::json));
+        'assunto', a.assunto, 'texto', a.texto, 'proposta_id', a.proposta_id,
+        'tipo', v.tipo, 'status', v.status, 'chave', case when a.para = 'dono' then v.chave_resposta end) order by a.id)
+      from (select * from vis_avisos where enviado_em is null and tentativas < 5 order by id limit 20) a
+      left join vis_propostas v on v.id = a.proposta_id), '[]'::json));
 end $$;
 
 create or replace function public.vis_aviso_marcar(p_chave text, p_id bigint, p_ok boolean, p_erro text default null) returns text
