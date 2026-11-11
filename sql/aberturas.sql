@@ -67,13 +67,15 @@ create table if not exists public.abt_casos (
   detectado_em timestamptz not null default now(),
   avisado_em   timestamptz,
   cartao_id    bigint,
-  situacao     text not null default 'aberto' check (situacao in ('aberto','corrigido','falso')),
+  situacao     text not null default 'aberto' check (situacao in ('aberto','orientado','corrigido','falso')),
   obs          text,
   marcado_por  text,
   marcado_em   timestamptz,
   primary key (viagem_id, regra)
 );
 create index if not exists abt_casos_data on public.abt_casos (data_local desc);
+alter table public.abt_casos drop constraint if exists abt_casos_situacao_check;
+alter table public.abt_casos add constraint abt_casos_situacao_check check (situacao in ('aberto','orientado','corrigido','falso'));
 
 alter table public.abt_config    enable row level security;   -- sem policy: só pelas funções
 alter table public.abt_especiais enable row level security;
@@ -145,6 +147,11 @@ v as (                       -- só o período pedido, com o sentido "corrigido"
     end as tipo_certo
   from base b cross join cfg
   where b.data_local between p_de and p_ate
+    -- abriu a rota errada SEM ler ninguém, fechou e abriu a certa logo depois: o motorista corrigiu, não é erro
+    and not (coalesce(b.ocupacao, 0) = 0 and exists (
+          select 1 from base c where c.data_local = b.data_local and c.frota = b.frota and c.tipo = b.tipo
+             and c.tipolinha = b.tipolinha and c.linha <> b.linha and c.saida_ts > b.saida_ts
+             and c.saida_ts - b.saida_ts < make_interval(mins => cfg.min_duas_rotas)))
 ),
 v2 as (select v.*, coalesce(v.tipo_certo, v.tipo) as tipo_ef,
               case when coalesce(v.tipo_certo, v.tipo) = 'IDA' and v.tipolinha like 'ADM%' then 'M'
@@ -188,7 +195,7 @@ dono as (
 ),
 r4 as (
   select g.id, '4 ROTA DUPLICADA', 'media',
-         g.linha || ' ' || g.tipo_ef || ' também foi aberta pelo carro ' ||
+         'A mesma rota (' || g.linha || ' ' || g.tipo_ef || ') também foi aberta pelo carro ' ||
            (select string_agg(o.frota || ' (' || coalesce(initcap(split_part(o.motorista, ' ', 1)), '?') || ' ' || to_char(o.hora, 'HH24:MI') || ')', ', ' order by o.hora)
               from grp o where o.data_local = g.data_local and o.linha = g.linha and o.tipolinha = g.tipolinha
                and o.tipo_ef = g.tipo_ef and o.per_ef = g.per_ef and o.frota <> g.frota),
@@ -211,13 +218,17 @@ r4 as (
 ),
 r5 as (                      -- mesmo carro, 2 rotas diferentes no mesmo sentido, em menos de X min: a 1ª costuma ser a errada
   select a.id, '5 DUAS ROTAS', 'media',
-         'Mesmo carro abriu ' || a.linha || ' às ' || to_char(a.hora, 'HH24:MI') || ' e ' || b.linha || ' às ' || to_char(b.hora, 'HH24:MI') || ' (' || a.tipo || ')',
-         case when h.habitual = b.linha then 'Provável abertura errada: o motorista costuma fazer ' || b.linha || ' e corrigiu depois. Os passageiros lidos na 1ª ficaram na rota errada.'
-              when h.habitual = a.linha then 'Conferir a 2ª abertura (' || b.linha || '): o motorista costuma fazer ' || a.linha || '.'
-              else 'Uma das duas está errada: conferir qual rota o carro fez.' end
+         'Abriu ' || a.linha || ' ' || a.tipo || ' às ' || to_char(a.hora, 'HH24:MI') || ' e leu ' || a.ocupacao || ' passageiro(s); '
+           || extract(minute from b.saida_ts - a.saida_ts)::int + 60 * extract(hour from b.saida_ts - a.saida_ts)::int
+           || ' min depois fechou e abriu ' || b.linha || ' (' || to_char(b.hora, 'HH24:MI') || ')',
+         case when h.habitual = a.linha
+              then 'Conferir a 2ª abertura (' || b.linha || '): o motorista costuma fazer ' || a.linha || '.'
+              else 'Abriu a rota errada primeiro e corrigiu, mas os ' || a.ocupacao || ' passageiro(s) lidos ficaram contados em ' || a.linha
+                   || '. Acertar na TFleet (passar para ' || b.linha || ').' end
   from v a join v b on b.data_local = a.data_local and b.frota = a.frota and b.tipo = a.tipo and b.tipolinha = a.tipolinha
    and b.linha <> a.linha and b.saida_ts > a.saida_ts
    and b.saida_ts - a.saida_ts < make_interval(mins => (select min_duas_rotas from cfg))
+   and coalesce(a.ocupacao, 0) > 0
   left join hab h on h.motorista = a.motorista and h.tipolinha = a.tipolinha
 ),
 r6 as (                      -- mesmo motorista em 2 carros ao mesmo tempo
@@ -412,7 +423,7 @@ create or replace function public.abt_marcar(p_token text, p_viagem text, p_regr
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := _abt_exige(p_token); d record;
 begin
-  if p_situacao not in ('aberto', 'corrigido', 'falso') then raise exception 'Situação inválida.'; end if;
+  if p_situacao not in ('aberto', 'orientado', 'corrigido', 'falso') then raise exception 'Situação inválida.'; end if;
   if not exists (select 1 from abt_casos where viagem_id = p_viagem and regra = p_regra) then
     select * into d from abt_detectar((select data_local from viagens where id = p_viagem), (select data_local from viagens where id = p_viagem)) x
      where x.viagem_id = p_viagem and x.regra = p_regra;
@@ -422,6 +433,46 @@ begin
   end if;
   update abt_casos set situacao = p_situacao, obs = nullif(trim(coalesce(p_obs, '')), ''), marcado_por = q->>'nome', marcado_em = now()
    where viagem_id = p_viagem and regra = p_regra;
+  return 'ok';
+end $$;
+
+-- tratativa de uma viagem (todas as regras dela), pela página Visitas aos carros ou pelo painel:
+--   orientado = conversou com o motorista · corrigido = acertado na TFleet · falso = estava certa (só equipe) · aberto = desfazer
+-- justificativa obrigatória (menos para reabrir). Se a viagem já foi para a demanda, a tratativa entra como comentário nela.
+create or replace function public.abt_tratar(p_token text, p_viagem text, p_situacao text, p_obs text) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb; quem text; eq boolean; d record; n int := 0; cid bigint; txt text;
+begin
+  if p_token like 'tfv_%' then
+    execute 'select public._vis_exige($1, null)' into q using p_token;
+    eq := q->>'tipo' = 'equipe';
+  else
+    q := _abt_exige(p_token); eq := true;
+  end if;
+  quem := (q->>'nome') || case when eq then '' else ' (' || coalesce(nullif(q->>'empresa', ''), 'Caliman') || ')' end;
+  if p_situacao not in ('aberto', 'orientado', 'corrigido', 'falso') then raise exception 'Escolha o que foi feito.'; end if;
+  if p_situacao = 'falso' and not eq then raise exception 'Só a equipe marca que a viagem estava certa. Explique na justificativa.'; end if;
+  if p_situacao <> 'aberto' and length(trim(coalesce(p_obs, ''))) < 5 then raise exception 'Escreva a justificativa (o que foi feito).'; end if;
+  -- grava os casos da viagem que ainda não estão na tabela
+  for d in select * from abt_detectar((select data_local from viagens where id = p_viagem), (select data_local from viagens where id = p_viagem)) x
+            where x.viagem_id = p_viagem loop
+    insert into abt_casos (viagem_id, regra, data_local, hora, frota, motorista, linha, tipo, tipolinha, ocupacao, gravidade, problema, sugestao)
+    values (d.viagem_id, d.regra, d.data_local, d.hora, d.frota, d.motorista, d.linha, d.tipo, d.tipolinha, d.ocupacao, d.gravidade, d.problema, d.sugestao)
+    on conflict do nothing;
+  end loop;
+  update abt_casos set situacao = p_situacao, obs = nullif(trim(coalesce(p_obs, '')), ''), marcado_por = quem, marcado_em = now()
+   where viagem_id = p_viagem;
+  get diagnostics n = row_count;
+  if n = 0 then raise exception 'Viagem não encontrada.'; end if;
+  select max(cartao_id), max(to_char(data_local, 'DD/MM') || ' ' || to_char(hora, 'HH24:MI') || ' · carro ' || frota || ' · ' || linha || ' ' || tipo)
+    into cid, txt from abt_casos where viagem_id = p_viagem;
+  if cid is not null and to_regclass('public.sol_historico') is not null then
+    insert into sol_historico (cartao_id, quem, tipo, texto) values (cid, quem, 'comentario',
+      'Tratativa da viagem ' || txt || ': ' ||
+      case p_situacao when 'orientado' then 'motorista orientado' when 'corrigido' then 'corrigida na TFleet'
+                      when 'falso' then 'estava certa' else 'reaberta' end ||
+      coalesce(' — ' || nullif(trim(p_obs), ''), ''));
+  end if;
   return 'ok';
 end $$;
 
@@ -458,7 +509,7 @@ begin
   return abt_rodar(3, true);
 end $$;
 
-grant execute on function public.abt_painel(text, date, date), public.abt_visitas(text, date, date), public.abt_marcar(text, text, text, text, text),
+grant execute on function public.abt_painel(text, date, date), public.abt_visitas(text, date, date), public.abt_tratar(text, text, text, text), public.abt_marcar(text, text, text, text, text),
   public.abt_config_salvar(text, jsonb), public.abt_enviar_agora(text) to anon, authenticated;
 
 -- ---------------------------------------------------------------- agendamento (pg_cron): de hora em hora, aos 20 min
