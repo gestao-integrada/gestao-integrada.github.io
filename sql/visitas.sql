@@ -560,13 +560,10 @@ begin
   return jsonb_build_object('avisos', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'numero', '55' || x.numero, 'texto', x.txt) order by x.id)
     from (select a.id, case when a.para = 'dono' then c.whatsapp_dono else a.numero end as numero,
       '🚌 *Visitas aos carros*' || chr(10) || chr(10) || a.texto ||
-      case when a.para = 'dono' and v.status = 'pendente' and v.tipo = 'visita' then
-             chr(10) || chr(10) || '✅ Consigo ir:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=confirmada' ||
-             chr(10) || chr(10) || '❌ Não consigo:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=recusada'
-           when a.para = 'dono' and v.status = 'pendente' then
-             chr(10) || chr(10) || '👍 Ciente:' || chr(10) || c.link || '?r=' || v.chave_resposta || '&s=ciente'
-           else '' end ||
-      chr(10) || chr(10) || 'Abrir: ' || c.link || coalesce('?p=' || a.proposta_id, '') as txt
+      case when a.para = 'dono' and v.status = 'pendente' and v.chave_resposta is not null then
+             chr(10) || chr(10) || '👉 Responder (' || case when v.tipo = 'visita' then 'consigo ir / não consigo' else 'ciente / vou passar lá' end || '):' ||
+             chr(10) || c.link || '?r=' || v.chave_resposta
+           else chr(10) || chr(10) || 'Abrir: ' || c.link || coalesce('?p=' || a.proposta_id, '') end as txt
       from vis_avisos a left join vis_propostas v on v.id = a.proposta_id
       where a.whats_em is null and a.whats_tentativas < 3 and a.criado_em > now() - interval '6 hours'
         and ((a.para = 'dono' and c.whatsapp_dono is not null) or (a.para = 'pessoa' and a.numero is not null))
