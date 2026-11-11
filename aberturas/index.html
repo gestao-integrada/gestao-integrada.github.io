@@ -109,7 +109,7 @@ h2.sec .n{background:var(--grybg);border-radius:999px;padding:0 8px;font-size:12
     <button class="btn" id="bAtual">Atualizar</button>
     <input type="search" id="fBusca" placeholder="Buscar motorista, carro ou rota">
     <select id="fGrupo"><option value="">Todos os grupos</option><option value="ADM">ADM</option><option value="CT">CT (terceiros)</option><option value="TURNO">Turno</option></select>
-    <select id="fSit"><option value="aberto">Em aberto</option><option value="">Todas</option><option value="corrigido">Corrigidas</option><option value="falso">Estavam certas</option></select>
+    <select id="fSit"><option value="aberto">Em aberto</option><option value="">Todas</option><option value="tratada">Já tratadas</option><option value="falso">Estavam certas</option></select>
     <button class="btn" id="bCsv">⬇ Planilha</button>
   </div>
 
@@ -131,10 +131,10 @@ h2.sec .n{background:var(--grybg);border-radius:999px;padding:0 8px;font-size:12
       <li><b>Rota especial</b>: rota que em certo horário tem outro nome (CT7 entre 06:30 e 08:30 = CT7 INTERNO). Muda em Ajustes.</li>
       <li><b>Repetida</b>: o mesmo carro abriu a mesma rota e sentido 2 vezes no dia.</li>
       <li><b>Rota duplicada</b>: 2 carros na mesma rota e sentido no mesmo período. Fica marcado o carro que menos costuma fazer essa rota, com a rota provável (a que ele abriu no outro sentido do dia ou a que ele mais faz nos últimos 30 dias).</li>
-      <li><b>Duas rotas</b>: o mesmo carro abriu 2 rotas diferentes no mesmo sentido em menos de 1 h (abriu errado e depois corrigiu; os passageiros lidos na 1ª ficaram na rota errada).</li>
+      <li><b>Duas rotas</b>: o carro abriu uma rota, leu passageiros, fechou e abriu outra em menos de 1 h; os passageiros ficaram na rota errada. Se a 1ª abertura não leu ninguém, o motorista só corrigiu e não conta como erro.</li>
       <li><b>Dois carros</b>: o mesmo motorista aparece em 2 carros ao mesmo tempo (provável login de outro motorista).</li>
     </ol>
-    <p class="note">Se a TFleet corrigir a viagem, ela some daqui sozinha na próxima coleta. "Estava certa" tira o caso da lista e da próxima cobrança.</p>
+    <p class="note">Clique na viagem para registrar a tratativa (motorista orientado, corrigida na TFleet ou estava certa) com a justificativa. Se a TFleet corrigir a viagem, ela some daqui sozinha na próxima coleta.</p>
   </details>
 </div>
 
@@ -146,6 +146,7 @@ const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
 const K_SESS="tf_solicitacoes", K_CENTRAL="tf_sessao";
 const REGRA={"1 SENTIDO":"Sentido","2 ROTA ESPECIAL":"Rota especial","3 REPETIDA":"Repetida","4 ROTA DUPLICADA":"Rota duplicada","5 DUAS ROTAS":"Duas rotas","6 DOIS CARROS":"Dois carros"};
 const GRAV={alta:0,media:1,verificar:2};
+const SIT={orientado:["Motorista orientado","c-ok"],corrigido:["Corrigida na TFleet","c-ok"],falso:["Estava certa","c-verificar"],aberto:["Em aberto","c-media"]};
 let TOKEN=null,QUEM=null,DADOS=null,FILTRO={regra:null,mot:null,rota:null};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -204,14 +205,14 @@ function viagens(){
   }
   for(const v of m.values()){
     const s=v.regras.map(r=>r.situacao);
-    v.sit=s.every(x=>x==="falso")?"falso":s.every(x=>x!=="aberto")?"corrigido":"aberto";
+    v.sit=s.some(x=>x==="aberto")?"aberto":v.regras[0].situacao;
     v.avisado=v.regras.find(r=>r.avisado_em)||null;
   }
   return [...m.values()];
 }
 function filtrar(lista,ign){
   const q=$("fBusca").value.trim().toLowerCase(),g=$("fGrupo").value,s=$("fSit").value;
-  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!g||grupoDe(v)===g)&&(!s||v.sit===s)
+  return lista.filter(v=>(!q||(v.motorista+" "+v.frota+" "+v.linha).toLowerCase().includes(q))&&(!g||grupoDe(v)===g)&&(!s||(s==="tratada"?(v.sit==="orientado"||v.sit==="corrigido"):v.sit===s))
     &&(ign==="regra"||!FILTRO.regra||v.regras.some(r=>r.regra===FILTRO.regra))
     &&(ign==="mot"||!FILTRO.mot||v.motorista===FILTRO.mot)&&(ign==="rota"||!FILTRO.rota||v.linha===FILTRO.rota));
 }
@@ -254,7 +255,7 @@ function desenhar(){
   $("filtroTxt").innerHTML=f.length?'filtro: '+esc(f.join(" · "))+' <button class="btn sm" id="bLimpa">limpar</button>':"";
   if($("bLimpa"))$("bLimpa").onclick=()=>{FILTRO={regra:null,mot:null,rota:null};desenhar()};
   $("casos").innerHTML=lista.length?lista.map(cartao).join(""):'<div class="vazio">Nenhuma abertura errada nesse período e filtro. 👍</div>';
-  $("casos").querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>marcar(b.dataset.v,b.dataset.m));
+  $("casos").querySelectorAll(".caso").forEach(c=>c.onclick=()=>tratar(c.dataset.id));
 }
 function rank(id,lista,chave,campo,fmt){
   const c={};lista.forEach(v=>c[chave(v)]=(c[chave(v)]||0)+1);
@@ -264,33 +265,42 @@ function rank(id,lista,chave,campo,fmt){
   $(id).querySelectorAll("tr[data-k]").forEach(t=>t.onclick=()=>{FILTRO[campo]=FILTRO[campo]===t.dataset.k?null:t.dataset.k;desenhar()});
 }
 function cartao(v){
-  const ok=v.sit!=="aberto",gv=v.grav;
-  return '<div class="caso '+(ok?"ok":gv)+'"><div class="l1"><b>'+dCurto(v.data)+' '+esc(v.hora)+'</b><span>carro <b>'+esc(v.frota)+'</b></span>'
+  const ok=v.sit!=="aberto",gv=v.grav,r0=v.regras[0],st=SIT[v.sit]||SIT.aberto;
+  return '<div class="caso '+(ok?"ok":gv)+'" data-id="'+esc(v.viagem_id)+'" style="cursor:pointer" title="Clique para registrar a tratativa"><div class="l1"><b>'+dCurto(v.data)+' '+esc(v.hora)+'</b><span>carro <b>'+esc(v.frota)+'</b></span>'
     +'<span>'+esc(nomeCurto(v.motorista))+'</span><span class="rota">'+esc(v.linha)+' · '+esc(v.tipo)+'</span>'
     +'<span class="h">'+(v.ocupacao==null?"sem leitura":v.ocupacao+" passageiro(s)")+' · '+esc(v.tipolinha)+'</span></div>'
     +'<ul>'+v.regras.map(r=>'<li><span class="chip c-'+r.gravidade+'">'+esc(REGRA[r.regra]||r.regra)+'</span> '+esc(r.problema)
       +'<span class="sg">→ '+esc(r.sugestao)+'</span></li>').join("")+'</ul>'
-    +'<div class="acts"><span class="info">'+(v.sit==="falso"?'<span class="chip c-ok">Estava certa</span> ':v.sit==="corrigido"?'<span class="chip c-ok">Corrigida</span> ':'')
-      +(v.regras[0].obs?esc(v.regras[0].obs)+' · ':'')+(v.regras[0].marcado_por&&ok?'por '+esc(v.regras[0].marcado_por)+' · ':'')
-      +(v.avisado?'avisada na demanda #'+v.avisado.cartao_id+' em '+dtBR(v.avisado.avisado_em):'ainda não avisada')+'</span>'
-    +(QUEM.edita?(ok?'<button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="aberto">Reabrir</button>'
-      :'<button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="corrigido">✓ Corrigida</button><button class="btn sm" data-v="'+esc(v.viagem_id)+'" data-m="falso">Estava certa</button>'):'')
-    +'</div></div>';
+    +'<div class="acts"><span class="info">'+(ok?'<span class="chip '+st[1]+'">'+st[0]+'</span> '+(r0.obs?'“'+esc(r0.obs)+'” ':'')+(r0.marcado_por?'· '+esc(r0.marcado_por)+' ':''):'')
+      +(v.avisado?'· avisada na demanda #'+v.avisado.cartao_id+' em '+dtBR(v.avisado.avisado_em):'· ainda não avisada')+'</span>'
+    +'<button class="btn sm'+(ok?'':' p')+'">'+(ok?'Ver / mudar tratativa':'Registrar tratativa')+'</button></div></div>';
 }
-async function marcar(id,sit){
+function tratar(id){
   const v=viagens().find(x=>x.viagem_id===id);if(!v)return;
-  let obs=null;
-  if(sit!=="aberto"){obs=prompt(sit==="falso"?"Por que estava certa? (ex.: carro extra, troca de escala)":"Observação (opcional)","");if(obs===null)return}
-  try{for(const r of v.regras)await rpc("abt_marcar",{p_token:TOKEN,p_viagem:id,p_regra:r.regra,p_situacao:sit,p_obs:obs});carregar()}
-  catch(err){alert(err.message)}
+  const r0=v.regras[0],cur=v.sit==="aberto"?"orientado":v.sit;
+  const ops=[["orientado","Conversei com o motorista","ele foi orientado a abrir certo"],["corrigido","Corrigido na TFleet","a viagem foi acertada no sistema"],["falso","Estava certa","não é erro (ex.: carro extra, troca de escala)"]];
+  $("dlg").innerHTML='<h2>Viagem '+dCurto(v.data)+' '+esc(v.hora)+' · carro '+esc(v.frota)+' <button class="btn sm" id="xF">✕ Fechar</button></h2>'
+    +'<div><b>'+esc(nomeCurto(v.motorista))+'</b> · '+esc(v.linha)+' '+esc(v.tipo)+' · '+(v.ocupacao==null?"sem leitura":v.ocupacao+" passageiro(s)")+'</div>'
+    +'<ul style="padding-left:18px">'+v.regras.map(r=>'<li style="margin:4px 0"><span class="chip c-'+r.gravidade+'">'+esc(REGRA[r.regra]||r.regra)+'</span> '+esc(r.problema)+'<div class="note">→ '+esc(r.sugestao)+'</div></li>').join("")+'</ul>'
+    +(v.sit!=="aberto"?'<div class="note">Tratativa atual: <b>'+esc(SIT[v.sit][0])+'</b>'+(r0.obs?' — “'+esc(r0.obs)+'”':'')+(r0.marcado_por?' · '+esc(r0.marcado_por):'')+(r0.marcado_em?' · '+dtBR(r0.marcado_em):'')+'</div>':'')
+    +'<label>O que foi feito?</label>'
+    +ops.map(o=>'<label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink);cursor:pointer"><input type="radio" name="tSit" value="'+o[0]+'"'+(o[0]===cur?" checked":"")+' style="width:auto;margin-top:4px"><span><b>'+o[1]+'</b><br><span class="note">'+o[2]+'</span></span></label>').join("")
+    +'<label>Justificativa</label><textarea id="tObs" rows="3" placeholder="Ex.: conversei com o motorista em 11/11, ele vai abrir VOLTA à tarde">'+esc(v.sit!=="aberto"?r0.obs||"":"")+'</textarea>'
+    +(v.avisado?'<div class="note">Vai também como comentário na demanda #'+v.avisado.cartao_id+'.</div>':'')
+    +'<div class="acts">'+(v.sit!=="aberto"?'<button class="btn" id="tReab">Reabrir</button>':'')+'<button class="btn p" id="tSalvar">Salvar tratativa</button></div><div id="tMsg" class="msg"></div>';
+  $("ov").classList.remove("hidden");$("xF").onclick=fechar;
+  const enviar=async(sit,obs)=>{msg("tMsg","Salvando…");
+    try{await rpc("abt_tratar",{p_token:TOKEN,p_viagem:id,p_situacao:sit,p_obs:obs});fechar();carregar()}catch(err){msg("tMsg",err.message,"err")}};
+  $("tSalvar").onclick=()=>{const r=document.querySelector('input[name=tSit]:checked');enviar(r?r.value:"orientado",$("tObs").value)};
+  if($("tReab"))$("tReab").onclick=()=>enviar("aberto",null);
 }
 
 /* ---------------- planilha ---------------- */
 $("bCsv").onclick=()=>{
   if(!DADOS)return;
-  const lin=[["Data","Hora","Carro","Motorista","Rota","Sentido","Grupo","Passageiros","Regra","Problema","O que fazer","Situação","Avisada em"]];
+  const lin=[["Data","Hora","Carro","Motorista","Rota","Sentido","Grupo","Passageiros","Regra","Problema","O que fazer","Tratativa","Justificativa","Quem tratou","Avisada em"]];
   for(const v of filtrar(viagens()))for(const r of v.regras)
-    lin.push([dBR(v.data),v.hora,v.frota,v.motorista,v.linha,v.tipo,v.tipolinha,v.ocupacao??"",REGRA[r.regra]||r.regra,r.problema,r.sugestao,r.situacao,r.avisado_em?dtBR(r.avisado_em):""]);
+    lin.push([dBR(v.data),v.hora,v.frota,v.motorista,v.linha,v.tipo,v.tipolinha,v.ocupacao??"",REGRA[r.regra]||r.regra,r.problema,r.sugestao,(SIT[r.situacao]||SIT.aberto)[0],r.obs||"",r.marcado_por||"",r.avisado_em?dtBR(r.avisado_em):""]);
   const csv="﻿"+lin.map(l=>l.map(x=>{x=String(x??"");return /[;"\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x}).join(";")).join("\r\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
   a.download="aberturas-erradas_"+$("fDe").value+"_a_"+$("fAte").value+".csv";a.click();
