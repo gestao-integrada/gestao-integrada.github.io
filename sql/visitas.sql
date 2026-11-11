@@ -414,7 +414,7 @@ begin
   select * into v from vis_propostas where chave_resposta = p_chave and length(coalesce(p_chave, '')) >= 32;
   if v.id is null then return json_build_object('erro', 'Link inválido ou pedido apagado.'); end if;
   return (public._vis_json(v, true) - 'chave_resposta' || jsonb_build_object('hoje', public._vis_hoje(),
-    'nome_dono', (select nome_dono from vis_config where id = 1)))::json;
+    'nome_dono', (select nome_dono from vis_config where id = 1), 'locais', (select locais from vis_config where id = 1)))::json;
 end $$;
 
 create or replace function public.vis_link_responder(p_chave text, p_status text, p_texto text default null, p_hora text default null) returns text
@@ -428,6 +428,72 @@ begin
   return public._vis_responder(v.id, p_status, p_texto, p_hora, (select nome_dono from vis_config where id = 1));
 end $$;
 grant execute on function public.vis_link_ver(text), public.vis_link_responder(text, text, text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------- remarcar (novo dia / horário / local combinado na conversa)
+-- equipe remarca = já fica CONFIRMADO no novo horário e a pessoa recebe no WhatsApp;
+-- Caliman remarca = volta para "aguardando" e você recebe no WhatsApp com o link de resposta.
+create or replace function public._vis_remarcar(p_id bigint, p_dados jsonb, p_nome text, p_lado text) returns text
+language plpgsql security definer set search_path = public as $$
+declare v vis_propostas; antes text; d date; hi time; hf time; lc text; obs text;
+begin
+  select * into v from vis_propostas where id = p_id;
+  if v.id is null then raise exception 'Não encontrei esse pedido.'; end if;
+  if v.status in ('cancelada', 'feita') then raise exception 'Esse pedido já foi encerrado.'; end if;
+  d := nullif(p_dados->>'dia', '')::date;
+  if d is null then raise exception 'Escolha o dia.'; end if;
+  if d < public._vis_hoje() or d > public._vis_hoje() + 60 then raise exception 'Dia fora do período (de hoje até 60 dias).'; end if;
+  hi := nullif(p_dados->>'hora_ini', '')::time;
+  hf := nullif(p_dados->>'hora_fim', '')::time;
+  if hi is null and hf is null then raise exception 'Informe o horário.'; end if;
+  if hi is not null and hf is not null and hf <= hi then raise exception 'O horário final precisa ser depois do inicial.'; end if;
+  lc := coalesce(nullif(left(trim(p_dados->>'local'), 60), ''), v.local);
+  obs := nullif(left(trim(p_dados->>'recado'), 500), '');
+  antes := public._vis_frase(v);
+  update vis_propostas set dia = d, hora_ini = hi, hora_fim = hf, local = lc, alternativa = null, hora_combinada = null,
+    status = case when p_lado = 'equipe' then 'confirmada' else 'pendente' end,
+    resposta = case when p_lado = 'equipe' then obs end,
+    respondido_por = case when p_lado = 'equipe' then p_nome end,
+    respondido_em = case when p_lado = 'equipe' then now() end,
+    atualizado_em = now()
+   where id = p_id returning * into v;
+  insert into vis_mensagens (proposta_id, quem, lado, texto) values (p_id, p_nome, p_lado,
+    '📅 Remarcou para ' || public._vis_frase(v) || case when p_lado = 'equipe' then ' (confirmado)' else '' end || '.' ||
+    coalesce(chr(10) || obs, '') || chr(10) || '(antes: ' || antes || ')');
+  if p_lado = 'equipe' then
+    perform public._vis_avisar_pessoa(v, 'Remarcado e confirmado: ' || public._vis_frase(v),
+      '📅 ' || p_nome || ' remarcou e confirmou:' || chr(10) || public._vis_frase(v) || coalesce(chr(10) || obs, '') ||
+      chr(10) || chr(10) || '(antes: ' || antes || ')');
+  else
+    perform public._vis_avisar(v.id, 'dono', null, '[Remarcado] ' || p_nome || ': ' || public._vis_frase(v),
+      p_nome || ' remarcou o pedido para:' || chr(10) || chr(10) || public._vis_frase(v) || '. Consegue?' ||
+      coalesce(chr(10) || chr(10) || 'Recado: ' || obs, '') || chr(10) || chr(10) || '(antes: ' || antes || ')');
+  end if;
+  return 'ok';
+end $$;
+revoke execute on function public._vis_remarcar(bigint, jsonb, text, text) from public, anon, authenticated;
+
+create or replace function public.vis_remarcar(p_token text, p_id bigint, p_dados jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._vis_exige(p_token); v vis_propostas;
+begin
+  select * into v from vis_propostas where id = p_id;
+  if q->>'tipo' = 'caliman' then
+    if v.pessoa_id is distinct from (q->>'pessoa_id')::bigint then raise exception 'Só quem mandou o pedido pode remarcar.'; end if;
+    return public._vis_remarcar(p_id, p_dados, q->>'nome', 'caliman');
+  end if;
+  perform public._vis_exige(p_token, 'equipe');
+  return public._vis_remarcar(p_id, p_dados, q->>'nome', 'equipe');
+end $$;
+
+create or replace function public.vis_link_remarcar(p_chave text, p_dados jsonb) returns text
+language plpgsql security definer set search_path = public as $$
+declare v vis_propostas;
+begin
+  select * into v from vis_propostas where chave_resposta = p_chave and length(coalesce(p_chave, '')) >= 32;
+  if v.id is null then raise exception 'Link inválido ou pedido apagado.'; end if;
+  return public._vis_remarcar(v.id, p_dados, (select nome_dono from vis_config where id = 1), 'equipe');
+end $$;
+grant execute on function public.vis_remarcar(text, bigint, jsonb), public.vis_link_remarcar(text, jsonb) to anon, authenticated;
 
 -- ---------------------------------------------------------------- equipe: pessoas e ajustes
 drop function if exists public.vis_pessoa_salvar(text, bigint, text, text, text, boolean, text);

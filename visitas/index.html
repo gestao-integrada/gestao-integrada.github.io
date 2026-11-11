@@ -110,7 +110,7 @@ h2.sec .r{margin-left:auto;text-transform:none;letter-spacing:0}
 .opts button.star{border-color:#2f5596}
 .opts button:disabled{opacity:.4;cursor:not-allowed}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.row input[type=time],.row input[type=date],.row input[type=text],.row input[type=tel],.row input[type=email],.fld textarea,.fld input.full{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--card2);color:var(--ink);font-size:15px}
+.row select,.row input:not([type]),.row input[type=time],.row input[type=date],.row input[type=text],.row input[type=tel],.row input[type=email],.fld textarea,.fld input.full{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--card2);color:var(--ink);font-size:15px}
 .fld textarea,.fld input.full{width:100%}
 .prev{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px}
 .warn{color:var(--ora);font-size:13px;margin-top:6px}
@@ -258,6 +258,25 @@ function altTxt(id){const d=$(id+"D"),i=$(id+"I"),f=$(id+"F");if(!d)return null;
   if(d.value){const x=new Date(d.value+"T12:00");t=DIAS[x.getDay()]+" "+x.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})}
   if(i.value&&f.value)t+=(t?" ":"")+"das "+i.value+" às "+f.value;else if(i.value)t+=(t?" ":"")+"a partir das "+i.value;else if(f.value)t+=(t?" ":"")+"até "+f.value;
   return t||null}
+function htmlRemarcar(id,p,locais){
+  const hj=(D&&D.hoje)||new Date().toISOString().slice(0,10);const loc=[...new Set([...(locais||[]),p.local].filter(Boolean))];
+  return '<div class="fld"><b>Novo dia</b><div class="row"><input type="date" id="'+id+'D" min="'+hj+'" value="'+esc(p.dia>=hj?p.dia:hj)+'"></div></div>'+
+    '<div class="fld"><b>Horário</b><div class="row" style="flex-wrap:wrap;gap:6px;align-items:center"><input type="time" id="'+id+'I" value="'+esc((p.hora_ini||"").slice(0,5))+'"><span>até</span><input type="time" id="'+id+'F" value="'+esc((p.hora_fim||"").slice(0,5))+'"></div></div>'+
+    '<div class="fld"><b>Local</b><div class="row"><select id="'+id+'L">'+loc.map(l=>'<option'+(l===p.local?' selected':'')+'>'+esc(l)+'</option>').join("")+'<option value="">(outro…)</option></select><input id="'+id+'O" placeholder="outro local" style="flex:1"></div></div>'+
+    '<div class="fld"><b>Recado (opcional)</b><input class="full" id="'+id+'R" maxlength="500"></div>'+
+    (p.alternativa?'<div class="note">Sugestão anterior: 🕒 '+esc(p.alternativa)+'</div>':'')}
+const lerRemarcar=id=>({dia:$(id+"D").value,hora_ini:$(id+"I").value,hora_fim:$(id+"F").value,local:$(id+"O").value.trim()||$(id+"L").value,recado:$(id+"R").value});
+function dlgRemarcar(p){
+  const eq=EQ();
+  abreDlg('<div class="dh"><h3>📅 Remarcar</h3><button class="x" id="dX">✕ Fechar</button></div><div class="db">'+
+    '<div class="prev">'+esc(fraseJs(p))+'<div class="note">'+esc(p.autor)+'</div></div>'+htmlRemarcar("rm",p,D.config.locais)+
+    '<div class="note">'+(eq?"Fica confirmado no novo horário e "+esc(p.autor.split(" ")[0])+" recebe no WhatsApp.":"Volta para aguardando e o "+esc(DONO())+" recebe no WhatsApp para responder.")+'</div>'+
+    '<div class="acts" style="justify-content:flex-end"><button class="btn" id="dC">Voltar</button><button class="btn ok" id="dS">'+(eq?"Remarcar e confirmar":"Remarcar")+'</button></div><div class="msg" id="dM"></div></div>',true);
+  $("dX").onclick=$("dC").onclick=fechaDlg;
+  $("dS").onclick=async()=>{$("dS").disabled=true;
+    try{await rpc("vis_remarcar",{p_token:TOKEN,p_id:p.id,p_dados:lerRemarcar("rm")});await carregar();fechaDlg()}
+    catch(e){$("dM").className="msg err";$("dM").textContent=e.message;$("dS").disabled=false}};
+}
 const htmlConversa=ms=>(ms&&ms.length)?'<div class="fld"><b>Conversa deste pedido</b>'+ms.map(m=>'<div class="ped" style="padding:6px 10px;margin:4px 0"><div class="note">'+esc(m.quem||"")+' · '+quando(m.ts)+'</div><div style="white-space:pre-wrap">'+esc(m.texto)+'</div></div>').join("")+'</div>':'';
 const htmlMotivos=id=>'<div class="opts" style="margin-bottom:6px">'+MOTIVOS.map(m=>'<button type="button" data-m="'+esc(m)+'" data-t="'+id+'">'+esc(m)+'</button>').join("")+'</div>';
 function ligaMotivos(){document.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{const t=$(b.dataset.t);
@@ -268,7 +287,7 @@ async function linkResposta(chave,quer){
   let v;
   try{v=await rpc("vis_link_ver",{p_chave:chave});if(v.erro)throw new Error(v.erro)}catch(e){el.innerHTML='<h2>Visitas aos carros</h2><div class="msg err">'+esc(e.message)+'</div>';return}
   D={hoje:v.hoje,config:{nome_dono:v.nome_dono,agenda:[]}};
-  const opc=v.tipo==="visita"?[["confirmada","✅ Consigo ir","ok"],["recusada","❌ Não consigo","d"]]:[["ciente","👍 Ciente","p"],["confirmada","✅ Vou passar lá","ok"]];
+  const opc=(v.tipo==="visita"?[["confirmada","✅ Consigo ir","ok"],["recusada","❌ Não consigo","d"]]:[["ciente","👍 Ciente","p"],["confirmada","✅ Vou passar lá","ok"]]).concat([["remarcar","📅 Marcar outro dia","p"]]);
   if(!opc.some(o=>o[0]===quer))quer=null;
   let editar=v.status==="pendente";
   function tela(msg){
@@ -279,7 +298,7 @@ async function linkResposta(chave,quer){
       '<div style="margin-bottom:10px">Situação: <span class="chip '+v.status+'">'+st[0]+'</span>'+(v.status==="confirmada"&&v.hora_combinada?' · chega '+esc(v.hora_combinada):'')+(v.status==="recusada"&&v.resposta?' · '+esc(v.resposta):'')+(v.status==="recusada"&&v.alternativa?' · 🕒 consigo '+esc(v.alternativa):'')+'</div>'+
       (v.status==="cancelada"?'<div class="msg err">A Caliman cancelou esse pedido.</div>':!editar?'<button class="btn" id="lEd">Mudar minha resposta</button>':
       '<div class="fld"><b>Sua resposta</b><div class="opts" id="lOp">'+opc.map(o=>'<button data-v="'+o[0]+'" class="'+(quer===o[0]?"on":"")+'"'+(quer===o[0]&&o[0]==="recusada"?' style="background:#dc2626;border-color:#dc2626"':'')+'>'+o[1]+'</button>').join("")+'</div></div>'+
-      (!quer?'<div class="note">Escolha uma das opções acima.</div>':
+      (!quer?'<div class="note">Escolha uma das opções acima.</div>':quer==="remarcar"?htmlRemarcar("lR",v,v.locais)+'<div class="note">Fica confirmado no novo dia/horário e '+esc(v.autor.split(" ")[0])+' recebe no WhatsApp.</div><button class="btn ok" id="lS" style="width:100%;padding:12px;font-size:16px">Remarcar e confirmar</button>':
       (quer==="confirmada"?'<div class="fld"><b>Que horas você chega? (opcional)</b><div class="row"><input type="time" id="lHora"></div></div>':'')+
       '<div class="fld"><b>'+(quer==="recusada"?"Justificativa (obrigatória, a Caliman vê)":"Recado (opcional)")+'</b>'+(quer==="recusada"?htmlMotivos("lTxt"):'')+'<textarea id="lTxt" rows="2" maxlength="1000"></textarea></div>'+(quer==="recusada"?htmlAlt("lA"):'')+
       '<button class="btn '+(quer==="recusada"?"d":"p")+'" id="lS" style="width:100%;padding:12px;font-size:16px">Enviar resposta</button>'))+
@@ -290,7 +309,11 @@ async function linkResposta(chave,quer){
     if(!$("lOp"))return;
     $("lOp").querySelectorAll("button").forEach(b=>b.onclick=()=>{quer=b.dataset.v;tela()});
     if(!$("lS"))return;ligaMotivos();
-    $("lS").onclick=async()=>{if(quer==="recusada"&&!$("lTxt").value.trim()){$("lM").className="msg err";$("lM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
+    $("lS").onclick=async()=>{if(quer==="remarcar"){$("lS").disabled=true;
+        try{await rpc("vis_link_remarcar",{p_chave:chave,p_dados:lerRemarcar("lR")});v=await rpc("vis_link_ver",{p_chave:chave});editar=false;quer=null;
+          tela('<span style="color:var(--grn);font-size:15px">✅ Remarcado e confirmado. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto.</span>')}
+        catch(e){$("lM").className="msg err";$("lM").textContent=e.message;$("lS").disabled=false}return}
+      if(quer==="recusada"&&!$("lTxt").value.trim()){$("lM").className="msg err";$("lM").textContent="Escreva o motivo (ou toque num dos botões acima).";return}
       $("lS").disabled=true;$("lM").className="msg";$("lM").textContent="Enviando…";
       try{await rpc("vis_link_responder",{p_chave:chave,p_status:quer,p_texto:$("lTxt").value,p_hora:quer==="recusada"?altTxt("lA"):($("lHora")?$("lHora").value:null)});
         v=await rpc("vis_link_ver",{p_chave:chave});editar=false;tela('<span style="color:var(--grn);font-size:15px">✅ Resposta enviada. '+esc(v.autor)+' recebe no WhatsApp pelo robô em até 1 minuto e vê na página'+'.</span>')}
@@ -391,9 +414,11 @@ function acoes(p,eq,meu){
     }else if(p.status==="confirmada"){
       a+='<button class="btn ok sm" data-a="feita" data-id="'+p.id+'">✔ Visitei</button><button class="btn d sm" data-a="recusada" data-id="'+p.id+'">Não vou conseguir mais</button>';
     }
+    if(p.status!=="cancelada"&&p.status!=="feita")a+='<button class="btn sm" data-a="remarcar" data-id="'+p.id+'">📅 Remarcar</button>';
     if(p.status!=="pendente"&&p.status!=="cancelada")a+='<button class="btn sm" data-a="pendente" data-id="'+p.id+'">Desfazer resposta</button>';
     
   }else{
+    if(meu&&["pendente","confirmada","recusada"].includes(p.status))a+='<button class="btn sm" data-a="remarcar" data-id="'+p.id+'">📅 Remarcar</button>';
     if(meu&&(p.status==="pendente"||p.status==="confirmada"))a+='<button class="btn d sm" data-a="cancelar" data-id="'+p.id+'">Cancelar</button>';
     
   }
@@ -436,6 +461,7 @@ async function acao(a,id,el){
       el.disabled=true;await rpc("vis_mensagem",{p_token:TOKEN,p_id:id,p_texto:t});return carregar()}
     if(a==="cancelar"){if(!confirm("Cancelar este pedido?"))return;await rpc("vis_cancelar",{p_token:TOKEN,p_id:id});return carregar()}
     if(a==="confirmada"||a==="recusada")return dlgResposta(p,a);
+    if(a==="remarcar")return dlgRemarcar(p);
     el.disabled=true;await rpc("vis_responder",{p_token:TOKEN,p_id:id,p_status:a,p_texto:null,p_hora:null});await carregar();
   }catch(e){alert(e.message);el.disabled=false}
 }
