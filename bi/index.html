@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BI da Frota · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<link rel="stylesheet" href="../rota/leaflet.css">
+<style>
+/* mesmo visual das outras páginas (tema claro fixo) */
+:root{--bg:#f4f6fb;--card:#fff;--card2:#f8fafc;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06);
+  --red:#dc2626;--redbg:#fdecec;--ora:#c2410c;--orabg:#fff1e6;--yel:#a16207;--yelbg:#fef6d8;--grn:#15803d;--grnbg:#e7f6ec;
+  --blu:#1d4ed8;--blubg:#e8efff;--gry:#64748b;--grybg:#eef2f7;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px 80px}
+header.top{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:16px 0 6px}
+header.top .tt{margin-right:auto;min-width:0}
+header.top h1{font-size:20px;margin:0}
+header.top .sub{color:var(--mut);font-size:13px;margin:0}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;font:600 13px system-ui,sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+.btn:hover{border-color:#c9d1de}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.red{color:var(--red)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.6;cursor:default}
+.who{font-size:13px;color:var(--mut)}
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:6px 0 10px;scrollbar-width:thin}
+.tab{border:0;background:none;padding:9px 12px;font-weight:600;font-size:14px;color:var(--mut);border-bottom:3px solid transparent;white-space:nowrap}
+.tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+.tab .tag{font-size:10px;font-weight:700;background:var(--grybg);color:var(--gry);border-radius:999px;padding:0 6px;margin-left:4px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.bar label{font-size:12px;color:var(--mut);display:flex;flex-direction:column;gap:2px}
+.bar input,.bar select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 10px;min-width:0;max-width:240px}
+.faixa{border-radius:10px;padding:9px 12px;margin:8px 0;font-size:14px;border:1px solid var(--line);background:var(--card)}
+.faixa.warn{background:var(--orabg);border-color:#f6c9a8;color:var(--ora);font-weight:600}
+.faixa.info{background:var(--blubg);border-color:#c7d6fb;color:var(--blu)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:10px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);text-align:left}
+.kpi b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--mut)}
+.kpi small{display:block;font-size:11px;color:var(--mut)}
+.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+.cols3{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:8px 0}
+@media (max-width:820px){.cols,.cols3{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;min-width:0;margin-bottom:10px}
+.box h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.box h3 .r{margin-left:auto;text-transform:none;letter-spacing:0}
+.rk{width:100%;border-collapse:collapse;font-size:13px}
+.rk td{padding:4px 4px;border-top:1px solid var(--line);vertical-align:top}
+.rk td.n{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rk .barra{height:6px;background:var(--blubg);border-radius:3px;margin-top:2px}.rk .barra i{display:block;height:6px;background:var(--brand);border-radius:3px}
+.scroll{max-height:440px;overflow-y:auto}
+.tb{overflow-x:auto}
+table.dt{width:100%;border-collapse:collapse;font-size:13px}
+table.dt th{position:sticky;top:0;background:var(--card2);text-align:left;font-size:12px;color:var(--mut);padding:6px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+table.dt td{padding:5px 6px;border-top:1px solid var(--line);white-space:nowrap}
+table.dt td.w{white-space:normal;min-width:160px}
+table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.c-ok{background:var(--grnbg);color:var(--grn)}.c-bad{background:var(--redbg);color:var(--red)}.c-warn{background:var(--orabg);color:var(--ora)}
+.c-gry{background:var(--grybg);color:var(--gry)}.c-blu{background:var(--blubg);color:var(--blu)}
+.vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:14px;color:var(--mut);text-align:center}
+.note{font-size:12px;color:var(--mut)}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mut);margin:4px 0}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
+.login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.login h2{margin:0 0 6px;font-size:19px}
+.login input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin:10px 0}
+.login .btn{width:100%;justify-content:center;padding:9px}
+.msg{font-size:13px;margin-top:8px}.msg.err{color:var(--red)}.msg.ok{color:var(--grn)}
+#mapa,#mapaFora{height:520px;border-radius:12px;border:1px solid var(--line);background:#dfe5ee}
+#mapaFora{height:380px}
+.cerca{border:1px solid var(--line);border-left:5px solid var(--brand);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--card)}
+.cerca b{font-size:15px}.cerca .acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.cerca ul{margin:4px 0 0;padding-left:18px;font-size:13px}
+.form label{display:block;font-size:12px;color:var(--mut);margin:8px 0 2px}
+.form input,.form select{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.regra{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;background:var(--card2)}
+.regra .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.regra .g label{margin:0}
+.chks{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px}
+.chks label{display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--ink)}
+.chks input{width:auto}
+.dica{font-size:12px;color:var(--mut);background:var(--yelbg);border-radius:8px;padding:6px 9px;margin:6px 0}
+</style>
+</head>
+<body>
+<div id="vLogin" class="login hidden">
+  <h2>BI da Frota</h2>
+  <div class="note">Use a sua senha pessoal da Central (ou a senha de gestores).</div>
+  <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha" required>
+  <button class="btn p">Entrar</button></form>
+  <div id="lMsg" class="msg"></div>
+</div>
+
+<div id="vApp" class="wrap hidden">
+  <header class="top">
+    <div class="tt"><h1>BI da Frota</h1>
+      <p class="sub">Ocupação, horários, fora de rota e custos dos ônibus (dados da TFleet + GPS do Monitor)</p></div>
+    <span class="who" id="who"></span>
+    <a class="btn" href="../">Início</a>
+    <button class="btn" id="bSair">Sair</button>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+
+  <div class="bar" id="filtros">
+    <label>De <input type="date" id="fDe"></label>
+    <label>Até <input type="date" id="fAte"></label>
+    <label>Linha <input id="fLinha" list="dlLinhas" placeholder="Todas"></label>
+    <label>Turno <select id="fTurno"><option value="">Todos</option></select></label>
+    <label>Sentido <select id="fSent"><option value="">IDA e VOLTA</option><option>IDA</option><option>VOLTA</option></select></label>
+    <button class="btn p" id="bAtual" style="align-self:flex-end">Atualizar</button>
+    <button class="btn" id="bCsv" style="align-self:flex-end">⬇ Baixar Excel</button>
+  </div>
+  <datalist id="dlLinhas"></datalist>
+  <div id="coleta" class="faixa warn hidden"></div>
+
+  <div id="painel"></div>
+</div>
+
+<script src="../rota/leaflet.js"></script>
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const MAPTILER_KEY="G2MUHW7Q8hatR3VYbHUz";
+const K_SESS="tf_bi", K_CENTRAL="tf_sessao", K_SOL="tf_solicitacoes", K_TAB="tf_bi_aba";
+const CENTRO=[-3.2474,-47.7368];   // terminal da mina (ponto de chegada mais comum nas viagens)
+let TOKEN=null,QUEM=null,INI=null,ABA=null,DADOS=null,OPC=null,CSV=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const nf=n=>n==null?"—":Number(n).toLocaleString("pt-BR");
+const brl=n=>n==null?"—":Number(n).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const dBR=s=>s?String(s).slice(0,10).split("-").reverse().join("/"):"—";
+const dCurto=s=>s?String(s).slice(5,10).split("-").reverse().join("/"):"";
+const dtBR=s=>{if(!s)return"";const d=new Date(s);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})};
+const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+const menosDias=(d,n)=>new Date(Date.parse(d+"T12:00:00Z")-n*864e5).toISOString().slice(0,10);
+const nomeCurto=n=>String(n||"?").toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase());
+const hm2min=t=>{const m=/^(\d{1,2}):(\d{2})/.exec(t||"");return m?(+m[1])*60+(+m[2]):null};
+const min2hm=m=>{m=((Math.round(m)%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0")};
+function msg(id,t,cl){const m=$(id);if(m){m.textContent=t;m.className="msg "+(cl||"")}}
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}throw new Error(m)}
+  return j;
+}
+
+/* ---------------- entrar ---------------- */
+async function iniciar(){
+  $("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL),ls.get(K_SOL)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("bi_sessao",{p_token:s.token});if(q&&!q.erro){entrar(s.token);return}}catch(e){}}
+  mostrarLogin();
+}
+function mostrarLogin(){$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
+  try{const r=await rpc("bi_entrar",{p_senha:$("lSenha").value});
+    if(r.erro){msg("lMsg",r.erro,"err");return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token);
+  }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
+$("bSair").onclick=async()=>{try{await rpc("bi_sair",{p_token:TOKEN})}catch(e){}ls.del(K_SESS);location.reload()};
+
+async function entrar(tk){
+  TOKEN=tk;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");
+  try{INI=await rpc("bi_inicio",{p_token:TOKEN});QUEM=INI.quem}catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  $("who").textContent=QUEM.nome||"";
+  const col=INI.coleta?new Date(INI.coleta):null,atraso=col?(Date.now()-col)/36e5:99;
+  $("coleta").classList.toggle("hidden",atraso<2);
+  $("coleta").textContent=col?"⚠ A coleta da TFleet está parada desde "+dtBR(INI.coleta)+": viagens e embarques depois disso ainda não entram aqui.":"⚠ Ainda não há viagens coletadas da TFleet.";
+  rpc("bi_opcoes",{p_token:TOKEN}).then(o=>{OPC=o;
+    $("dlLinhas").innerHTML=(o.linhas||[]).map(l=>'<option value="'+esc(l)+'">').join("");
+    $("fTurno").innerHTML='<option value="">Todos</option>'+(o.tipolinhas||[]).map(t=>'<option>'+esc(t)+'</option>').join("");
+  }).catch(()=>{});
+  montarAbas();
+}
+function abasVisiveis(){
+  const p=(INI.paineis||[]).filter(x=>x.situacao!=="excluido");
+  const a=p.map(x=>({id:x.id,titulo:x.titulo,sit:x.situacao}));
+  a.push({id:"cercas",titulo:"Cercas dos turnos"});
+  if(QUEM.edita)a.push({id:"gerenciar",titulo:"⚙ Gerenciar"});
+  return a;
+}
+function montarAbas(){
+  const a=abasVisiveis();
+  const salvo=ls.get(K_TAB);ABA=a.find(x=>x.id===(ABA||salvo))?(ABA||salvo):(a[0]&&a[0].id);
+  $("tabs").innerHTML=a.map(x=>'<button class="tab'+(x.id===ABA?" on":"")+'" data-id="'+x.id+'">'+esc(x.titulo)+(x.sit==="admin"?'<span class="tag">só admin</span>':'')+'</button>').join("");
+  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.id;ls.set(K_TAB,ABA);montarAbas()});
+  carregar();
+}
+function filtros(){return{linha:$("fLinha").value.trim()||null,tipolinha:$("fTurno").value||null,sentido:$("fSent").value||null}}
+$("bAtual").onclick=()=>carregar();
+["fDe","fAte","fTurno","fSent"].forEach(i=>$(i).addEventListener("change",()=>carregar()));
+$("fLinha").addEventListener("change",()=>carregar());
+
+async function carregar(){
+  const semFiltro=ABA==="cercas"||ABA==="gerenciar";
+  $("filtros").classList.toggle("hidden",semFiltro);
+  CSV=null;
+  if(ABA==="cercas")return telaCercas();
+  if(ABA==="gerenciar")return telaGerenciar();
+  if(!ABA){$("painel").innerHTML='<div class="vazio">Nenhum painel liberado para você.</div>';return}
+  $("painel").innerHTML='<div class="vazio">Carregando…</div>';
+  const de=$("fDe").value,ate=$("fAte").value;
+  try{
+    if(ABA==="horarios")await processarCercas(de,ate);
+    DADOS=await rpc("bi_dados",{p_token:TOKEN,p_painel:ABA,p_de:de,p_ate:ate,p_filtros:filtros()});
+    ({ocupacao:telaOcupacao,horarios:telaHorarios,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad}[ABA]||(()=>{}))(DADOS);
+  }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
+}
+async function processarCercas(de,ate){
+  for(let i=0;i<40;i++){
+    const r=await rpc("bi_processar",{p_token:TOKEN,p_de:de,p_ate:ate,p_max:4});
+    if(!r||!r.falta)return;
+    $("painel").innerHTML='<div class="vazio">Calculando entradas e saídas nas cercas pelo GPS do Monitor… faltam '+r.falta+' dia(s) de cerca.</div>';
+  }
+}
+
+/* ---------------- peças de desenho ---------------- */
+const kpi=(v,l,s,cl)=>'<div class="kpi '+(cl||"")+'"><b>'+v+'</b><span>'+esc(l)+'</span>'+(s?'<small>'+esc(s)+'</small>':'')+'</div>';
+function barras(lista,rot,val,fmt,max){
+  lista=(lista||[]).slice(0,max||30);const mx=Math.max(1,...lista.map(x=>+x[val]||0));fmt=fmt||nf;
+  if(!lista.length)return'<div class="note">Sem dados no período.</div>';
+  return'<table class="rk">'+lista.map(x=>'<tr><td>'+esc(typeof rot==="function"?rot(x):x[rot])+'<div class="barra"><i style="width:'+(100*(+x[val]||0)/mx).toFixed(1)+'%"></i></div></td><td class="n">'+fmt(x[val])+'</td></tr>').join("")+'</table>';
+}
+// colunas por dia (SVG simples)
+function colunasDia(lista,campo,cor){
+  if(!lista||!lista.length)return'<div class="note">Sem dados no período.</div>';
+  const W=Math.max(320,lista.length*28),H=170,mx=Math.max(1,...lista.map(x=>+x[campo]||0)),bw=Math.max(6,W/lista.length-6);
+  let s='<svg viewBox="0 0 '+W+' '+(H+24)+'" width="100%" height="'+(H+24)+'" preserveAspectRatio="none" role="img">';
+  lista.forEach((x,i)=>{const h=(H-14)*(+x[campo]||0)/mx,xx=i*(W/lista.length)+3;
+    s+='<rect x="'+xx+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" fill="'+(cor||"#2563eb")+'"><title>'+dBR(x.dia)+': '+nf(x[campo])+'</title></rect>';
+    if(lista.length<=31)s+='<text x="'+(xx+bw/2)+'" y="'+(H-h-3)+'" text-anchor="middle">'+nf(x[campo])+'</text>';
+    if(lista.length<=16||i%Math.ceil(lista.length/16)===0)s+='<text x="'+(xx+bw/2)+'" y="'+(H+14)+'" text-anchor="middle">'+dCurto(x.dia)+'</text>';});
+  return'<div class="tb">'+s+'</svg></div>';
+}
+// tabela com ordenação por clique no título; guarda os dados para o botão Baixar Excel
+function tabela(id,cols,linhas,nome){
+  CSV={cols,linhas,nome};
+  const st={k:null,d:1};
+  const pinta=()=>{
+    let l=linhas.slice();if(st.k){const c=cols.find(c=>c.k===st.k);l.sort((a,b)=>{const x=a[st.k],y=b[st.k];return(c.num?(+x||0)-(+y||0):String(x??"").localeCompare(String(y??""),"pt-BR"))*st.d})}
+    const mostra=l.slice(0,800);
+    $(id).innerHTML='<div class="tb scroll"><table class="dt"><thead><tr>'+cols.map(c=>'<th data-k="'+c.k+'">'+esc(c.t)+(st.k===c.k?(st.d>0?" ▲":" ▼"):"")+'</th>').join("")+'</tr></thead><tbody>'
+      +(mostra.length?mostra.map(r=>'<tr>'+cols.map(c=>'<td class="'+(c.num?"n":"")+(c.w?" w":"")+'">'+(c.f?c.f(r[c.k],r):esc(r[c.k]??"—"))+'</td>').join("")+'</tr>').join(""):'<tr><td colspan="'+cols.length+'" class="note">Nada no período.</td></tr>')
+      +'</tbody></table></div>'+(l.length>800?'<div class="note">Mostrando 800 de '+nf(l.length)+'. O Excel leva todas.</div>':'');
+    $(id).querySelectorAll("th").forEach(th=>th.onclick=()=>{st.d=st.k===th.dataset.k?-st.d:1;st.k=th.dataset.k;pinta()});
+  };pinta();
+}
+$("bCsv").onclick=()=>{
+  if(!CSV){alert("Este painel não tem tabela para baixar.");return}
+  const q=v=>{v=v==null?"":String(v);return/[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+  const txt="﻿"+CSV.cols.map(c=>q(c.t)).join(";")+"\n"+CSV.linhas.map(r=>CSV.cols.map(c=>{let v=r[c.k];if(c.num&&v!=null)v=String(v).replace(".",",");return q(v)}).join(";")).join("\n");
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type:"text/csv;charset=utf-8"}));
+  a.download=(CSV.nome||"bi")+"_"+$("fDe").value+"_a_"+$("fAte").value+".csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+};
+
+/* ---------------- Ocupação ---------------- */
+function telaOcupacao(d){
+  const k=d.kpi||{};
+  const turnos={};(d.por_turno||[]).forEach(x=>{(turnos[x.turno]=turnos[x.turno]||{turno:x.turno,n:0,emp:[]}).n+=x.n;turnos[x.turno].emp.push(x)});
+  const tl=Object.values(turnos).sort((a,b)=>b.n-a.n);
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques")+kpi(nf(k.pessoas),"pessoas diferentes")+kpi(nf(k.viagens),"viagens")
+    +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","média das viagens com leitura")
+    +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média","sobre "+k.lugares+" lugares",k.pct>=89?"bad":k.pct<50?"warn":"ok")+'</div>'
+    +'<div class="box"><h3>Pessoas transportadas por dia</h3>'+colunasDia(d.por_dia,"embarques")+'</div>'
+    +'<div class="cols3"><div class="box"><h3>Por linha <span class="r note">clique no título da coluna para ordenar</span></h3><div id="tLinha"></div></div>'
+    +'<div><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n")+'</div>'
+    +'<div class="box"><h3>Turno → empresa</h3>'+tl.map(t=>'<details><summary><b>'+esc(t.turno)+'</b> · '+nf(t.n)+'</summary>'+barras(t.emp.sort((a,b)=>b.n-a.n),"empresa","n",null,15)+'</details>').join("")+'</div></div></div>';
+  tabela("tLinha",[{k:"linha",t:"Linha",w:1},{k:"viagens",t:"Viagens",num:1},{k:"embarques",t:"Embarques",num:1},{k:"pessoas",t:"Pessoas",num:1},
+    {k:"media_ocup",t:"Média por viagem",num:1},{k:"pct",t:"Ocupação %",num:1,f:v=>v==null?"—":'<span class="chip '+(v>=89?"c-bad":v<50?"c-warn":"c-ok")+'">'+nf(v)+'%</span>'}],d.por_linha||[],"ocupacao_por_linha");
+}
+
+/* ---------------- Horários de entrada e saída ---------------- */
+const ST={"no horário":"c-ok","adiantado":"c-warn","atrasado":"c-bad","sem dado":"c-gry","sem passagem na cerca":"c-gry"};
+const STCOR={"no horário":"#16a34a","adiantado":"#d97706","atrasado":"#dc2626"};
+function telaHorarios(d){
+  if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma cerca cadastrada ainda. Vá na aba <b>Cercas dos turnos</b>, desenhe a cerca e informe o horário de chegada, de saída e a tolerância.</div>';return}
+  const L=d.linhas||[],c={};L.forEach(x=>c[x.status]=(c[x.status]||0)+1);
+  const comHora=L.filter(x=>x.hora_real),pctOk=comHora.length?Math.round(100*(c["no horário"]||0)/comHora.length):null;
+  const mon=L.filter(x=>x.origem==="Monitor").length;
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens com regra de horário")
+    +kpi(pctOk==null?"—":pctOk+"%","no horário","das "+comHora.length+" com hora",pctOk>=90?"ok":pctOk>=70?"warn":"bad")
+    +kpi(nf(c["adiantado"]||0),"adiantadas","antes da tolerância","warn")+kpi(nf(c["atrasado"]||0),"atrasadas","depois da tolerância","bad")
+    +kpi(nf((c["sem dado"]||0)+(c["sem passagem na cerca"]||0)),"sem hora","sem Monitor e sem hora da TFleet")
+    +kpi(nf(mon),"medidas pelo Monitor",L.length?Math.round(100*mon/L.length)+"% das viagens":"")+'</div>'
+    +'<div class="faixa info">A hora vem da <b>cerca</b> (GPS do Monitor, ±1 min) quando o carro tem Monitor. Sem Monitor, usa a hora da <b>TFleet</b>: chegada no ponto (IDA) ou abertura da viagem (VOLTA). Nada é estimado ou sorteado: sem hora fica "sem dado".</div>'
+    +['IDA','VOLTA'].filter(s=>!$("fSent").value||$("fSent").value===s).map(s=>'<div class="box"><h3>'+(s==="IDA"?"Chegada na cerca (IDA)":"Saída da cerca (VOLTA)")+'</h3>'
+       +'<div class="leg"><span><i style="background:#cbd5e1;border-radius:2px"></i>faixa da tolerância</span><span><i style="background:#0f172a;border-radius:0;width:3px"></i>previsto</span><span><i style="background:#16a34a"></i>no horário</span><span><i style="background:#d97706"></i>adiantado</span><span><i style="background:#dc2626"></i>atrasado</span></div>'
+       +graficoFaixas(L.filter(x=>x.tipo===s&&x.hora_real))+'</div>').join("")
+    +'<div class="box"><h3>Viagens <span class="r note">clique no título da coluna para ordenar</span></h3><div id="tHor"></div></div>';
+  tabela("tHor",[{k:"data",t:"Data",f:dBR},{k:"cerca",t:"Cerca"},{k:"regra",t:"Regra"},{k:"linha",t:"Linha",w:1},{k:"tipo",t:"Sentido"},{k:"frota",t:"Carro"},
+    {k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"prevista",t:"Previsto"},{k:"hora_real",t:"Hora real",f:(v,r)=>esc(v||"—")+(r.monitor_gap>5?' <span class="note" title="o celular ficou '+r.monitor_gap+' min sem mandar posição antes">±'+Math.round(r.monitor_gap)+'min</span>':"")},
+    {k:"origem",t:"De onde veio"},{k:"dif",t:"Diferença (min)",num:1,f:v=>v==null?"—":(v>0?"+":"")+v},{k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},
+    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],L,"horarios_entrada_saida");
+}
+// uma linha por rota: faixa cinza = previsto ± tolerância, traço = previsto, pontos = horas reais
+function graficoFaixas(L){
+  if(!L.length)return'<div class="note">Nenhuma viagem com hora nesse período e filtro.</div>';
+  const g={};L.forEach(x=>{const k=x.linha+"|"+x.prevista+"|"+x.tol_antes+"|"+x.tol_depois;(g[k]=g[k]||{linha:x.linha,prev:hm2min(x.prevista),ta:x.tol_antes,td:x.tol_depois,p:[]}).p.push(x)});
+  const rows=Object.values(g).sort((a,b)=>a.prev-b.prev||a.linha.localeCompare(b.linha)).slice(0,40);
+  let lo=1e9,hi=-1e9;rows.forEach(r=>{const base=r.prev;lo=Math.min(lo,base-r.ta);hi=Math.max(hi,base+r.td);r.p.forEach(x=>{const v=base+x.dif;lo=Math.min(lo,v);hi=Math.max(hi,v)})});
+  lo=Math.floor((lo-5)/15)*15;hi=Math.ceil((hi+5)/15)*15;
+  const LW=190,W=900,RH=22,H=rows.length*RH+26,sx=v=>LW+(W-LW-10)*(v-lo)/Math.max(1,hi-lo);
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="min-width:560px" role="img">';
+  const passo=(hi-lo)>360?60:(hi-lo)>120?30:15;
+  for(let t=lo;t<=hi;t+=passo)s+='<line x1="'+sx(t)+'" x2="'+sx(t)+'" y1="0" y2="'+(H-20)+'" stroke="#e4e8f0"/><text x="'+sx(t)+'" y="'+(H-6)+'" text-anchor="middle">'+min2hm(t)+'</text>';
+  rows.forEach((r,i)=>{const y=i*RH+RH/2+2;
+    s+='<text x="'+(LW-6)+'" y="'+(y+4)+'" text-anchor="end">'+esc(r.linha.length>28?r.linha.slice(0,27)+"…":r.linha)+'</text>';
+    s+='<rect x="'+sx(r.prev-r.ta)+'" y="'+(y-6)+'" width="'+(sx(r.prev+r.td)-sx(r.prev-r.ta))+'" height="12" rx="3" fill="#cbd5e1"/>';
+    s+='<line x1="'+sx(r.prev)+'" x2="'+sx(r.prev)+'" y1="'+(y-8)+'" y2="'+(y+8)+'" stroke="#0f172a" stroke-width="2"/>';
+    r.p.forEach(x=>{s+='<circle cx="'+sx(r.prev+x.dif)+'" cy="'+y+'" r="4.5" fill="'+(STCOR[x.status]||"#64748b")+'" stroke="#fff" stroke-width="1.5"'+(x.origem==="Monitor"?'':' fill-opacity=".55"')+'><title>'+esc(dBR(x.data)+" · carro "+x.frota+" · "+x.hora_real+" ("+x.origem+") · "+(x.dif>0?"+":"")+x.dif+" min")+'</title></circle>'});
+  });
+  return'<div class="tb">'+s+'</svg></div>'+(Object.keys(g).length>40?'<div class="note">Mostrando 40 rotas. Use o filtro de linha ou turno para ver as outras.</div>':'')
+    +'<div class="note">Ponto cheio = medido pela cerca (Monitor); ponto claro = hora da TFleet.</div>';
+}
+
+/* ---------------- Fora de rota ---------------- */
+let mapaFora=null;
+function telaFora(d){
+  const k=d.kpi||{};const gg={};(d.por_gg||[]).forEach(x=>{(gg[x.gg]=gg[x.gg]||{gg:x.gg,n:0}).n+=x.n});
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques no período")+kpi(nf(k.fora),"fora de rota ou não regulares",k.embarques?Math.round(100*k.fora/k.embarques)+"% dos embarques":"","warn")
+    +kpi(nf(k.pessoas),"pessoas")+'</div>'
+    +'<div class="cols"><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n")+'</div>'
+    +'<div class="box"><h3>Gerência (GG)</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40)+'</div></div></div>'
+    +'<div class="box"><h3>Onde essas pessoas embarcaram</h3><div id="mapaFora"></div><div class="leg"><span><i style="background:#dc2626"></i>não cadastrado</span><span><i style="background:#d97706"></i>itinerante</span><span><i style="background:#2563eb"></i>regular em outra linha</span><span><i style="background:#64748b"></i>inativo</span></div></div>'
+    +'<div class="box"><h3>Pessoas <span class="r note">linha de cadastro × linhas que usou</span></h3><div id="tFora"></div></div>';
+  tabela("tFora",[{k:"status",t:"Status"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
+    {k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"linhas_usadas",t:"Linhas que usou",w:1},{k:"vezes",t:"Embarques",num:1},{k:"ultimo",t:"Último",f:dBR}],d.lista||[],"fora_de_rota");
+  if(window.L){mapaFora=novoMapa("mapaFora");const cor={"NAO CADASTRADO":"#dc2626","NÃO CADASTRADO":"#dc2626","ITINERANTE":"#d97706","INATIVO":"#64748b"};
+    const b=[];(d.pontos||[]).forEach(p=>{L.circleMarker([p[0],p[1]],{radius:4,weight:1,color:"#fff",fillColor:cor[p[2]]||"#2563eb",fillOpacity:.85}).addTo(mapaFora);b.push([p[0],p[1]])});
+    if(b.length)mapaFora.fitBounds(b,{padding:[20,20],maxZoom:15});}
+}
+
+/* ---------------- Viagens por dia ---------------- */
+function telaViagens(d){
+  const k=d.kpi||{};const dias={};(d.por_dia||[]).forEach(x=>{(dias[x.dia]=dias[x.dia]||{dia:x.dia,n:0}).n+=x.n});
+  const turnos=[...new Set((d.por_dia||[]).map(x=>x.turno))];
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.viagens),"viagens abertas")+kpi(nf(k.dias),"dias com viagem")+kpi(nf(k.media_dia),"média por dia")+'</div>'
+    +'<div class="box"><h3>Todas as viagens por dia</h3>'+colunasDia(Object.values(dias).sort((a,b)=>a.dia.localeCompare(b.dia)),"n")+'</div>'
+    +'<div class="cols">'+turnos.slice(0,8).map(t=>{const l=(d.por_dia||[]).filter(x=>x.turno===t);const tt=(d.por_turno||[]).find(x=>x.turno===t)||{};
+      return'<div class="box"><h3>'+esc(t)+' <span class="r note">média '+nf(tt.media_dia)+' por dia</span></h3>'+colunasDia(l,"n","#0891b2")+'</div>'}).join("")+'</div>'
+    +'<div class="box"><h3>Por turno</h3><div id="tVg"></div></div>';
+  tabela("tVg",[{k:"turno",t:"Turno"},{k:"n",t:"Viagens",num:1},{k:"media_dia",t:"Média por dia",num:1}],d.por_turno||[],"viagens_por_turno");
+}
+
+/* ---------------- Custo por pessoa ---------------- */
+function telaCusto(d){
+  const k=d.kpi||{};
+  $("painel").innerHTML='<div class="kpis">'+kpi(brl(k.total),"custo estimado no período")+kpi(nf(k.embarques),"embarques")+kpi(brl(d.valor_pessoa),"por embarque",QUEM.edita?"muda em ⚙ Gerenciar":"valor de referência")+'</div>'
+    +'<div class="faixa info">Custo = embarques × valor por pessoa (valor de referência único, como no Power BI). Não é o valor do contrato por rota.</div>'
+    +'<div class="cols"><div class="box"><h3>Por gerência (GG)</h3><div class="scroll">'+barras(d.por_gg,"gg","valor",brl,40)+'</div></div>'
+    +'<div class="box"><h3>Por turno</h3>'+barras(d.por_turno,"turno","valor",brl)+'<h3 style="margin-top:12px">Por empresa</h3><div class="scroll" style="max-height:260px">'+barras(d.por_empresa,"empresa","valor",brl,40)+'</div></div></div>'
+    +'<div class="box"><h3>Por linha</h3><div id="tCusto"></div></div>';
+  tabela("tCusto",[{k:"linha",t:"Linha",w:1},{k:"n",t:"Embarques",num:1},{k:"valor",t:"Valor (R$)",num:1,f:v=>brl(v)}],d.por_linha||[],"custo_por_linha");
+}
+
+/* ---------------- Não cadastrados ---------------- */
+function telaNaoCad(d){
+  const k=d.kpi||{};const gg={};(d.por_gg||[]).forEach(x=>{(gg[x.gg]=gg[x.gg]||{gg:x.gg,n:0}).n+=x.n});
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques sem cadastro regular")+kpi(nf(k.nao_cad),"não cadastrados","","bad")+kpi(nf(k.itinerantes),"itinerantes","","warn")+'</div>'
+    +'<div class="faixa info">O nome de quem passou o crachá sem cadastro vinha da base do Ronda, que fica no Databricks da Hydro. Aqui aparece o número do crachá para consulta.</div>'
+    +'<div class="cols"><div class="box"><h3>Por linha</h3><div class="scroll">'+barras(d.por_linha,"linha","n",null,40)+'</div></div>'
+    +'<div class="box"><h3>Por gerência (GG)</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40)+'</div></div></div>'
+    +'<div class="box"><h3>Lista para consulta</h3><div id="tNc"></div></div>';
+  tabela("tNc",[{k:"status",t:"Status"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"cracha",t:"Crachá"},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
+    {k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"linhas",t:"Linhas que usou",w:1},{k:"vezes",t:"Embarques",num:1},{k:"ultimo",t:"Último",f:dBR}],d.lista||[],"nao_cadastrados");
+}
+
+/* ---------------- mapa ---------------- */
+function novoMapa(id){
+  const m=L.map(id,{zoomControl:true}).setView(CENTRO,14);
+  L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(m);
+  return m;
+}
+
+/* ---------------- Cercas ---------------- */
+let CERCAS=[],mapa=null,camada=null,ED=null,edLayer=null;
+const DIAS=["","Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
+const FIN={turno:"Entrada e saída do turno",terminal:"Chegada e saída do terminal",fim_rota:"Fim das rotas",outra:"Outra"};
+async function telaCercas(){
+  $("painel").innerHTML='<div class="cols3"><div class="box"><div id="mapa"></div><div class="note" id="mapaDica" style="margin-top:6px"></div></div><div id="lado"></div></div>';
+  if(!window.L){$("mapa").innerHTML='<div class="vazio">O mapa não carregou.</div>'}
+  else{mapa=novoMapa("mapa");camada=L.layerGroup().addTo(mapa);mapa.on("click",e=>{if(!ED)return;ED.pontos.push([+e.latlng.lat.toFixed(6),+e.latlng.lng.toFixed(6)]);desenharEd()})}
+  try{CERCAS=await rpc("bi_cercas",{p_token:TOKEN})}catch(err){$("lado").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  ED=null;listaCercas();
+}
+function listaCercas(){
+  $("mapaDica").textContent="";
+  if(camada){camada.clearLayers();const b=[];CERCAS.forEach(c=>{if((c.pontos||[]).length>=3){L.polygon(c.pontos,{color:c.cor,weight:2,fillOpacity:c.ativo?.25:.08,dashArray:c.ativo?null:"4 4"}).bindTooltip(c.nome).addTo(camada);b.push(...c.pontos)}});
+    if(b.length)mapa.fitBounds(b,{padding:[30,30],maxZoom:17})}
+  const resumo=h=>'<li><b>'+esc(h.rotulo||"Horário")+'</b>: '+(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")
+    +'<br>chegada '+esc(h.chegada||"—")+' (−'+(h.cheg_antes??10)+'/+'+(h.cheg_depois??10)+' min) · saída '+esc(h.saida||"—")+' (−'+(h.sai_antes??10)+'/+'+(h.sai_depois??10)+' min)'
+    +(h.dias&&h.dias.length&&h.dias.length<7?' · '+h.dias.map(d=>DIAS[d]).join(" "):"")+'</li>';
+  $("lado").innerHTML='<div class="box"><h3>Cercas dos turnos'+(QUEM.edita?' <button class="btn sm p r" id="bNova">+ Nova cerca</button>':'')+'</h3>'
+    +'<div class="note" style="margin-bottom:8px">Cada cerca é a área onde o ônibus chega e de onde sai no turno. A entrada e a saída são medidas pelo GPS do app Monitor.</div>'
+    +(CERCAS.length?CERCAS.map(c=>'<div class="cerca" style="border-left-color:'+esc(c.cor)+'"><b>'+esc(c.nome)+'</b> '+(c.turno?'<span class="chip c-blu">'+esc(c.turno)+'</span> ':'')+'<span class="chip '+(c.finalidade==="turno"?"c-ok":"c-gry")+'">'+esc(FIN[c.finalidade]||c.finalidade)+'</span> '+(c.ativo?'':'<span class="chip c-gry">desligada</span>')
+      +(c.finalidade==="turno"?'<ul>'+(c.horarios||[]).map(resumo).join("")+'</ul>':'<div class="note">Entradas e saídas já são gravadas; o painel desta finalidade entra depois.</div>')
+      +(QUEM.edita?'<div class="acts"><button class="btn sm" data-ed="'+c.id+'">Editar</button><button class="btn sm red" data-rm="'+c.id+'">Remover</button></div>':'')
+      +'<div class="note">'+(c.atualizado_por?'Alterada por '+esc(c.atualizado_por)+' em '+dtBR(c.atualizado_em):'')+'</div></div>').join("")
+      :'<div class="vazio">Nenhuma cerca ainda.'+(QUEM.edita?' Clique em <b>+ Nova cerca</b>.':'')+'</div>')+'</div>';
+  if($("bNova"))$("bNova").onclick=()=>editar(null);
+  $("lado").querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>editar(CERCAS.find(c=>c.id==b.dataset.ed)));
+  $("lado").querySelectorAll("[data-rm]").forEach(b=>b.onclick=async()=>{const c=CERCAS.find(x=>x.id==b.dataset.rm);
+    if(!confirm('Remover a cerca "'+c.nome+'"? As entradas e saídas calculadas para ela somem junto.'))return;
+    try{await rpc("bi_cerca_remover",{p_token:TOKEN,p_id:c.id});telaCercas()}catch(err){alert(err.message)}});
+}
+const regraNova=()=>({rotulo:"",tipolinhas:[],linha_contem:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
+function editar(c){
+  ED=c?JSON.parse(JSON.stringify(c)):{id:null,nome:"",turno:"",finalidade:"turno",cor:"#2563eb",ativo:true,pontos:[],horarios:[regraNova()]};
+  ED.finalidade=ED.finalidade||"turno";
+  if(!ED.horarios||!ED.horarios.length)ED.horarios=[regraNova()];
+  $("mapaDica").textContent="Clique no mapa para marcar os cantos da cerca, na ordem, contornando a área. Mínimo 3 pontos.";
+  formEd();desenharEd();
+  if(mapa&&ED.pontos.length>=3)mapa.fitBounds(ED.pontos,{padding:[40,40],maxZoom:18});
+}
+function desenharEd(){
+  if(!camada)return;camada.clearLayers();
+  CERCAS.filter(c=>!ED||c.id!==ED.id).forEach(c=>{if((c.pontos||[]).length>=3)L.polygon(c.pontos,{color:c.cor,weight:1,fillOpacity:.08}).addTo(camada)});
+  if(!ED)return;
+  if(ED.pontos.length>=3)L.polygon(ED.pontos,{color:ED.cor,weight:3,fillOpacity:.3}).addTo(camada);
+  else if(ED.pontos.length===2)L.polyline(ED.pontos,{color:ED.cor,weight:3}).addTo(camada);
+  ED.pontos.forEach((p,i)=>{const mk=L.marker(p,{draggable:true,icon:L.divIcon({className:"",html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid '+esc(ED.cor)+'"></div>',iconSize:[14,14],iconAnchor:[7,7]})}).addTo(camada);
+    mk.on("dragend",e=>{const ll=e.target.getLatLng();ED.pontos[i]=[+ll.lat.toFixed(6),+ll.lng.toFixed(6)];desenharEd()});});
+  const n=$("nPts");if(n)n.textContent=ED.pontos.length+" ponto(s) marcados";
+}
+function formEd(){
+  const tl=(OPC&&OPC.tipolinhas)||[];
+  const rg=(h,i)=>'<div class="regra" data-i="'+i+'"><div style="display:flex;gap:6px;align-items:center"><b style="font-size:13px">Horário '+(i+1)+'</b>'
+    +(ED.horarios.length>1?'<button class="btn sm red" data-rmr="'+i+'" style="margin-left:auto">Tirar</button>':'')+'</div>'
+    +'<label>Nome do horário (ex.: Turno 01 manhã)</label><input data-f="rotulo" value="'+esc(h.rotulo)+'">'
+    +'<label>Viagens da TFleet que contam (turno da linha)</label><div class="chks">'+tl.map(t=>'<label><input type="checkbox" data-tl="'+esc(t)+'"'+((h.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
+    +'<label>e/ou nome da linha contém (opcional, ex.: MINA)</label><input data-f="linha_contem" value="'+esc(h.linha_contem||"")+'">'
+    +'<div class="g"><label>Chegada prevista<input type="time" data-f="chegada" value="'+esc(h.chegada||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="cheg_antes" value="'+(h.cheg_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="cheg_depois" value="'+(h.cheg_depois??10)+'"></label>'
+    +'<label>Saída prevista<input type="time" data-f="saida" value="'+esc(h.saida||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="sai_antes" value="'+(h.sai_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="sai_depois" value="'+(h.sai_depois??10)+'"></label></div>'
+    +'<label>Dias</label><div class="chks">'+[1,2,3,4,5,6,7].map(d=>'<label><input type="checkbox" data-dia="'+d+'"'+((h.dias||[]).includes(d)?" checked":"")+'>'+DIAS[d]+'</label>').join("")+'</div></div>';
+  $("lado").innerHTML='<div class="box form"><h3>'+(ED.id?"Editar cerca":"Nova cerca")+'</h3>'
+    +'<label>Nome da cerca</label><input id="eNome" value="'+esc(ED.nome)+'" placeholder="Ex.: Cerca turno ADM">'
+    +'<div style="display:grid;grid-template-columns:2fr 1fr;gap:6px"><div><label>Turno</label><input id="eTurno" value="'+esc(ED.turno||"")+'" placeholder="ADM, Turno, Gemin" list="dlTurnos"><datalist id="dlTurnos"><option>ADM</option><option>Turno</option><option>Gemin</option><option>Manutenção</option></datalist></div><div><label>Cor</label><input id="eCor" type="color" value="'+esc(ED.cor)+'" style="padding:2px;height:36px"></div></div>'
+    +'<label>Para que serve esta cerca</label><select id="eFin">'+Object.keys(FIN).map(k=>'<option value="'+k+'"'+(k===ED.finalidade?" selected":"")+'>'+FIN[k]+'</option>').join("")+'</select>'
+    +'<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note" id="nPts"></span><button class="btn sm" id="bDesf">Desfazer ponto</button><button class="btn sm" id="bLimp">Limpar pontos</button></div>'
+    +'<label class="chks" style="margin-top:8px"><label><input type="checkbox" id="eAtivo"'+(ED.ativo?" checked":"")+'> Cerca ligada</label></label>'
+    +(ED.finalidade==="turno"?'<div class="dica">A chegada é comparada com as viagens de IDA e a saída com as de VOLTA. Turno 12x12 com troca de manhã e de noite: use um horário para cada troca.</div>'
+      +'<div id="regras">'+ED.horarios.map(rg).join("")+'</div><button class="btn sm" id="bAddR">+ Outro horário</button>'
+      :'<div class="dica">As entradas e saídas nesta cerca já ficam gravadas a partir de agora. O painel dela (horário de chegada, saída ou fim de rota) entra no BI na próxima etapa.</div><div id="regras"></div>')
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="bCanc">Cancelar</button><button class="btn p" id="bSalv">Salvar cerca</button></div><div id="eMsg" class="msg"></div></div>';
+  const ler=()=>{ED.finalidade=$("eFin").value;ED.nome=$("eNome").value;ED.turno=$("eTurno").value;ED.cor=$("eCor").value;ED.ativo=$("eAtivo").checked;
+    $("regras").querySelectorAll(".regra").forEach(div=>{const h=ED.horarios[+div.dataset.i];
+      div.querySelectorAll("[data-f]").forEach(inp=>{const f=inp.dataset.f;h[f]=inp.type==="number"?(inp.value===""?0:+inp.value):inp.value.trim()});
+      h.tipolinhas=[...div.querySelectorAll("[data-tl]:checked")].map(x=>x.dataset.tl);
+      h.dias=[...div.querySelectorAll("[data-dia]:checked")].map(x=>+x.dataset.dia);});};
+  $("eCor").oninput=()=>{ED.cor=$("eCor").value;desenharEd()};
+  $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd()};
+  $("bLimp").onclick=()=>{if(confirm("Apagar todos os pontos desta cerca?")){ED.pontos=[];desenharEd()}};
+  $("eFin").onchange=()=>{ler();formEd();desenharEd()};
+  if($("bAddR"))$("bAddR").onclick=()=>{ler();ED.horarios.push(regraNova());formEd();desenharEd()};
+  $("regras").querySelectorAll("[data-rmr]").forEach(b=>b.onclick=()=>{ler();ED.horarios.splice(+b.dataset.rmr,1);formEd();desenharEd()});
+  $("bCanc").onclick=()=>{ED=null;listaCercas()};
+  $("bSalv").onclick=async()=>{ler();
+    if(!ED.nome.trim()){msg("eMsg","Dê um nome para a cerca.","err");return}
+    if(ED.pontos.length<3){msg("eMsg","Marque pelo menos 3 pontos no mapa.","err");return}
+    if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, marque o turno das viagens ou preencha o nome da linha.","err");return}
+      if(!h.chegada&&!h.saida){msg("eMsg","Em cada horário, informe a chegada e/ou a saída prevista.","err");return}}
+    msg("eMsg","Salvando…");
+    try{await rpc("bi_cerca_salvar",{p_token:TOKEN,p_dados:ED});ED=null;telaCercas()}catch(err){msg("eMsg",err.message,"err")}};
+}
+
+/* ---------------- Gerenciar ---------------- */
+async function telaGerenciar(){
+  try{INI=await rpc("bi_inicio",{p_token:TOKEN})}catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  const P=INI.paineis||[],cf=INI.config||{};
+  const SIT={todos:"Todos que entram veem",admin:"Só quem edita vê",excluido:"Excluído (escondido de todos)"};
+  $("painel").innerHTML='<div class="box"><h3>Painéis</h3><div class="note" style="margin-bottom:8px">Escolha quem vê cada painel. "Excluído" tira o painel da página para todo mundo; dá para voltar depois aqui mesmo.</div>'
+    +'<div class="tb"><table class="dt"><thead><tr><th>Ordem</th><th>Título</th><th>Quem vê</th><th></th><th>Última alteração</th></tr></thead><tbody>'
+    +P.map(p=>'<tr data-id="'+p.id+'"><td><input type="number" value="'+p.ordem+'" style="width:60px;border:1px solid var(--line);border-radius:6px;padding:4px"></td>'
+      +'<td class="w"><input value="'+esc(p.titulo)+'" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:4px"><div class="note">'+esc(p.descricao||"")+'</div></td>'
+      +'<td><select style="border:1px solid var(--line);border-radius:6px;padding:4px">'+Object.keys(SIT).map(s=>'<option value="'+s+'"'+(s===p.situacao?" selected":"")+'>'+SIT[s]+'</option>').join("")+'</select></td>'
+      +'<td><button class="btn sm p">Salvar</button></td><td class="note">'+(p.atualizado_por?esc(p.atualizado_por)+'<br>'+dtBR(p.atualizado_em):"")+'</td></tr>').join("")
+    +'</tbody></table></div></div>'
+    +'<div class="box form" style="max-width:520px"><h3>Ajustes dos cálculos</h3>'
+    +'<label>Lugares por ônibus (para a ocupação %)</label><input type="number" id="aLug" min="1" value="'+(cf.lugares||45)+'">'
+    +'<label>Valor por pessoa (R$ por embarque, painel de custo)</label><input type="number" id="aVal" min="0" step="0.01" value="'+(cf.valor_pessoa??40.9)+'">'
+    +'<label>Buraco de GPS que deixa o horário incerto (min)</label><input type="number" id="aGap" min="1" value="'+(cf.gap_min||5)+'">'
+    +'<div style="margin-top:10px"><button class="btn p" id="aSalv">Salvar ajustes</button></div><div id="aMsg" class="msg"></div></div>'
+    +'<div class="box"><h3>Acesso</h3><div class="note">Entram no BI: administradores da Central e quem tem o painel <b>bi</b> ou <b>lotacao</b> marcado na Gestão de acessos. Editam (este menu e as cercas): administradores e quem tem <b>bi: editar</b>. A senha de gestores também edita.</div></div>';
+  $("painel").querySelectorAll("tr[data-id]").forEach(tr=>tr.querySelector(".btn").onclick=async()=>{
+    const [o,t]=tr.querySelectorAll("input"),s=tr.querySelector("select");
+    try{await rpc("bi_painel_salvar",{p_token:TOKEN,p_id:tr.dataset.id,p_titulo:t.value,p_ordem:+o.value,p_situacao:s.value});
+      INI=await rpc("bi_inicio",{p_token:TOKEN});montarAbas()}catch(err){alert(err.message)}});
+  $("aSalv").onclick=async()=>{try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{lugares:+$("aLug").value,valor_pessoa:+$("aVal").value,gap_min:+$("aGap").value}});msg("aMsg","Salvo.","ok")}catch(err){msg("aMsg",err.message,"err")}};
+}
+
+iniciar();
+</script>
+</body>
+</html>
