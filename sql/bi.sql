@@ -521,10 +521,18 @@ alvo as (
   where upper(trim(v.tipo)) in ('IDA', 'VOLTA')
     and (case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end) ~ '^\d{1,2}:\d{2}'
 ),
+-- a mesma cerca pode ter vários horários (ex.: troca da manhã 07:00/07:30 e da noite 19:00/19:30):
+-- cada viagem fica só com o horário mais perto da hora em que ela saiu
+alvo1 as (
+  select distinct on (a.id, a.cid) a.*
+  from alvo a
+  order by a.id, a.cid,
+    abs(((coalesce(_bi_min(to_char(a.hora_saida, 'HH24:MI')), _bi_min(a.prev)) - _bi_min(a.prev) + 720 + 1440) % 1440) - 720)
+),
 com as (
   select a.*,
     (select public.normaliza_tag(a.frota) = any (k.frotas) from bi_cerca_dias k where k.cerca_id = a.cid and k.dia = a.data_local) as tem_mon
-  from alvo a
+  from alvo1 a
 ),
 ev as (
   select c.*,
