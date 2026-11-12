@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eventos · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<link rel="stylesheet" href="../rota/leaflet.css">
+<style>
+/* mesmo visual das outras páginas (tema claro fixo) */
+:root{--bg:#f4f6fb;--card:#fff;--card2:#f8fafc;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06);
+  --red:#dc2626;--redbg:#fdecec;--ora:#c2410c;--orabg:#fff1e6;--yel:#a16207;--yelbg:#fef6d8;--grn:#15803d;--grnbg:#e7f6ec;
+  --blu:#1d4ed8;--blubg:#e8efff;--gry:#64748b;--grybg:#eef2f7;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px 80px}
+header.top{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:16px 0 6px}
+header.top .tt{margin-right:auto;min-width:0}
+header.top h1{font-size:20px;margin:0}
+header.top .sub{color:var(--mut);font-size:13px;margin:0}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;font:600 13px system-ui,sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+.btn:hover{border-color:#c9d1de}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.red{color:var(--red)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.6;cursor:default}
+.who{font-size:13px;color:var(--mut)}
+.tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:6px 0 10px;scrollbar-width:thin}
+.tab{border:0;background:none;padding:9px 12px;font-weight:600;font-size:14px;color:var(--mut);border-bottom:3px solid transparent;white-space:nowrap}
+.tab.on{color:var(--brand);border-bottom-color:var(--brand)}
+.tab .tag{font-size:10px;font-weight:700;background:var(--grybg);color:var(--gry);border-radius:999px;padding:0 6px;margin-left:4px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.bar label{font-size:12px;color:var(--mut);display:flex;flex-direction:column;gap:2px}
+.bar input,.bar select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 10px;min-width:0;max-width:240px}
+.faixa{border-radius:10px;padding:9px 12px;margin:8px 0;font-size:14px;border:1px solid var(--line);background:var(--card)}
+.faixa.warn{background:var(--orabg);border-color:#f6c9a8;color:var(--ora);font-weight:600}
+.faixa.info{background:var(--blubg);border-color:#c7d6fb;color:var(--blu)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin:10px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);text-align:left}
+.kpi b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--mut)}
+.kpi small{display:block;font-size:11px;color:var(--mut)}
+.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
+.cols3{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:8px 0}
+@media (max-width:820px){.cols,.cols3{grid-template-columns:1fr}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:10px 12px;min-width:0;margin-bottom:10px}
+.box h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:0 0 6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.box h3 .r{margin-left:auto;text-transform:none;letter-spacing:0}
+.rk{width:100%;border-collapse:collapse;font-size:13px}
+.rk td{padding:4px 4px;border-top:1px solid var(--line);vertical-align:top}
+.rk td.n{text-align:right;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rk .barra{height:6px;background:var(--blubg);border-radius:3px;margin-top:2px}.rk .barra i{display:block;height:6px;background:var(--brand);border-radius:3px}
+.scroll{max-height:440px;overflow-y:auto}
+.tb{overflow-x:auto}
+table.dt{width:100%;border-collapse:collapse;font-size:13px}
+table.dt th{position:sticky;top:0;background:var(--card2);text-align:left;font-size:12px;color:var(--mut);padding:6px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap}
+table.dt td{padding:5px 6px;border-top:1px solid var(--line);white-space:nowrap}
+table.dt td.w{white-space:normal;min-width:160px}
+table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.c-ok{background:var(--grnbg);color:var(--grn)}.c-bad{background:var(--redbg);color:var(--red)}.c-warn{background:var(--orabg);color:var(--ora)}
+.c-gry{background:var(--grybg);color:var(--gry)}.c-blu{background:var(--blubg);color:var(--blu)}
+.vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:14px;color:var(--mut);text-align:center}
+.note{font-size:12px;color:var(--mut)}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mut);margin:4px 0}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
+.login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.login h2{margin:0 0 6px;font-size:19px}
+.login input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin:10px 0}
+.login .btn{width:100%;justify-content:center;padding:9px}
+.msg{font-size:13px;margin-top:8px}.msg.err{color:var(--red)}.msg.ok{color:var(--grn)}
+#mapa,#mapaFora{height:520px;border-radius:12px;border:1px solid var(--line);background:#dfe5ee}
+#mapaFora{height:380px}
+.cerca{border:1px solid var(--line);border-left:5px solid var(--brand);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--card)}
+.cerca b{font-size:15px}.cerca .acts{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.cerca ul{margin:4px 0 0;padding-left:18px;font-size:13px}
+.form label{display:block;font-size:12px;color:var(--mut);margin:8px 0 2px}
+.form input,.form select{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.regra{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;background:var(--card2)}
+.regra .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.regra .g label{margin:0}
+.chks{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px}
+.chks label{display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--ink)}
+.chks input{width:auto}
+.dr{cursor:pointer}.rk tr.dr:hover td{background:var(--card2)}svg rect.dr:hover{opacity:.75}table.dt tr.dr:hover td{background:var(--blubg)}
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow-y:auto;z-index:1000}
+.dlg{background:var(--card);border-radius:14px;max-width:1000px;width:100%;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.dlg h2{margin:0 0 8px;font-size:17px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dlg h2 .r{margin-left:auto;display:flex;gap:6px}
+.dica{font-size:12px;color:var(--mut);background:var(--yelbg);border-radius:8px;padding:6px 9px;margin:6px 0}
+.pilha{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#eef2f7}.pilha i{display:block;height:100%}
+.colw{overflow-x:auto;padding:18px 4px 0 34px}
+.plot{position:relative;height:200px;display:flex;align-items:flex-end;justify-content:center;gap:3px;border-bottom:1px solid #94a3b8}
+.plot .c{flex:1 1 0;max-width:60px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;z-index:1}
+.plot .c i{display:block;width:100%;border-radius:3px 3px 0 0;min-height:1px}
+.plot .c b{font-size:11px;font-weight:600;color:#334155;margin-bottom:2px;white-space:nowrap}
+.plot .c.dr:hover i{filter:brightness(1.15)}
+.plot .grade{position:absolute;left:0;right:0;border-top:1px dashed #e2e8f0}
+.plot .grade span{position:absolute;left:-34px;top:-7px;font-size:10px;color:#94a3b8;width:30px;text-align:right}
+.plot .ideal{position:absolute;left:0;right:0;border-top:2px dashed #0f172a;z-index:2;pointer-events:none}
+.plot .ideal span{position:absolute;right:0;top:-17px;font-size:11px;font-weight:700;background:#fff;padding:0 4px}
+.eixo{display:flex;justify-content:center;gap:3px}.eixo span{flex:1 1 0;max-width:60px;font-size:10px;color:#64748b;text-align:center;white-space:nowrap;overflow:visible}
+
+#mapaEv{height:340px;border-radius:12px;border:1px solid var(--line);background:#dfe5ee;margin:6px 0}
+.kpi.dr{cursor:pointer}.kpi.dr:hover{border-color:#c9d1de}.kpi.sel{outline:2px solid var(--brand)}
+.grade{border-collapse:collapse;font-size:13px;width:100%}
+.grade th{background:var(--card2);font-size:12px;color:var(--mut);padding:6px;border-bottom:1px solid var(--line);text-align:center;vertical-align:bottom}
+.grade th:first-child{text-align:left}
+.grade td{border-top:1px solid var(--line);padding:6px;text-align:center;vertical-align:top}
+.grade td:first-child{text-align:left;min-width:170px}
+.cel{display:inline-flex;flex-direction:column;gap:3px;align-items:center}
+.tg{display:inline-flex;gap:4px}
+.tg button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:4px 8px;font-size:13px;opacity:.45}
+.tg button.on{opacity:1;background:var(--blubg);border-color:#9db6f5}
+.emp{font-size:11px;color:var(--brand);background:none;border:0;padding:0;text-decoration:underline}
+.tipo{border:1px solid var(--line);border-left:5px solid var(--brand);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+.tipo.off{border-left-color:#94a3b8;opacity:.85}
+.tipo .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 12px}
+.form textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-height:90px}
+.hist{font-size:13px;border-left:3px solid var(--line);padding-left:10px;margin:6px 0}
+.hist div{margin:4px 0}
+.just{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;font-size:14px}
+.acoes{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="vLogin" class="hidden">
+  <form class="login" id="fLogin">
+    <h2>Eventos</h2>
+    <div class="note">Entre com a sua senha pessoal da Central (painel Eventos liberado na Gestão de acessos) ou a senha de gestores.</div>
+    <input id="lSenha" type="password" placeholder="Senha" autocomplete="current-password">
+    <button class="btn p" type="submit">Entrar</button>
+    <div id="lMsg" class="msg"></div>
+  </form>
+</div>
+
+<div id="vApp" class="wrap hidden">
+  <header class="top">
+    <div class="tt"><h1>Eventos</h1><p class="sub">Todos os eventos da frota num lugar só: quem recebe, por onde, e a justificativa com evidência.</p></div>
+    <span class="who" id="who"></span>
+    <button class="btn sm" id="bSair">Sair</button>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button class="tab" data-t="eventos">Eventos</button>
+    <button class="tab" data-t="inscricoes">Quem recebe o quê</button>
+    <button class="tab" data-t="pessoas">Destinatários</button>
+    <button class="tab" data-t="tipos">Tipos de evento</button>
+    <button class="tab" data-t="envios">Envios</button>
+  </nav>
+  <div id="aviso" class="faixa warn hidden"></div>
+  <div id="painel"></div>
+</div>
+
+<div id="ov" class="ov hidden"><div class="dlg"><h2><span id="ovT"></span><span class="r"><button class="btn sm" id="ovX">Fechar</button></span></h2><div id="ovC"></div></div></div>
+
+<script src="../rota/leaflet.js"></script>
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const MAPTILER_KEY="G2MUHW7Q8hatR3VYbHUz";
+const K_SESS="tf_eventos",K_CENTRAL="tf_sessao",K_BI="tf_bi",K_TAB="tf_eventos_aba";
+let TOKEN=null,QUEM=null,D=null,ABA="eventos",FILTRO={tipo:"",sit:"",emp:"",q:""},MAPA=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const dBR=s=>s?String(s).slice(0,10).split("-").reverse().join("/"):"—";
+const dtBR=s=>{if(!s)return"";const d=new Date(s);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",timeZone:"America/Belem"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"})};
+const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+const menosDias=(d,n)=>new Date(Date.parse(d+"T12:00:00Z")-n*864e5).toISOString().slice(0,10);
+const fone=f=>{f=String(f||"");return f.length===13?"("+f.slice(2,4)+") "+f.slice(4,9)+"-"+f.slice(9):f};
+function msg(id,t,cl){const m=$(id);if(m){m.textContent=t;m.className="msg "+(cl||"")}}
+const SIT={aguardando:["Aguardando justificativa","c-warn"],vencido:["Vencido (sem resposta)","c-bad"],justificado:["Justificado: analisar","c-blu"],
+  aceito:["Aceito","c-ok"],refazer:["Devolvido p/ refazer","c-warn"],encerrado:["Encerrado","c-gry"]};
+const sitChip=s=>{const x=SIT[s]||[s,"c-gry"];return '<span class="chip '+x[1]+'">'+esc(x[0])+'</span>'};
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}throw new Error(m)}
+  return j;
+}
+
+/* ---------------- entrar ---------------- */
+async function iniciar(){
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL),ls.get(K_BI)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("ev_sessao",{p_token:s.token});if(q&&!q.erro){ls.set(K_SESS,{token:s.token,nome:q.nome});entrar(s.token);return}}catch(e){}}
+  mostrarLogin();
+}
+function mostrarLogin(){$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
+  try{const r=await rpc("ev_entrar",{p_senha:$("lSenha").value});
+    if(r.erro){msg("lMsg",r.erro,"err");return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token);
+  }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
+$("bSair").onclick=async()=>{try{await rpc("ev_sair",{p_token:TOKEN})}catch(e){}ls.del(K_SESS);location.reload()};
+$("ovX").onclick=fecharOv;
+$("ov").onclick=e=>{if(e.target===$("ov"))fecharOv()};
+function fecharOv(){$("ov").classList.add("hidden");if(MAPA){MAPA.remove();MAPA=null}}
+function abrirOv(t,html){$("ovT").textContent=t;$("ovC").innerHTML=html;$("ov").classList.remove("hidden")}
+
+let DE=menosDias(hoje(),6),ATE=hoje();
+async function entrar(tk){
+  TOKEN=tk;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");
+  if(window.tfVoltarCentral)tfVoltarCentral(true);
+  document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.t;ls.set(K_TAB,ABA);desenhar()});
+  ABA=ls.get(K_TAB)||"eventos";
+  await carregar();
+}
+async function carregar(){
+  $("painel").innerHTML='<div class="vazio">Carregando…</div>';
+  try{D=await rpc("ev_painel",{p_token:TOKEN,p_de:DE,p_ate:ATE});QUEM=D.quem}
+  catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  $("who").textContent=(QUEM.nome||"")+(QUEM.edita?"":" · só leitura");
+  const av=[];
+  if(!D.bi_ok)av.push("O BI ainda não está instalado no Supabase (sql/bi.sql): a pontualidade só funciona depois dele.");
+  else if(!D.cercas_turno)av.push("Nenhuma cerca de turno no BI ainda: desenhe as cercas em BI → Cercas dos turnos para a pontualidade começar.");
+  const tp=D.tipos.find(t=>t.codigo==="pontualidade");
+  if(tp&&tp.ativo&&!D.inscricoes.some(s=>s.tipo==="pontualidade"))av.push("Ninguém recebe a pontualidade ainda: marque as pessoas em \"Quem recebe o quê\".");
+  $("aviso").innerHTML=av.map(esc).join("<br>");$("aviso").classList.toggle("hidden",!av.length);
+  desenhar();
+}
+function desenhar(){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.t===ABA));
+  ({eventos:telaEventos,inscricoes:telaInscricoes,pessoas:telaPessoas,tipos:telaTipos,envios:telaEnvios}[ABA]||telaEventos)();
+}
+const nomeTipo=c=>{const t=D.tipos.find(x=>x.codigo===c);return t?t.nome:c};
+
+/* ---------------- EVENTOS ---------------- */
+function filtrados(semSit){
+  const q=FILTRO.q.trim().toLowerCase();
+  return D.eventos.filter(e=>(!FILTRO.tipo||e.tipo===FILTRO.tipo)&&(semSit||!FILTRO.sit||e.situacao===FILTRO.sit)&&(!FILTRO.emp||e.empresa===FILTRO.emp)
+    &&(!q||[e.titulo,e.frota,e.linha,e.empresa,e.respondido_por,e.motivo,e.justificativa].join(" ").toLowerCase().includes(q)));
+}
+function telaEventos(){
+  const base=filtrados(true),ev=filtrados(false);
+  const cnt=s=>base.filter(e=>e.situacao===s).length;
+  const k=(s,rot,cl)=>'<div class="kpi dr '+cl+(FILTRO.sit===s?" sel":"")+'" data-s="'+s+'"><b>'+(s?cnt(s):base.length)+'</b><span>'+rot+'</span></div>';
+  const empresas=[...new Set(D.eventos.map(e=>e.empresa).filter(Boolean))].sort();
+  $("painel").innerHTML=
+   '<div class="bar"><label>De<input type="date" id="fDe" value="'+DE+'"></label><label>Até<input type="date" id="fAte" value="'+ATE+'"></label>'+
+   '<span class="tg" style="align-self:flex-end"><button class="btn sm" data-d="0">Hoje</button><button class="btn sm" data-d="6">7 dias</button><button class="btn sm" data-d="29">30 dias</button></span>'+
+   '<label>Tipo<select id="fTipo"><option value="">Todos</option>'+D.tipos.map(t=>'<option value="'+esc(t.codigo)+'"'+(FILTRO.tipo===t.codigo?" selected":"")+'>'+esc(t.nome)+'</option>').join("")+'</select></label>'+
+   '<label>Empresa<select id="fEmp"><option value="">Todas</option>'+empresas.map(x=>'<option'+(FILTRO.emp===x?" selected":"")+'>'+esc(x)+'</option>').join("")+'</select></label>'+
+   '<label>Buscar<input id="fQ" value="'+esc(FILTRO.q)+'" placeholder="carro, rota, nome…"></label>'+
+   '<span style="align-self:flex-end;display:flex;gap:6px"><button class="btn sm" id="bCsv">⬇ Excel</button>'+(QUEM.edita?'<button class="btn sm" id="bRodar">▶ Rodar agora</button>':"")+'</span></div>'+
+   '<div class="kpis">'+k("","Eventos no período","")+k("aguardando","Aguardando justificativa","warn")+k("vencido","Vencidos sem resposta","bad")+
+     k("justificado","Justificados p/ analisar","")+k("refazer","Devolvidos p/ refazer","warn")+k("aceito","Aceitos","ok")+'</div>'+
+   (FILTRO.sit?'<div class="note">Filtrando: '+sitChip(FILTRO.sit)+' <button class="emp" id="bLimpa">mostrar todos</button></div>':"")+
+   (ev.length?'<div class="box tb"><table class="dt"><thead><tr><th>Data</th><th>Tipo</th><th>Carro</th><th>Empresa</th><th>Evento</th><th>Situação</th><th>Resposta</th></tr></thead><tbody>'+
+     ev.map((e,i)=>'<tr class="dr" data-i="'+D.eventos.indexOf(e)+'"><td>'+dBR(e.data)+' '+esc(e.hora||"")+'</td><td>'+esc(nomeTipo(e.tipo))+'</td><td>'+esc(e.frota||"")+'</td><td>'+esc(e.empresa||"")+
+       '</td><td class="w">'+esc(e.titulo)+'</td><td>'+sitChip(e.situacao)+(e.evid?' <span title="evidências">📎'+e.evid+'</span>':"")+'</td><td class="w">'+esc(e.respondido_por||"")+(e.motivo?'<div class="note">'+esc(e.motivo)+'</div>':"")+'</td></tr>').join("")+
+     '</tbody></table></div>':'<div class="vazio">Nenhum evento com esses filtros.</div>')+
+   '<div class="note">Roteador, fora de rota e aberturas aparecem aqui lidos dos painéis deles; a tratativa deles continua lá. A pontualidade é tratada aqui.</div>';
+  $("fDe").onchange=$("fAte").onchange=()=>{const de=$("fDe").value,ate=$("fAte").value;if(!de||!ate||de>ate)return;DE=de;ATE=ate;carregar()};
+  document.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{ATE=hoje();DE=menosDias(ATE,+b.dataset.d);carregar()});
+  $("fTipo").onchange=e=>{FILTRO.tipo=e.target.value;telaEventos()};
+  $("fEmp").onchange=e=>{FILTRO.emp=e.target.value;telaEventos()};
+  $("fQ").oninput=e=>{FILTRO.q=e.target.value;clearTimeout(window._tq);window._tq=setTimeout(()=>{telaEventos();const f=$("fQ");f.focus();f.setSelectionRange(f.value.length,f.value.length)},350)};
+  document.querySelectorAll(".kpi.dr").forEach(x=>x.onclick=()=>{FILTRO.sit=FILTRO.sit===x.dataset.s?"":x.dataset.s;telaEventos()});
+  if($("bLimpa"))$("bLimpa").onclick=()=>{FILTRO.sit="";telaEventos()};
+  document.querySelectorAll("tr.dr").forEach(r=>r.onclick=()=>detalhe(D.eventos[+r.dataset.i]));
+  $("bCsv").onclick=()=>baixarCsv(ev);
+  if($("bRodar"))$("bRodar").onclick=async()=>{const b=$("bRodar");b.disabled=true;b.textContent="Rodando…";
+    try{const r=await rpc("ev_rodar_agora",{p_token:TOKEN});alert(r);await carregar()}catch(err){alert("Erro: "+err.message);b.disabled=false}};
+}
+function baixarCsv(lista){
+  const col=["data","hora","tipo","frota","empresa","linha","titulo","situacao","motivo","justificativa","respondido_por","respondido_em"];
+  const linhas=[col.join(";")].concat(lista.map(e=>col.map(c=>{let v=c==="tipo"?nomeTipo(e.tipo):(c==="situacao"?(SIT[e.situacao]||[e.situacao])[0]:e[c]);return '"'+String(v==null?"":v).replace(/"/g,'""').replace(/\r?\n/g," ")+'"'}).join(";")));
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+linhas.join("\r\n")],{type:"text/csv;charset=utf-8"}));
+  a.download="eventos_"+DE+"_a_"+ATE+".csv";a.click();
+}
+const LINKS={roteador:"https://zael20.github.io/painel-mes-tfleet-bdv/roteador.html",fora_rota:"https://zael20.github.io/painel-mes-tfleet-bdv/lotacao.html",abertura:"../aberturas/"};
+async function detalhe(e){
+  if(e.origem!=="nativo"){
+    abrirOv(nomeTipo(e.tipo),'<div class="just"><b>'+esc(e.titulo)+'</b><div class="note">'+dBR(e.data)+' '+esc(e.hora||"")+'</div></div>'+
+      '<p>'+sitChip(e.situacao)+(e.para?' · enviado para '+esc(e.para):"")+'</p>'+
+      (e.respondido_por||e.justificativa?'<div class="just"><b>'+esc(e.respondido_por||"")+'</b> '+(e.respondido_em?dtBR(e.respondido_em):"")+'<br>'+(e.motivo?'<i>'+esc(e.motivo)+'</i><br>':"")+esc(e.justificativa||"")+'</div>':"")+
+      '<p class="note">Este evento é tratado no painel de origem (o envio dele ainda não passa por aqui).</p>'+
+      (LINKS[e.tipo]?'<a class="btn" href="'+LINKS[e.tipo]+'" target="_blank" rel="noopener">Abrir o painel de origem ↗</a>':""));
+    return;
+  }
+  abrirOv(nomeTipo(e.tipo),'<div class="vazio">Carregando…</div>');
+  let d;try{d=await rpc("ev_detalhe",{p_token:TOKEN,p_id:e.id})}catch(err){$("ovC").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  const v=d.evento,det=v.detalhe||{};
+  const info=v.tipo==="pontualidade"?'<div class="note">Cerca '+esc(det.cerca)+' · regra '+esc(det.regra)+' · '+esc(det.tipolinha||"")+' · motorista '+esc(det.motorista||"—")+' · ocupação '+esc(det.ocupacao==null?"—":det.ocupacao)+
+     '<br>Previsto '+esc(det.prevista)+' (tolerância −'+esc(det.tol_antes)+'/+'+esc(det.tol_depois)+' min) · real '+esc(det.hora_real)+' pelo '+esc(det.origem)+' · diferença '+(det.dif>0?"+":"")+esc(det.dif)+' min</div>':"";
+  $("ovC").innerHTML='<div class="just"><b>'+esc(v.titulo)+'</b><div class="note">'+dBR(v.data)+' · empresa '+esc(v.empresa||"—")+' · prazo '+dtBR(v.prazo)+'</div>'+info+'</div>'+
+    '<p>'+sitChip(e.situacao)+'</p>'+
+    (v.respondido_por?'<h3 style="font-size:14px;margin:10px 0 4px">Justificativa</h3><div class="just"><b>'+esc(v.respondido_por)+'</b> · '+dtBR(v.respondido_em)+(v.motivo?'<br><i>'+esc(v.motivo)+'</i>':"")+'<br>'+esc(v.justificativa||"")+'</div>':'<p class="note">Ainda sem justificativa.</p>')+
+    (d.evid.length?'<div><b style="font-size:13px">Evidências</b> '+d.evid.map(x=>'<button class="btn sm" data-ev="'+x.id+'">📎 '+esc(x.nome)+'</button>').join(" ")+'</div>':"")+
+    (v.tipo==="pontualidade"?'<div id="mapaEv"></div><div class="note" id="mapaNota"></div>':"")+
+    (QUEM.edita?'<div class="acoes">'+
+      (v.situacao!=="aceito"?'<button class="btn p" data-a="aceito">✔ Aceitar justificativa</button>':"")+
+      '<button class="btn" data-a="refazer">↩ Devolver para refazer</button>'+
+      (v.situacao!=="encerrado"?'<button class="btn" data-a="encerrado">Encerrar sem justificativa</button>':"")+
+      (["aceito","encerrado"].includes(v.situacao)?'<button class="btn" data-a="aguardando">Reabrir</button>':"")+
+      '</div><div class="form"><label>Observação (obrigatória para devolver; vai na mensagem)</label><input id="aObs" value=""></div><div id="aMsg" class="msg"></div>':"")+
+    '<h3 style="font-size:14px;margin:12px 0 4px">Histórico</h3><div class="hist">'+d.historico.map(h=>'<div><b>'+dtBR(h.ts)+'</b> · '+esc(h.quem||"")+' · '+esc(h.acao)+(h.texto?': '+esc(h.texto):"")+'</div>').join("")+'</div>'+
+    '<h3 style="font-size:14px;margin:12px 0 4px">Envios</h3>'+(d.envios.length?'<div class="tb"><table class="dt"><tr><th>Para</th><th>Canal</th><th>Destino</th><th>Na fila</th><th>Enviado</th><th>Abriu o link</th></tr>'+
+      d.envios.map(x=>'<tr><td>'+esc(x.nome||"")+'</td><td>'+(x.canal==="email"?"✉ e-mail":"💬 WhatsApp")+'</td><td>'+esc(x.canal==="whatsapp"?fone(x.destino):x.destino)+'</td><td>'+dtBR(x.criado_em)+
+        '</td><td>'+(x.enviado_em?dtBR(x.enviado_em):(x.erro?'<span class="chip c-bad" title="'+esc(x.erro)+'">erro</span>':'<span class="chip c-gry">na fila</span>'))+'</td><td>'+(x.aberto_em?dtBR(x.aberto_em):"—")+'</td></tr>').join("")+'</table></div>':'<p class="note">Ainda não foi para ninguém (ninguém inscrito nesse tipo/empresa, ou aguarda o horário do resumo).</p>');
+  document.querySelectorAll("[data-ev]").forEach(b=>b.onclick=()=>baixarEvid(b.dataset.ev));
+  document.querySelectorAll("[data-a]").forEach(b=>b.onclick=async()=>{
+    msg("aMsg","Gravando…");
+    try{await rpc("ev_analisar",{p_token:TOKEN,p_id:v.id,p_acao:b.dataset.a,p_obs:$("aObs").value});fecharOv();await carregar()}catch(err){msg("aMsg",err.message,"err")}});
+  if(v.tipo==="pontualidade")mapaEvento(v.id);
+}
+async function baixarEvid(id){
+  try{const r=await rpc("ev_evidencia",{p_token:TOKEN,p_id:+id});
+    const b=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0));const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([b],{type:r.tipo||"application/octet-stream"}));a.download=r.nome;a.target="_blank";a.click();
+  }catch(err){alert("Erro: "+err.message)}
+}
+async function mapaEvento(id){
+  let t;try{t=await rpc("ev_trilha",{p_token:TOKEN,p_evento:id})}catch(err){$("mapaNota").textContent="Mapa: "+err.message;return}
+  desenharMapa("mapaEv","mapaNota",t);
+}
+function desenharMapa(div,nota,t){
+  if(!window.L||!$(div))return;
+  if(MAPA){MAPA.remove();MAPA=null}
+  const m=MAPA=L.map(div);L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(m);
+  const b=[];
+  if(t&&t.cerca&&Array.isArray(t.cerca.pontos)&&t.cerca.pontos.length){const p=L.polygon(t.cerca.pontos,{color:t.cerca.cor||"#2563eb",weight:2,fillOpacity:.15}).addTo(m).bindTooltip(t.cerca.nome);b.push(...t.cerca.pontos)}
+  const pts=(t&&t.pontos||[]).map(p=>[p.lat,p.lon]);
+  if(pts.length){L.polyline(pts,{color:"#facc15",weight:3}).addTo(m);b.push(...pts);
+    (t.pontos||[]).forEach((p,i)=>{if(i%3===0||i===t.pontos.length-1)L.circleMarker([p.lat,p.lon],{radius:3,color:"#0f172a",weight:1,fillColor:"#facc15",fillOpacity:1}).addTo(m).bindTooltip(dtBR(p.ts).slice(6))})}
+  (t&&t.eventos||[]).forEach(e=>{const p=(t.pontos||[]).reduce((a,x)=>!a||Math.abs(new Date(x.ts)-new Date(e.ts))<Math.abs(new Date(a.ts)-new Date(e.ts))?x:a,null);
+    if(p)L.circleMarker([p.lat,p.lon],{radius:7,color:"#fff",weight:2,fillColor:e.tipo==="entrada"?"#16a34a":"#dc2626",fillOpacity:1}).addTo(m).bindTooltip((e.tipo==="entrada"?"Entrou ":"Saiu ")+dtBR(e.ts).slice(6),{permanent:true})});
+  if(b.length)m.fitBounds(b,{padding:[20,20],maxZoom:17});else m.setView([-3.2474,-47.7368],11);
+  $(nota).textContent=pts.length?"Trajeto do GPS do celular do ônibus (Monitor) entre "+dtBR(t.pontos[0].ts)+" e "+dtBR(t.pontos[t.pontos.length-1].ts).slice(6)+". Previsto "+dtBR(t.prevista).slice(6)+".":
+    "Sem GPS do Monitor nessa janela (o horário veio da TFleet).";
+  setTimeout(()=>m.invalidateSize(),150);
+}
+
+/* ---------------- QUEM RECEBE O QUÊ ---------------- */
+function telaInscricoes(){
+  const pes=D.pessoas.filter(p=>p.ativo),tipos=D.tipos;
+  if(!pes.length){$("painel").innerHTML='<div class="vazio">Cadastre as pessoas primeiro na aba Destinatários.</div>';return}
+  const ins=(p,t)=>D.inscricoes.find(s=>s.pessoa_id===p&&s.tipo===t)||{email:false,whatsapp:false,empresas:[]};
+  $("painel").innerHTML='<div class="dica">Clique em ✉ (e-mail) ou 💬 (WhatsApp) para ligar/desligar. Grava na hora. "todas as empresas" = recebe os eventos de qualquer empresa; clique para escolher só algumas (ex.: a Caliman só recebe os carros dela).</div>'+
+    '<div class="box tb"><table class="grade"><thead><tr><th>Pessoa</th>'+tipos.map(t=>'<th>'+esc(t.nome)+(t.origem==="externo"?'<div class="note">envio pelo fluxo atual (fase 2)</div>':(!t.ativo?'<div class="note">desligado</div>':""))+'</th>').join("")+'</tr></thead><tbody>'+
+    pes.map(p=>'<tr><td><b>'+esc(p.nome)+'</b><div class="note">'+esc([p.funcao,p.empresa].filter(Boolean).join(" · "))+'</div><div class="note">'+(p.email?"✉ "+esc(p.email):"✉ sem e-mail")+' · '+(p.whatsapp?"💬 "+fone(p.whatsapp):"💬 sem WhatsApp")+'</div></td>'+
+      tipos.map(t=>{const s=ins(p.id,t.codigo);if(t.origem==="externo")return '<td><span class="note" title="Na fase 2 o envio deste evento passa para cá">fase 2</span></td>';return '<td><span class="cel"><span class="tg">'+
+        '<button data-p="'+p.id+'" data-t="'+t.codigo+'" data-c="email" class="'+(s.email?"on":"")+'"'+(!p.email||!QUEM.edita?" disabled":"")+' title="'+(p.email?"E-mail":"Sem e-mail no cadastro")+'">✉</button>'+
+        '<button data-p="'+p.id+'" data-t="'+t.codigo+'" data-c="whatsapp" class="'+(s.whatsapp?"on":"")+'"'+(!p.whatsapp||!QUEM.edita?" disabled":"")+' title="'+(p.whatsapp?"WhatsApp":"Sem WhatsApp no cadastro")+'">💬</button></span>'+
+        ((s.email||s.whatsapp)?'<button class="emp" data-emp="'+p.id+'|'+t.codigo+'">'+(s.empresas.length?esc(s.empresas.join(", ")):"todas as empresas")+'</button>':"")+'</span></td>'}).join("")+'</tr>').join("")+
+    '</tbody></table></div><div id="iMsg" class="msg"></div>';
+  document.querySelectorAll(".tg button[data-p]").forEach(b=>b.onclick=()=>{
+    const p=+b.dataset.p,t=b.dataset.t;let s=D.inscricoes.find(x=>x.pessoa_id===p&&x.tipo===t);
+    if(!s){s={pessoa_id:p,tipo:t,email:false,whatsapp:false,empresas:[]};D.inscricoes.push(s)}
+    s[b.dataset.c]=!s[b.dataset.c];salvarIns(p)});
+  document.querySelectorAll("[data-emp]").forEach(b=>b.onclick=()=>escolherEmpresas(...b.dataset.emp.split("|")));
+}
+async function salvarIns(p){
+  msg("iMsg","Gravando…");
+  try{await rpc("ev_inscricoes_salvar",{p_token:TOKEN,p_pessoa:p,p_lista:D.inscricoes.filter(s=>s.pessoa_id===p)});
+    D.inscricoes=D.inscricoes.filter(s=>s.pessoa_id!==p||s.email||s.whatsapp);telaInscricoes();msg("iMsg","Gravado.","ok")}
+  catch(err){msg("iMsg",err.message,"err")}
+}
+function escolherEmpresas(pid,tipo){
+  pid=+pid;const s=D.inscricoes.find(x=>x.pessoa_id===pid&&x.tipo===tipo);const p=D.pessoas.find(x=>x.id===pid);
+  abrirOv("Empresas que "+p.nome+" recebe",'<p class="note">'+esc(nomeTipo(tipo))+'. Nenhuma marcada = recebe de todas.</p><div class="chks">'+
+    D.empresas.map(e=>'<label><input type="checkbox" value="'+esc(e)+'"'+(s.empresas.includes(e)?" checked":"")+'> '+esc(e)+'</label>').join("")+'</div>'+
+    '<div class="form"><label>Outra empresa (escreva como vem da TFleet)</label><input id="eOutra"></div><div class="acoes"><button class="btn p" id="eOk">Salvar</button></div>');
+  $("eOk").onclick=()=>{s.empresas=[...document.querySelectorAll("#ovC input[type=checkbox]:checked")].map(x=>x.value);
+    const o=$("eOutra").value.trim().toUpperCase();if(o&&!s.empresas.includes(o))s.empresas.push(o);fecharOv();salvarIns(pid)};
+}
+
+/* ---------------- DESTINATÁRIOS ---------------- */
+function telaPessoas(){
+  const P=D.pessoas;
+  $("painel").innerHTML='<div class="bar">'+(QUEM.edita?'<button class="btn p" id="bNova">+ Nova pessoa</button><button class="btn" id="bImp">Trazer os gestores da lotação</button>':"")+'<span class="note">'+P.length+' pessoa(s). E-mail e WhatsApp só aparecem para quem entra aqui.</span></div>'+
+    (P.length?'<div class="box tb"><table class="dt"><thead><tr><th>Nome</th><th>Função</th><th>Matrícula</th><th>Empresa</th><th>E-mail</th><th>WhatsApp</th><th>Recebe</th><th></th></tr></thead><tbody>'+
+      P.map(p=>{const n=D.inscricoes.filter(s=>s.pessoa_id===p.id).length;return '<tr'+(p.ativo?"":' style="opacity:.55"')+'><td><b>'+esc(p.nome)+'</b>'+(p.ativo?"":' <span class="chip c-gry">inativo</span>')+'</td><td>'+esc(p.funcao||"")+'</td><td>'+esc(p.matricula||"")+'</td><td>'+esc(p.empresa||"")+
+        '</td><td>'+esc(p.email||"")+'</td><td>'+fone(p.whatsapp)+'</td><td>'+n+' tipo(s)</td><td>'+(QUEM.edita?'<button class="btn sm" data-ed="'+p.id+'">Editar</button>':"")+'</td></tr>'}).join("")+
+    '</tbody></table></div>':'<div class="vazio">Ninguém cadastrado. Clique em "+ Nova pessoa" ou traga os gestores já cadastrados na lotação.</div>');
+  if($("bNova"))$("bNova").onclick=()=>formPessoa({ativo:true});
+  if($("bImp"))$("bImp").onclick=async()=>{try{const r=await rpc("ev_importar_gestores",{p_token:TOKEN});alert(r.importados+" contato(s) trazido(s).");await carregar()}catch(err){alert("Erro: "+err.message)}};
+  document.querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>formPessoa(D.pessoas.find(p=>p.id===+b.dataset.ed)));
+}
+function formPessoa(p){
+  const f=(id,rot,v,extra)=>'<label>'+rot+'</label><input id="'+id+'" value="'+esc(v||"")+'" '+(extra||"")+'>';
+  abrirOv(p.id?"Editar destinatário":"Nova pessoa",'<div class="form">'+f("pNome","Nome completo *",p.nome)+f("pFun","Função / cargo",p.funcao,'placeholder="Preposto, supervisor, gerente…"')+
+    f("pMat","Matrícula",p.matricula)+f("pEmp","Empresa",p.empresa,'list="dlEmp" placeholder="CALIMAN, HYDRO…"')+'<datalist id="dlEmp">'+D.empresas.map(e=>'<option value="'+esc(e)+'">').join("")+'</datalist>'+
+    f("pEmail","E-mail",p.email,'type="email"')+f("pWz","WhatsApp (DDD + número)",p.whatsapp?fone(p.whatsapp):"",'inputmode="tel" placeholder="91 98888-7777"')+
+    f("pObs","Observação",p.obs)+'<label class="chks" style="margin-top:10px"><input type="checkbox" id="pAtivo"'+(p.ativo!==false?" checked":"")+'> Ativo (recebe os eventos)</label></div>'+
+    '<div class="acoes"><button class="btn p" id="pOk">Salvar</button>'+(p.id?'<button class="btn red" id="pDel">Remover</button>':"")+'</div><div id="pMsg" class="msg"></div>');
+  $("pOk").onclick=async()=>{msg("pMsg","Gravando…");
+    try{await rpc("ev_pessoa_salvar",{p_token:TOKEN,p_dados:{id:p.id||null,nome:$("pNome").value,funcao:$("pFun").value,matricula:$("pMat").value,empresa:$("pEmp").value,
+      email:$("pEmail").value,whatsapp:$("pWz").value,obs:$("pObs").value,ativo:$("pAtivo").checked}});fecharOv();await carregar()}catch(err){msg("pMsg",err.message,"err")}};
+  if($("pDel"))$("pDel").onclick=async()=>{if(!confirm("Remover "+p.nome+"? Ela deixa de receber todos os eventos."))return;
+    try{await rpc("ev_pessoa_remover",{p_token:TOKEN,p_id:p.id});fecharOv();await carregar()}catch(err){msg("pMsg",err.message,"err")}};
+}
+
+/* ---------------- TIPOS ---------------- */
+function telaTipos(){
+  const ed=QUEM.edita?"":" disabled";
+  $("painel").innerHTML='<div class="dica">Os tipos "envio pelo fluxo atual" (roteador, fora de rota, aberturas) só aparecem na lista por enquanto; o envio deles passa para cá numa próxima etapa.</div>'+
+   D.tipos.map(t=>{const o=t.opcoes||{},nat=t.origem==="nativo";return '<div class="tipo'+(t.ativo?"":" off")+'" data-c="'+esc(t.codigo)+'"><b style="font-size:15px">'+esc(t.nome)+'</b> '+(nat?(t.ativo?'<span class="chip c-ok">ligado</span>':'<span class="chip c-gry">desligado</span>'):'<span class="chip c-gry">envio pelo fluxo atual</span>')+
+    '<div class="note">'+esc(t.descricao||"")+'</div>'+(nat?'<div class="form"><div class="g">'+
+      '<label class="chks"><input type="checkbox" class="xAtivo"'+(t.ativo?" checked":"")+ed+'> Ligado</label>'+
+      '<label class="chks"><input type="checkbox" class="xJust"'+(t.pede_justificativa?" checked":"")+ed+'> Pede justificativa</label>'+
+      '<label class="chks"><input type="checkbox" class="xEvid"'+(t.exige_evidencia?" checked":"")+ed+'> Exige evidência (anexo)</label>'+
+      '<div><label>Prazo para responder (horas)</label><input type="number" min="1" class="xPrazo" value="'+t.prazo_horas+'"'+ed+'></div>'+
+      '<div><label>Quando mandar</label><select class="xEnvio"'+ed+'><option value="diario"'+(t.envio==="diario"?" selected":"")+'>Resumo 1x por dia</option><option value="na_hora"'+(t.envio==="na_hora"?" selected":"")+'>Assim que detectar</option></select></div>'+
+      '<div><label>Hora do resumo (Belém)</label><input type="number" min="0" max="23" class="xHora" value="'+t.hora_envio+'"'+ed+'></div>'+
+      (t.codigo==="pontualidade"?'<label class="chks"><input type="checkbox" class="xAtr"'+((o.tipos||[]).includes("atrasado")?" checked":"")+ed+'> Avisar atrasados</label>'+
+        '<label class="chks"><input type="checkbox" class="xAdi"'+((o.tipos||[]).includes("adiantado")?" checked":"")+ed+'> Avisar adiantados</label>'+
+        '<label class="chks"><input type="checkbox" class="xMon"'+(o.so_monitor?" checked":"")+ed+'> Só quando o horário veio do GPS (Monitor)</label>'+
+        '<div><label>Olhar quantos dias para trás</label><input type="number" min="0" max="7" class="xDias" value="'+(o.dias_atras==null?2:o.dias_atras)+'"'+ed+'></div>':"")+
+      '</div><label>Motivos para a pessoa escolher (um por linha)</label><textarea class="xMot"'+ed+'>'+esc((t.motivos||[]).join("\n"))+'</textarea>'+
+      (QUEM.edita?'<div class="acoes"><button class="btn p xSalvar">Salvar</button><span class="msg xMsg"></span></div>':"")+'</div>':"")+'</div>'}).join("");
+  document.querySelectorAll(".tipo .xSalvar").forEach(b=>b.onclick=async()=>{
+    const c=b.closest(".tipo"),q=s=>c.querySelector(s),cod=c.dataset.c;const m=q(".xMsg");m.textContent="Gravando…";m.className="msg xMsg";
+    const dados={codigo:cod,ativo:q(".xAtivo").checked,pede_justificativa:q(".xJust").checked,exige_evidencia:q(".xEvid").checked,prazo_horas:+q(".xPrazo").value,
+      envio:q(".xEnvio").value,hora_envio:+q(".xHora").value,motivos:q(".xMot").value.split("\n").map(s=>s.trim()).filter(Boolean)};
+    if(cod==="pontualidade")dados.opcoes={tipos:[q(".xAtr").checked?"atrasado":null,q(".xAdi").checked?"adiantado":null].filter(Boolean),so_monitor:q(".xMon").checked,dias_atras:+q(".xDias").value};
+    try{await rpc("ev_tipo_salvar",{p_token:TOKEN,p_dados:dados});const r=await rpc("ev_painel",{p_token:TOKEN,p_de:DE,p_ate:ATE});D=r;telaTipos()}catch(err){m.textContent=err.message;m.className="msg err xMsg"}});
+}
+
+/* ---------------- ENVIOS ---------------- */
+async function telaEnvios(){
+  $("painel").innerHTML='<div class="vazio">Carregando…</div>';
+  let L;try{L=await rpc("ev_envios_lista",{p_token:TOKEN,p_dias:7})}catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  const f=D.fila;
+  $("painel").innerHTML='<div class="kpis"><div class="kpi"><b>'+f.pendentes+'</b><span>Na fila para mandar</span></div><div class="kpi'+(f.erros?" bad":"")+'"><b>'+f.erros+'</b><span>Com erro (tenta de novo)</span></div>'+
+    '<div class="kpi"><b style="font-size:16px">'+(f.ultimo_email?dtBR(f.ultimo_email):"nunca")+'</b><span>Último e-mail (robô Apps Script)</span></div><div class="kpi"><b style="font-size:16px">'+(f.ultimo_whats?dtBR(f.ultimo_whats):"nunca")+'</b><span>Último WhatsApp (n8n TV Box)</span></div></div>'+
+    (L.length?'<div class="box tb"><table class="dt"><thead><tr><th>Criado</th><th>Tipo</th><th>Para</th><th>Canal</th><th>Destino</th><th>Eventos</th><th>Situação</th><th>Abriu o link</th></tr></thead><tbody>'+
+      L.map(x=>'<tr><td>'+dtBR(x.criado_em)+'</td><td>'+esc(nomeTipo(x.tipo))+'</td><td>'+esc(x.nome||"")+'</td><td>'+(x.canal==="email"?"✉ e-mail":"💬 WhatsApp")+'</td><td>'+esc(x.canal==="whatsapp"?fone(x.destino):x.destino)+'</td><td class="n">'+x.eventos+
+        '</td><td>'+(x.enviado_em?'<span class="chip c-ok">enviado '+dtBR(x.enviado_em)+'</span>':(x.erro?'<span class="chip c-bad" title="'+esc(x.erro)+'">erro ('+x.tentativas+'x)</span>':'<span class="chip c-gry">na fila</span>'))+'</td><td>'+(x.aberto_em?dtBR(x.aberto_em):"—")+'</td></tr>').join("")+
+    '</tbody></table></div>':'<div class="vazio">Nenhum envio nos últimos 7 dias.</div>');
+}
+
+iniciar();
+</script>
+<script src="../central-voltar.js" data-manual></script>
+</body>
+</html>

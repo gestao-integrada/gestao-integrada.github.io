@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Justificar evento · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../rota/leaflet.css">
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--card2:#f8fafc;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --red:#dc2626;--redbg:#fdecec;--ora:#c2410c;--orabg:#fff1e6;--grn:#15803d;--grnbg:#e7f6ec;--blu:#1d4ed8;--blubg:#e8efff;--gry:#64748b;--grybg:#eef2f7;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+.wrap{max-width:760px;margin:0 auto;padding:12px 16px 60px}
+h1{font-size:20px;margin:8px 0 2px}
+.sub{color:var(--mut);font-size:14px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:10px 0;box-shadow:0 1px 2px rgba(15,23,42,.06)}
+.card h2{font-size:16px;margin:0 0 4px}
+.note{font-size:13px;color:var(--mut)}
+.chip{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px}
+.c-ok{background:var(--grnbg);color:var(--grn)}.c-warn{background:var(--orabg);color:var(--ora)}.c-blu{background:var(--blubg);color:var(--blu)}.c-gry{background:var(--grybg);color:var(--gry)}.c-bad{background:var(--redbg);color:var(--red)}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 3px}
+select,input[type=text],textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+textarea{min-height:90px}
+.btn{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn:disabled{opacity:.6}
+.btn.sm{padding:5px 10px;font-size:13px}
+.msg{font-size:14px;margin-top:8px}.msg.err{color:var(--red)}.msg.ok{color:var(--grn)}
+.mapa{height:260px;border-radius:12px;border:1px solid var(--line);margin:8px 0;background:#dfe5ee}
+.arqs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.devol{background:var(--orabg);color:var(--ora);border-radius:10px;padding:8px 10px;margin:6px 0;font-weight:600;font-size:14px}
+.just{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;font-size:14px}
+.vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:16px;color:var(--mut);text-align:center;margin-top:20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="tit">Justificar evento</h1>
+  <p class="sub" id="sub"></p>
+  <div id="cx"><div class="vazio">Carregando…</div></div>
+</div>
+<script src="../../rota/leaflet.js"></script>
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const MAPTILER_KEY="G2MUHW7Q8hatR3VYbHUz";
+const TK=new URLSearchParams(location.search).get("t")||"";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const dBR=s=>s?String(s).slice(0,10).split("-").reverse().join("/"):"—";
+const dtBR=s=>{if(!s)return"";const d=new Date(s);return d.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",timeZone:"America/Belem"})+" "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"})};
+const SIT={aguardando:["Aguardando sua justificativa","c-warn"],refazer:["Devolvido: complete a justificativa","c-bad"],justificado:["Justificado, em análise","c-blu"],aceito:["Aceito","c-ok"],encerrado:["Encerrado","c-gry"]};
+let V=null;const ARQ={},MAPAS={};
+const NOME_K="tf_ev_nome";const lsg=()=>{try{return localStorage.getItem(NOME_K)||""}catch(e){return""}};const lss=v=>{try{localStorage.setItem(NOME_K,v)}catch(e){}};
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok)throw new Error((j&&(j.message||j.hint))||t||("Erro "+r.status));
+  return j;
+}
+async function carregar(){
+  if(!TK){$("cx").innerHTML='<div class="vazio">Link incompleto. Abra pelo link da mensagem que você recebeu.</div>';return}
+  try{V=await rpc("ev_link_ver",{p_token:TK})}catch(err){$("cx").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
+  if(V.erro){$("cx").innerHTML='<div class="vazio">'+esc(V.erro)+'</div>';return}
+  $("tit").textContent=V.tipo.nome;
+  const pend=V.eventos.filter(e=>["aguardando","refazer"].includes(e.situacao)).length;
+  $("sub").textContent="Olá, "+(V.nome||"")+". "+(pend?pend+" evento(s) esperam a sua justificativa"+(V.tipo.exige_evidencia?" com evidência (foto, print do sistema, documento).":"."):"Tudo respondido. Obrigado!");
+  $("cx").innerHTML=V.eventos.map(card).join("")||'<div class="vazio">Nenhum evento neste link.</div>';
+  V.eventos.forEach(e=>{
+    const f=$("f"+e.id);if(f)f.onchange=()=>arquivos(e.id,f.files);
+    const b=$("b"+e.id);if(b)b.onclick=()=>responder(e.id);
+    const m=$("m"+e.id);if(m)m.onclick=()=>mapa(e.id);
+    document.querySelectorAll('[data-x="'+e.id+'"]').forEach(x=>x.onclick=()=>baixar(+x.dataset.id));
+  });
+}
+function card(e){
+  const d=e.detalhe||{},s=SIT[e.situacao]||[e.situacao,"c-gry"],aberto=["aguardando","refazer"].includes(e.situacao);
+  const info=V.tipo.codigo==="pontualidade"?'<div class="note">'+(d.tipo==="IDA"?"Chegada":"Saída")+' prevista '+esc(d.prevista)+' (tolerância de '+esc(d.tol_antes)+' min antes e '+esc(d.tol_depois)+' min depois) · registrada '+esc(d.hora_real)+
+     ' ('+esc(d.origem)+') · '+(d.dif>0?"+":"")+esc(d.dif)+' min<br>Cerca: '+esc(d.cerca)+(d.motorista?' · motorista '+esc(d.motorista):"")+'</div>'+
+     (d.origem==="Monitor"?'<button class="btn sm" id="m'+e.id+'" style="margin-top:6px">🗺 Ver no mapa</button><div id="mp'+e.id+'"></div>':""):"";
+  return '<div class="card"><h2>'+dBR(e.data)+' · '+esc(e.titulo)+'</h2>'+info+
+    '<p><span class="chip '+s[1]+'">'+esc(s[0])+'</span>'+(e.situacao!=="refazer"&&!aberto?"":' <span class="note">prazo '+dtBR(e.prazo)+'</span>')+'</p>'+
+    (e.situacao==="refazer"&&e.analise_obs?'<div class="devol">Devolvido: '+esc(e.analise_obs)+'</div>':"")+
+    (e.respondido_por?'<div class="just"><b>'+esc(e.respondido_por)+'</b> · '+dtBR(e.respondido_em)+(e.motivo?'<br><i>'+esc(e.motivo)+'</i>':"")+'<br>'+esc(e.justificativa||"")+'</div>':"")+
+    (e.evid.length?'<div class="arqs">'+e.evid.map(x=>'<button class="btn sm" data-x="'+e.id+'" data-id="'+x.id+'">📎 '+esc(x.nome)+'</button>').join("")+'</div>':"")+
+    (aberto?'<div>'+(V.tipo.motivos.length?'<label>Motivo *</label><select id="mo'+e.id+'"><option value="">Escolha…</option>'+V.tipo.motivos.map(m=>'<option'+(e.motivo===m?" selected":"")+'>'+esc(m)+'</option>').join("")+'</select>':"")+
+      '<label>O que aconteceu'+(V.tipo.pede_justificativa?" *":"")+'</label><textarea id="tx'+e.id+'" placeholder="Explique com detalhes: o que houve, onde, a que horas, o que foi feito.">'+esc(e.situacao==="refazer"?(e.justificativa||""):"")+'</textarea>'+
+      '<label>Evidência'+(V.tipo.exige_evidencia?" *":"")+' (foto, print, PDF; até 5 arquivos)</label><input type="file" id="f'+e.id+'" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"><div class="note" id="fa'+e.id+'"></div>'+
+      '<label>Seu nome *</label><input type="text" id="no'+e.id+'" value="'+esc(lsg())+'" autocomplete="name">'+
+      '<p><button class="btn p" id="b'+e.id+'">Enviar justificativa</button></p><div class="msg" id="r'+e.id+'"></div></div>':"")+'</div>';
+}
+async function arquivos(id,files){
+  const out=[];$("fa"+id).textContent="Preparando…";
+  for(const f of [...files].slice(0,5)){
+    let blob=f,nome=f.name,tipo=f.type;
+    if(/^image\//.test(f.type)&&f.size>1.2e6){try{blob=await reduzir(f);tipo="image/jpeg";nome=nome.replace(/\.\w+$/,"")+".jpg"}catch(e){}}
+    if(blob.size>5*1024*1024){$("fa"+id).textContent=f.name+" passa de 5 MB.";ARQ[id]=[];return}
+    out.push({nome,tipo,base64:await b64(blob)});
+  }
+  ARQ[id]=out;$("fa"+id).textContent=out.length?out.map(x=>x.nome).join(", "):"";
+}
+function b64(blob){return new Promise((ok,er)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]);r.onerror=er;r.readAsDataURL(blob)})}
+function reduzir(f){return new Promise((ok,er)=>{const i=new Image();i.onload=()=>{const k=Math.min(1,1600/Math.max(i.width,i.height));const c=document.createElement("canvas");
+  c.width=Math.round(i.width*k);c.height=Math.round(i.height*k);c.getContext("2d").drawImage(i,0,0,c.width,c.height);c.toBlob(b=>b?ok(b):er(new Error("falhou")),"image/jpeg",.82)};
+  i.onerror=er;i.src=URL.createObjectURL(f)})}
+async function responder(id){
+  const b=$("b"+id),r=$("r"+id);r.className="msg";r.textContent="Enviando…";b.disabled=true;
+  const nome=$("no"+id).value.trim();lss(nome);
+  try{await rpc("ev_link_responder",{p_token:TK,p_evento:id,p_motivo:$("mo"+id)?$("mo"+id).value:null,p_texto:$("tx"+id).value,p_nome:nome,p_evid:ARQ[id]||[]});
+    r.className="msg ok";r.textContent="Recebido. Obrigado!";setTimeout(carregar,900)}
+  catch(err){r.className="msg err";r.textContent=err.message;b.disabled=false}
+}
+async function baixar(id){
+  try{const r=await rpc("ev_link_evidencia",{p_token:TK,p_id:id});const b=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0));
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([b],{type:r.tipo||"application/octet-stream"}));a.download=r.nome;a.click()}catch(err){alert(err.message)}
+}
+async function mapa(id){
+  const box=$("mp"+id);if(MAPAS[id]){MAPAS[id].remove();delete MAPAS[id];box.innerHTML="";return}
+  box.innerHTML='<div class="mapa" id="mm'+id+'"></div><div class="note" id="mn'+id+'">Carregando…</div>';
+  let t;try{t=await rpc("ev_link_trilha",{p_token:TK,p_evento:id})}catch(err){$("mn"+id).textContent=err.message;return}
+  const m=MAPAS[id]=L.map("mm"+id);L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(m);
+  const b=[];
+  if(t&&t.cerca&&Array.isArray(t.cerca.pontos)&&t.cerca.pontos.length){L.polygon(t.cerca.pontos,{color:t.cerca.cor||"#2563eb",weight:2,fillOpacity:.15}).addTo(m);b.push(...t.cerca.pontos)}
+  const pts=(t&&t.pontos||[]).map(p=>[p.lat,p.lon]);
+  if(pts.length){L.polyline(pts,{color:"#facc15",weight:3}).addTo(m);b.push(...pts)}
+  (t&&t.eventos||[]).forEach(e=>{const p=(t.pontos||[]).reduce((a,x)=>!a||Math.abs(new Date(x.ts)-new Date(e.ts))<Math.abs(new Date(a.ts)-new Date(e.ts))?x:a,null);
+    if(p)L.circleMarker([p.lat,p.lon],{radius:7,color:"#fff",weight:2,fillColor:e.tipo==="entrada"?"#16a34a":"#dc2626",fillOpacity:1}).addTo(m).bindTooltip((e.tipo==="entrada"?"Entrou ":"Saiu ")+dtBR(e.ts).slice(6),{permanent:true})});
+  if(b.length)m.fitBounds(b,{padding:[20,20],maxZoom:17});else m.setView([-3.2474,-47.7368],11);
+  $("mn"+id).textContent=pts.length?"Linha amarela = trajeto do GPS do ônibus. Área colorida = cerca do turno.":"Sem GPS nessa janela.";
+  setTimeout(()=>m.invalidateSize(),150);
+}
+carregar();
+</script>
+</body>
+</html>
