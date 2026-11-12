@@ -219,17 +219,27 @@ async function carregar(){
   $("painel").innerHTML='<div class="vazio">Carregando…</div>';
   const de=$("fDe").value,ate=$("fAte").value;
   try{
-    if(ABA==="horarios")await processarCercas(de,ate);
+    let aviso="";
+    if(ABA==="horarios")aviso=await processarCercas(de,ate);
     DADOS=await rpc("bi_dados",{p_token:TOKEN,p_painel:ABA,p_de:de,p_ate:ate,p_filtros:filtros()});
     ({ocupacao:telaOcupacao,horarios:telaHorarios,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad}[ABA]||(()=>{}))(DADOS);
+    if(aviso)$("painel").insertAdjacentHTML("afterbegin",'<div class="note" style="color:#b45309">'+esc(aviso)+'</div>');
   }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
 }
 async function processarCercas(de,ate){
-  for(let i=0;i<40;i++){
-    const r=await rpc("bi_processar",{p_token:TOKEN,p_de:de,p_ate:ate,p_max:4});
-    if(!r||!r.falta)return;
-    $("painel").innerHTML='<div class="vazio">Calculando entradas e saídas nas cercas pelo GPS do Monitor… faltam '+r.falta+' dia(s) de cerca.</div>';
+  let aviso="";
+  for(let i=0;i<80;i++){
+    let r;
+    try{r=await rpc("bi_processar",{p_token:TOKEN,p_de:de,p_ate:ate,p_max:i?2:1})}
+    catch(e){
+      // tempo esgotado: tenta de novo com 1 dia por vez; se insistir, mostra o que já foi calculado
+      try{r=await rpc("bi_processar",{p_token:TOKEN,p_de:de,p_ate:ate,p_max:1})}
+      catch(e2){aviso="Parte dos dias ainda não foi calculada ("+e2.message+"). Clique em Atualizar para continuar.";break}
+    }
+    if(!r||!r.falta)break;
+    $("painel").innerHTML='<div class="vazio">Calculando entradas e saídas nas cercas pelo GPS do Monitor… faltam '+r.falta+' dia(s).</div>';
   }
+  return aviso;
 }
 
 /* ---------------- peças de desenho ---------------- */
