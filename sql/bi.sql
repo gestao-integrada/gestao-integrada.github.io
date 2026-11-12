@@ -438,14 +438,14 @@ begin
     select c.id as cid, s.device_id, s.frota, s.ts, s.ts0,
            (s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max and public._bi_dentro(s.lat,  s.lon,  c.poly)) as dentro,
            (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max and public._bi_dentro(s.lat0, s.lon0, c.poly)) as antes
-    from _bi_s s join c on s.frota is not null and s.ts0 is not null
+    from _bi_s s join c on s.frota is not null
       and ((s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max)
         or (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max))
   )
   insert into bi_cerca_eventos (cerca_id, dia, frota, device_id, tipo, ts, gap_min)
   select cid, p_dia, frota, device_id, case when dentro then 'entrada' else 'saida' end, ts,
          round((extract(epoch from ts - ts0) / 60.0)::numeric, 1)
-  from p where dentro <> antes
+  from p where dentro is distinct from coalesce(antes, false)   -- 1ª posição do celular já dentro da cerca = entrada
   on conflict do nothing;
   get diagnostics n = row_count;
   insert into bi_cerca_dias (cerca_id, dia, processado_em, frotas)
@@ -534,21 +534,22 @@ com as (
     (select public.normaliza_tag(a.frota) = any (k.frotas) from bi_cerca_dias k where k.cerca_id = a.cid and k.dia = a.data_local) as tem_mon
   from alvo1 a
 ),
+-- hora real pela cerca: IDA = a ENTRADA mais perto da chegada prevista; VOLTA = a SAÍDA mais perto da saída prevista
+-- (até 3 h antes ou depois, no dia da viagem). Não depende da hora em que o motorista abriu a viagem na TFleet,
+-- e uma passagem rápida pela borda da cerca mais tarde não "rouba" a chegada.
 ev as (
-  select c.*,
-    (select e.ts from bi_cerca_eventos e
-      where e.cerca_id = c.cid and e.frota = public.normaliza_tag(c.frota)
-        and ((c.sent = 'IDA' and e.tipo = 'entrada' and e.ts between c.saida_ts - interval '15 minutes' and coalesce(c.chegada_ts, c.saida_ts + interval '4 hours') + interval '30 minutes')
-          or (c.sent = 'VOLTA' and e.tipo = 'saida' and e.ts between c.saida_ts - interval '60 minutes' and c.saida_ts + interval '90 minutes'))
-      order by case when c.sent = 'IDA' then extract(epoch from e.ts) else -extract(epoch from e.ts) end limit 1) as ev_ts,
-    (select e.gap_min from bi_cerca_eventos e
-      where e.cerca_id = c.cid and e.frota = public.normaliza_tag(c.frota)
-        and ((c.sent = 'IDA' and e.tipo = 'entrada' and e.ts between c.saida_ts - interval '15 minutes' and coalesce(c.chegada_ts, c.saida_ts + interval '4 hours') + interval '30 minutes')
-          or (c.sent = 'VOLTA' and e.tipo = 'saida' and e.ts between c.saida_ts - interval '60 minutes' and c.saida_ts + interval '90 minutes'))
-      order by case when c.sent = 'IDA' then extract(epoch from e.ts) else -extract(epoch from e.ts) end limit 1) as ev_gap,
+  select c.*, m.ts as ev_ts, m.gap_min as ev_gap,
     case when c.sent = 'IDA' then nullif(left(trim(c.bruto->>'hrsla'), 5), '')
          else to_char(c.hora_saida, 'HH24:MI') end as tf
   from com c
+  left join lateral (
+    select e.ts, e.gap_min from bi_cerca_eventos e
+    where e.cerca_id = c.cid and e.frota = public.normaliza_tag(c.frota)
+      and e.tipo = case when c.sent = 'IDA' then 'entrada' else 'saida' end
+      and e.ts between ((c.data_local + c.prev::time) at time zone 'America/Belem') - interval '3 hours'
+                   and ((c.data_local + c.prev::time) at time zone 'America/Belem') + interval '3 hours'
+    order by abs(extract(epoch from e.ts - ((c.data_local + c.prev::time) at time zone 'America/Belem')))
+    limit 1) m on true
 ),
 fim as (
   select e.*, to_char(e.ev_ts at time zone 'America/Belem', 'HH24:MI') as mon,
