@@ -64,6 +64,13 @@ create table if not exists public.bi_cercas (
 );
 
 -- entradas e saídas já calculadas (cache por cerca + dia de Belém)
+-- para que serve a cerca: turno = entrada e saída do turno (usada no painel Horários);
+-- terminal = chegada e saída do terminal; fim_rota = fim das rotas; outra. As outras finalidades já guardam
+-- as entradas e saídas e entram em painéis próprios depois.
+alter table public.bi_cercas add column if not exists finalidade text not null default 'turno';
+alter table public.bi_cercas drop constraint if exists bi_cercas_finalidade_check;
+alter table public.bi_cercas add constraint bi_cercas_finalidade_check check (finalidade in ('turno', 'terminal', 'fim_rota', 'outra'));
+
 create table if not exists public.bi_cerca_eventos (
   cerca_id  bigint not null references public.bi_cercas(id) on delete cascade,
   dia       date not null,
@@ -263,7 +270,7 @@ create or replace function public.bi_cercas(p_token text) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token);
 begin
-  return (select coalesce(json_agg(json_build_object('id', id, 'nome', nome, 'turno', turno, 'cor', cor, 'pontos', pontos,
+  return (select coalesce(json_agg(json_build_object('id', id, 'nome', nome, 'turno', turno, 'finalidade', finalidade, 'cor', cor, 'pontos', pontos,
             'horarios', horarios, 'ativo', ativo, 'atualizado_por', atualizado_por, 'atualizado_em', atualizado_em) order by nome), '[]'::json)
           from bi_cercas);
 end $$;
@@ -284,7 +291,9 @@ create or replace function public.bi_cerca_salvar(p_token text, p_dados jsonb) r
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token, true); v_id bigint := nullif(p_dados->>'id', '')::bigint;
         pts jsonb := coalesce(p_dados->'pontos', '[]'::jsonb); arr float8[]; old bi_cercas;
+        v_fin text := coalesce(nullif(p_dados->>'finalidade', ''), 'turno');
 begin
+  if v_fin not in ('turno', 'terminal', 'fim_rota', 'outra') then raise exception 'Finalidade inválida.'; end if;
   if coalesce(trim(p_dados->>'nome'), '') = '' then raise exception 'Dê um nome para a cerca.'; end if;
   if jsonb_typeof(pts) <> 'array' or jsonb_array_length(pts) < 3 then raise exception 'Marque pelo menos 3 pontos no mapa.'; end if;
   select array_agg(x order by o, k) into arr from (
@@ -292,14 +301,14 @@ begin
     union all
     select (e->>1)::float8, o, 1 from jsonb_array_elements(pts) with ordinality as t(e, o)) s;
   if v_id is null then
-    insert into bi_cercas (nome, turno, cor, pontos, poly, horarios, ativo, atualizado_por)
-    values (trim(p_dados->>'nome'), nullif(trim(p_dados->>'turno'), ''), coalesce(nullif(p_dados->>'cor', ''), '#2563eb'), pts, arr,
+    insert into bi_cercas (nome, turno, finalidade, cor, pontos, poly, horarios, ativo, atualizado_por)
+    values (trim(p_dados->>'nome'), nullif(trim(p_dados->>'turno'), ''), v_fin, coalesce(nullif(p_dados->>'cor', ''), '#2563eb'), pts, arr,
             coalesce(p_dados->'horarios', '[]'::jsonb), coalesce((p_dados->>'ativo')::boolean, true), q->>'nome')
     returning id into v_id;
   else
     select * into old from bi_cercas where id = v_id;
     if old.id is null then raise exception 'Cerca não encontrada.'; end if;
-    update bi_cercas set nome = trim(p_dados->>'nome'), turno = nullif(trim(p_dados->>'turno'), ''),
+    update bi_cercas set nome = trim(p_dados->>'nome'), turno = nullif(trim(p_dados->>'turno'), ''), finalidade = v_fin,
            cor = coalesce(nullif(p_dados->>'cor', ''), cor), pontos = pts, poly = arr,
            horarios = coalesce(p_dados->'horarios', '[]'::jsonb), ativo = coalesce((p_dados->>'ativo')::boolean, ativo),
            atualizado_em = now(), atualizado_por = q->>'nome'
@@ -402,7 +411,7 @@ with v as (select * from _bi_viagens(p_de, p_ate) where linha is not null and ti
 reg as (
   select c.id as cid, c.nome, c.cor, r.o, r.h
   from bi_cercas c, jsonb_array_elements(c.horarios) with ordinality as r(h, o)
-  where c.ativo
+  where c.ativo and c.finalidade = 'turno'
 ),
 alvo as (
   select v.*, reg.cid, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), reg.nome) as rnome,
@@ -578,7 +587,7 @@ begin
   elsif p_painel = 'horarios' then
     if p_ate - p_de > 62 then raise exception 'Escolha um período de até 2 meses.'; end if;
     select json_build_object(
-      'cercas', (select count(*) from bi_cercas where ativo),
+      'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'turno'),
       'pendentes', (select count(*) from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
                     left join bi_cerca_dias k on k.cerca_id = c.id and k.dia = d::date where c.ativo and k.dia is null),
       'linhas', (select coalesce(json_agg(h), '[]'::json) from _bi_horarios(p_de, p_ate) h
