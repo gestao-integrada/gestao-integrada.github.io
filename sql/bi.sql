@@ -737,12 +737,29 @@ begin
   raise exception 'Detalhe desconhecido.';
 end $$;
 
+-- trajeto do GPS (Monitor) de um carro numa janela de tempo + o desenho da cerca, para o mapa do detalhe do Horários
+create or replace function public.bi_trilha(p_token text, p_frota text, p_de timestamptz, p_ate timestamptz, p_cerca text default null)
+returns json language plpgsql security definer set search_path = public as $$
+declare q jsonb := public._bi_exige(p_token); f text := public.normaliza_tag(p_frota);
+begin
+  if p_ate - p_de > interval '6 hours' then raise exception 'Janela grande demais (máximo 6 horas).'; end if;
+  return json_build_object(
+    'pontos', (select coalesce(json_agg(json_build_object('ts', ts, 'lat', lat, 'lon', lon) order by ts), '[]'::json)
+               from samples where ts between p_de and p_ate and lat is not null and lon is not null and not (lat = 0 and lon = 0)
+                 and public.normaliza_tag(device_name) = f),
+    'eventos', (select coalesce(json_agg(json_build_object('ts', e.ts, 'tipo', e.tipo, 'gap_min', e.gap_min) order by e.ts), '[]'::json)
+               from bi_cerca_eventos e join bi_cercas c on c.id = e.cerca_id
+               where e.frota = f and e.ts between p_de and p_ate and (p_cerca is null or c.nome = p_cerca)),
+    'cerca', (select json_build_object('nome', nome, 'cor', cor, 'pontos', pontos) from bi_cercas where nome = p_cerca and ativo limit 1));
+end $$;
+
 -- ---------------------------------------------------------------- permissões das funções públicas
 grant execute on function public.bi_entrar(text), public.bi_sessao(text), public.bi_sair(text), public.bi_inicio(text),
   public.bi_painel_salvar(text, text, text, int, text), public.bi_config_salvar(text, jsonb), public.bi_cercas(text),
   public.bi_opcoes(text), public.bi_cerca_salvar(text, jsonb), public.bi_cerca_remover(text, bigint),
   public.bi_processar(text, date, date, int), public.bi_dados(text, text, date, date, jsonb),
-  public.bi_detalhe(text, text, date, date, jsonb, text, text)
+  public.bi_detalhe(text, text, date, date, jsonb, text, text),
+  public.bi_trilha(text, text, timestamptz, timestamptz, text)
   to anon, authenticated;
 
 -- se o PostgREST não enxergar as funções novas na hora:

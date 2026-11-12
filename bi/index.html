@@ -332,7 +332,7 @@ async function drill(t,c,v,c2,v2){
     tabela("ovC",COLS[t],r,"detalhe_"+t+"_"+String(v).replace(/\W+/g,"_"));
   }catch(err){$("ovS").textContent="Erro: "+err.message}
 }
-function fecharOv(){$("ov").classList.add("hidden");CSV=CSV_TELA}
+function fecharOv(){$("ov").classList.add("hidden");CSV=CSV_TELA;if(typeof MAPA_OV!=="undefined"&&MAPA_OV){MAPA_OV.remove();MAPA_OV=null}}
 $("ovX").onclick=fecharOv;$("ov").onclick=e=>{if(e.target.id==="ov")fecharOv()};
 $("ovCsv").onclick=()=>$("bCsv").click();
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("ov").classList.contains("hidden"))fecharOv()});
@@ -382,34 +382,96 @@ function telaHorarios(d){
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
 const difTxt=(v,s)=>v==null?"—":v===0?"no minuto previsto":Math.abs(v)+" min "+(v>0?"depois":"antes");
+let RR={},RR_ST={};
 function resumoRotas(L,sent){
   if(!L.length)return'<div class="note">Nenhuma viagem nesse período e filtro.</div>';
   const g={};L.forEach(x=>{const k=sent+"|"+x.linha+"|"+x.prevista;(g[k]=g[k]||{k,linha:x.linha,prev:x.prevista,ta:x.tol_antes,td:x.tol_depois,v:[]}).v.push(x)});
-  const rows=Object.values(g).map(r=>{const n=r.v.length,c={ok:0,ad:0,at:0,sd:0};const difs=[];
+  RR[sent]=Object.values(g).map(r=>{const n=r.v.length,c={ok:0,ad:0,at:0,sd:0};const difs=[];
     r.v.forEach(x=>{if(x.status==="no horário")c.ok++;else if(x.status==="adiantado")c.ad++;else if(x.status==="atrasado")c.at++;else c.sd++;if(x.dif!=null)difs.push(x.dif)});
     r.n=n;r.c=c;r.media=difs.length?Math.round(difs.reduce((a,b)=>a+b,0)/difs.length):null;
-    r.pior=difs.length?difs.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a):null;r.prob=(c.ad+c.at)/Math.max(1,n-c.sd);return r})
-    .sort((a,b)=>b.prob-a.prob||Math.abs(b.pior||0)-Math.abs(a.pior||0));
-  rows.forEach(r=>HR_GRUPOS[r.k]=r);
+    r.pior=difs.length?difs.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a):null;r.prob=(c.ad+c.at)/Math.max(1,n-c.sd);r.pctOk=c.ok/Math.max(1,n);return r});
+  RR[sent].forEach(r=>HR_GRUPOS[r.k]=r);
+  if(!RR_ST[sent])RR_ST[sent]={k:"prob",d:-1};
+  return'<div id="rr_'+sent+'">'+tabRR(sent)+'</div>';
+}
+const RR_COLS=[{k:"linha",t:"Rota"},{k:"prev",t:"Previsto"},{k:"n",t:"Viagens"},{k:"prob",t:"Situação"},{k:"media",t:"Em média"},{k:"pior",t:"Pior caso"}];
+function tabRR(sent){
+  const st=RR_ST[sent],val=(r,k)=>k==="pior"||k==="media"?(r[k]==null?-1:Math.abs(r[k])):r[k];
+  const rows=RR[sent].slice().sort((a,b)=>{const x=val(a,st.k),y=val(b,st.k);
+    return(typeof x==="string"?String(x).localeCompare(String(y),"pt-BR"):(x-y))*st.d||(b.prob-a.prob)});
   const seg=(n,tot,cor)=>n?'<i style="width:'+(100*n/tot).toFixed(1)+'%;background:'+cor+'" title="'+n+'"></i>':'';
-  return'<div class="tb"><table class="dt"><thead><tr><th>Rota</th><th>Previsto</th><th class="n">Viagens</th><th style="min-width:170px">Situação</th><th>Em média</th><th>Pior caso</th></tr></thead><tbody>'
-    +rows.map(r=>'<tr class="dr" data-hr="'+esc(r.k)+'" title="clique para ver viagem por viagem"><td class="w"><b>'+esc(r.linha)+'</b></td>'
+  return'<div class="note" style="margin:0 0 4px">Clique no título da coluna para ordenar (de novo inverte). Situação: primeiro as rotas com mais viagens fora do horário.</div>'
+    +'<div class="tb"><table class="dt"><thead><tr>'+RR_COLS.map(c=>'<th data-rrs="'+sent+'" data-rrk="'+c.k+'" style="cursor:pointer;'+(c.k==="prob"?"min-width:170px":"")+'">'+c.t+(st.k===c.k?(st.d>0?" ▲":" ▼"):"")+'</th>').join("")+'</tr></thead><tbody>'
+    +rows.map(r=>'<tr class="dr" data-hr="'+esc(r.k)+'" title="clique para ver viagem por viagem e o mapa"><td class="w"><b>'+esc(r.linha)+'</b></td>'
       +'<td>'+esc(r.prev)+'<div class="note">tolerância −'+r.ta+'/+'+r.td+' min</div></td><td class="n">'+r.n+'</td>'
       +'<td><div class="pilha">'+seg(r.c.ok,r.n,"#16a34a")+seg(r.c.ad,r.n,"#d97706")+seg(r.c.at,r.n,"#dc2626")+seg(r.c.sd,r.n,"#cbd5e1")+'</div>'
       +'<div class="note">'+[r.c.ok&&r.c.ok+" no horário",r.c.ad&&r.c.ad+" adiant.",r.c.at&&r.c.at+" atras.",r.c.sd&&r.c.sd+" sem hora"].filter(Boolean).join(" · ")+'</div></td>'
       +'<td>'+(r.media==null?"—":'<span class="chip '+(r.media<-r.ta?"c-warn":r.media>r.td?"c-bad":"c-ok")+'">'+difTxt(r.media)+'</span>')+'</td>'
       +'<td>'+(r.pior==null?"—":esc(difTxt(r.pior)))+'</td></tr>').join("")+'</tbody></table></div>';
 }
+$("painel").addEventListener("click",e=>{const th=e.target.closest("[data-rrk]");if(!th)return;e.stopPropagation();
+  const sent=th.dataset.rrs,st=RR_ST[sent],k=th.dataset.rrk;
+  if(st.k===k)st.d=-st.d;else{st.k=k;st.d=(k==="linha"||k==="prev")?1:-1}
+  $("rr_"+sent).innerHTML=tabRR(sent)});
 $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-hr]");if(!el)return;const r=HR_GRUPOS[el.dataset.hr];if(!r)return;
   const ida=r.k.startsWith("IDA");
   $("ovT").textContent=r.linha+" · "+(ida?"chegada":"saída")+" prevista "+r.prev;
   $("ovS").textContent=r.n+" viagem(ns). Tolerância: até "+r.ta+" min antes e "+r.td+" min depois.";
   CSV_TELA=CSV;$("ov").classList.remove("hidden");
-  const lin=r.v.map(x=>Object.assign({},x,{frase:x.hora_real?(ida?"Chegou":"Saiu")+" às "+x.hora_real+" — "+difTxt(x.dif)+" do previsto":(x.status==="sem passagem na cerca"?"Tem Monitor, mas não passou pela cerca":"Sem hora (sem Monitor e sem hora da TFleet)")}));
-  tabela("ovC",[{k:"data",t:"Data",f:dBR},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"frase",t:"O que aconteceu",w:1},
-    {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"origem",t:"Hora veio de"},{k:"ocupacao",t:"Passageiros",num:1}],
-    lin.sort((a,b)=>String(b.data).localeCompare(String(a.data))),"horarios_"+r.linha.replace(/\W+/g,"_"));
+  HR_LIN=r.v.map(x=>Object.assign({},x,{ida,frase:x.hora_real?(ida?"Chegou":"Saiu")+" às "+x.hora_real+" — "+difTxt(x.dif)+" do previsto":(x.status==="sem passagem na cerca"?"Tem Monitor, mas não passou pela cerca":"Sem hora (sem Monitor e sem hora da TFleet)")}))
+    .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
+  $("ovC").innerHTML='<div id="ovMapW" class="hidden" style="margin:8px 0"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><b id="ovMapT"></b>'
+    +'<label class="note" style="margin-left:auto">Mostrar <select id="ovJan"><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 hora</option></select> antes e depois</label></div>'
+    +'<div id="ovMapa" style="height:380px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div><div id="ovTab"></div>';
+  tabela("ovTab",[{k:"data",t:"Data",f:dBR},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"frase",t:"O que aconteceu",w:1},
+    {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"origem",t:"Hora veio de"},{k:"ocupacao",t:"Passageiros",num:1},
+    {k:"_i",t:"Mapa",f:(v,x)=>'<button class="btn sm" data-mp="'+HR_LIN.indexOf(x)+'">🗺 Ver</button>'}],
+    HR_LIN,"horarios_"+r.linha.replace(/\W+/g,"_"));
 });
+let HR_LIN=[],MAPA_OV=null,MP_ATUAL=null;
+$("ovC").addEventListener("click",e=>{const b=e.target.closest("[data-mp]");if(!b)return;mapaViagem(HR_LIN[+b.dataset.mp])});
+$("ovC").addEventListener("change",e=>{if(e.target.id==="ovJan"&&MP_ATUAL)mapaViagem(MP_ATUAL)});
+const minLocal=iso=>{const d=new Date(Date.parse(iso)-3*3600e3);return d.toISOString().slice(11,16)};
+function distKm(a,b){const R=6371,r=Math.PI/180,dl=(b[0]-a[0])*r,dn=(b[1]-a[1])*r,h=Math.sin(dl/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+function dentroPoli(p,poly){let d=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];
+  if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])d=!d}return d}
+function distCerca(p,poly){if(!poly||poly.length<3)return null;if(dentroPoli(p,poly))return 0;
+  // distância até a borda (aproximada pelos lados do polígono)
+  let m=1e9;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[j],b=poly[i];for(let t=0;t<=1;t+=.05)m=Math.min(m,distKm(p,[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]))}return m}
+async function mapaViagem(x){
+  if(!x)return;MP_ATUAL=x;
+  $("ovMapW").classList.remove("hidden");$("ovMapW").scrollIntoView({behavior:"smooth",block:"start"});
+  const jan=+$("ovJan").value||10,prev=hm2min(x.prevista),real=x.dif!=null?prev+x.dif:prev;
+  const base=Date.parse(x.data+"T00:00:00-03:00"),iso=m=>new Date(base+m*60000).toISOString();
+  $("ovMapT").textContent="Carro "+x.frota+" · "+dBR(x.data)+" · previsto "+x.prevista+(x.hora_real?" · real "+x.hora_real:"");
+  $("ovMapN").textContent="Carregando o GPS do Monitor…";
+  let r;try{r=await rpc("bi_trilha",{p_token:TOKEN,p_frota:x.frota,p_de:iso(Math.min(prev,real)-jan),p_ate:iso(Math.max(prev,real)+jan),p_cerca:x.cerca})}
+  catch(err){$("ovMapN").textContent="Erro: "+err.message;return}
+  if(MAPA_OV){MAPA_OV.remove();MAPA_OV=null}
+  MAPA_OV=L.map("ovMapa").setView(CENTRO,15);
+  L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(MAPA_OV);
+  const b=[],poly=r.cerca&&r.cerca.pontos;
+  if(poly&&poly.length>=3){L.polygon(poly,{color:r.cerca.cor||"#2563eb",weight:2,fillOpacity:.2}).bindTooltip("Cerca: "+r.cerca.nome).addTo(MAPA_OV);b.push(...poly)}
+  const P=(r.pontos||[]).map(p=>({ll:[p.lat,p.lon],h:minLocal(p.ts),m:(Date.parse(p.ts)-base)/60000}));
+  if(P.length){L.polyline(P.map(p=>p.ll),{color:"#facc15",weight:3,opacity:.9}).addTo(MAPA_OV);
+    P.forEach(p=>{const antes=p.m<prev;L.circleMarker(p.ll,{radius:5,color:"#fff",weight:1.5,fillColor:antes?"#38bdf8":"#a78bfa",fillOpacity:1})
+      .bindTooltip(p.h+" · "+(poly?(()=>{const d=distCerca(p.ll,poly);return d===0?"dentro da cerca":d.toFixed(2).replace(".",",")+" km da cerca"})():""))
+      .addTo(MAPA_OV);b.push(p.ll)})}
+  (r.eventos||[]).forEach(e=>{const q=P.reduce((m,p)=>Math.abs(Date.parse(e.ts)-base-p.m*60000)<Math.abs(Date.parse(e.ts)-base-m.m*60000)?p:m,P[0]||null);
+    if(q)L.marker(q.ll,{icon:L.divIcon({className:"",html:'<div style="background:'+(e.tipo==="entrada"?"#16a34a":"#dc2626")+';color:#fff;font:700 11px system-ui;padding:3px 6px;border-radius:6px;white-space:nowrap;border:2px solid #fff;transform:translate(-50%,-130%)">'+(e.tipo==="entrada"?"Entrou ":"Saiu ")+minLocal(e.ts)+'</div>',iconSize:[0,0]})}).addTo(MAPA_OV)});
+  let txt="";
+  if(P.length){const noPrev=P.reduce((m,p)=>Math.abs(p.m-prev)<Math.abs(m.m-prev)?p:m,P[0]);
+    L.marker(noPrev.ll,{icon:L.divIcon({className:"",html:'<div style="background:#0f172a;color:#fff;font:700 11px system-ui;padding:3px 6px;border-radius:6px;white-space:nowrap;border:2px solid #fff;transform:translate(-50%,30%)">Previsto '+x.prevista+'</div>',iconSize:[0,0]})}).addTo(MAPA_OV);
+    const d=poly?distCerca(noPrev.ll,poly):null;
+    txt="No horário previsto ("+x.prevista+") o carro estava "+(d==null?"no ponto preto":d===0?"dentro da cerca":"a "+d.toFixed(2).replace(".",",")+" km da cerca")+" (posição das "+noPrev.h+"). ";
+    txt+=P.length+" posição(ões) do Monitor entre "+P[0].h+" e "+P[P.length-1].h+". Azul = antes do previsto, lilás = depois. Passe o mouse num ponto para ver a hora e a distância.";
+    if(Math.abs(noPrev.m-prev)>5)txt+=" Atenção: não há posição perto do horário previsto (o celular pode ter ficado sem mandar GPS).";
+  }else txt="Sem posições do Monitor para o carro "+x.frota+" nessa janela. Esse carro pode não ter o app Monitor ou o celular estava desligado.";
+  $("ovMapN").textContent=txt;
+  if(b.length)MAPA_OV.fitBounds(b,{padding:[30,30],maxZoom:17});
+  setTimeout(()=>MAPA_OV&&MAPA_OV.invalidateSize(),150);
+}
+
 // uma linha por rota: faixa cinza = previsto ± tolerância, traço = previsto, pontos = horas reais
 function graficoFaixas(L){
   if(!L.length)return'<div class="note">Nenhuma viagem com hora nesse período e filtro.</div>';
