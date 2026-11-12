@@ -348,6 +348,7 @@ function ativa(p){return (p.status==="pendente"||p.status==="confirmada")&&p.dia
 function desenhar(){
   const eq=EQ();
   $("who").textContent=D.quem.nome+(eq?" · equipe":"");
+  if(window.tfVoltarCentral)tfVoltarCentral(!!eq);
   $("bPessoas").classList.toggle("hidden",!eq);$("bAjustes").classList.toggle("hidden",!eq);$("bRotas").classList.toggle("hidden",!eq);
   $("sub").textContent=eq?"Pedidos da Caliman para olhar os carros":"Ocorrências abertas dos carros e horários para o "+DONO()+" vir olhar";
   // agenda da semana
@@ -737,5 +738,6 @@ function avisarNovos(){
 iniciar();
 </script>
 <script src="aberturas.js"></script>
+<script src="../central-voltar.js" data-manual></script>
 </body>
 </html>

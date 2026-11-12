@@ -206,7 +206,7 @@ $("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
   }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
 function entrar(tk,q){TOKEN=tk;QUEM=q;["vLogin","vPub"].forEach(i=>$(i).classList.add("hidden"));$("vApp").classList.remove("hidden");
   $("who").textContent=q.nome+(q.tipo==="fornecedor"?" · "+q.fornecedor:"");
-  const interno=q.tipo==="interno";$("bNovo").classList.toggle("hidden",!(interno&&q.edita));
+  const interno=q.tipo==="interno";if(window.tfVoltarCentral)tfVoltarCentral(interno);$("bNovo").classList.toggle("hidden",!(interno&&q.edita));
   $("bContatos").classList.toggle("hidden",!(interno&&q.edita));
   $("fForn").classList.toggle("hidden",!interno);carregar(true);setInterval(()=>carregar(false),120000);
   if(interno)rpc("sol_contatos_lista",{p_token:TOKEN}).then(c=>CONTATOS=c||[]).catch(()=>{});}
@@ -650,5 +650,6 @@ async function publico(chave){
 
 iniciar();
 </script>
+<script src="../central-voltar.js" data-manual></script>
 </body>
 </html>

@@ -34,6 +34,35 @@ alter table public.bi_config add column if not exists areas jsonb not null defau
   '[{"nome":"Paragominas e mina","lat_min":-3.80,"lat_max":-2.55,"lon_min":-48.10,"lon_max":-46.90},
     {"nome":"Quatro Bocas e Tomé-Açu","lat_min":-2.90,"lat_max":-2.00,"lon_min":-48.80,"lon_max":-47.90}]'::jsonb;
 
+-- grupos de rotas do painel Horários (cada regra de horário da cerca escolhe um grupo)
+-- {nome, tipolinhas[], contem "CT, MINA", excluir "APRENDIZ"}; e palavras que NUNCA entram no Horários
+alter table public.bi_config add column if not exists grupos jsonb not null default
+  '[{"nome":"ADM","tipolinhas":["ADM"],"contem":"","excluir":"^CT"},
+    {"nome":"Turno 12x12","tipolinhas":["TURNO 01 12X12","TURNO 02 12X12"],"contem":"","excluir":""},
+    {"nome":"CT (terceiras)","tipolinhas":["ADM"],"contem":"^CT","excluir":""}]'::jsonb;
+alter table public.bi_config add column if not exists horarios_excluir text not null default 'APRENDIZ, EXTRA';
+
+-- nome da linha contém o termo; termo começando com ^ = "começa com" (ex.: ^CT pega CT1, CT2... e não PROTECT)
+create or replace function public._bi_tem(p_linha text, p_termo text) returns boolean
+language sql immutable as $$
+  select case when left(p_termo, 1) = '^' then upper(trim(coalesce(p_linha, ''))) like upper(trim(substr(p_termo, 2))) || '%'
+              else upper(coalesce(p_linha, '')) like '%' || upper(trim(p_termo)) || '%' end;
+$$;
+
+-- a viagem (turno da linha + nome da linha) entra no filtro f? f = {tipolinhas[], contem, excluir}
+create or replace function public._bi_linha_ok(p_tl text, p_linha text, f jsonb, p_excl_global text) returns boolean
+language sql immutable as $$
+  with t as (select coalesce(f->'tipolinhas', '[]'::jsonb) as tl,
+                    array(select upper(trim(x)) from unnest(string_to_array(coalesce(f->>'contem', ''), ',')) x where trim(x) <> '') as inc,
+                    array(select upper(trim(x)) from unnest(string_to_array(coalesce(f->>'excluir', '') || ',' || coalesce(p_excl_global, ''), ',')) x where trim(x) <> '') as exc)
+  select f is not null
+     and (jsonb_array_length(t.tl) > 0 or cardinality(t.inc) > 0)
+     and (jsonb_array_length(t.tl) = 0 or upper(trim(coalesce(p_tl, ''))) in (select upper(trim(x)) from jsonb_array_elements_text(t.tl) x))
+     and (cardinality(t.inc) = 0 or exists (select 1 from unnest(t.inc) i where public._bi_tem(p_linha, i)))
+     and not exists (select 1 from unnest(t.exc) e where public._bi_tem(p_linha, e))
+  from t;
+$$;
+
 -- ponto dentro de alguma das áreas válidas
 create or replace function public._bi_na_area(la float8, lo float8, areas jsonb) returns boolean
 language sql immutable as $$
@@ -132,13 +161,31 @@ begin
 end $$;
 
 -- viagens sem repetição (se a TFleet corrigiu a viagem, vale a versão mais nova), como em aberturas.sql
+-- histórico antigo das viagens (vindo do arquivo do Power BI, 2024 até out/2026). Só o BI lê; a coleta não mexe.
+-- Carregar: Table Editor → viagens_hist → Insert → Import data from CSV (arquivo viagens-historico.csv).
+create table if not exists public.viagens_hist (like public.viagens including defaults);
+do $$ begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.viagens_hist'::regclass and contype = 'p') then
+    alter table public.viagens_hist add primary key (id);
+  end if;
+end $$;
+create index if not exists viagens_hist_data on public.viagens_hist (data_local);
+alter table public.viagens_hist enable row level security;
+revoke all on public.viagens_hist from anon, authenticated;
+
+-- viagens do período: as coletadas + o histórico; a mesma viagem (carro + hora de saída) aparece uma vez só,
+-- valendo a coletada da API quando existir nas duas
 create or replace function public._bi_viagens(p_de date, p_ate date)
 returns setof public.viagens
 language sql stable security definer set search_path = public as $$
-  select distinct on (coalesce(x.frota, x.placa), x.saida_ts) x.*
-  from viagens x
-  where x.data_local between p_de and p_ate
-  order by coalesce(x.frota, x.placa), x.saida_ts, x.coletado_em desc;
+  select id, coletado_em, placa, frota, empresa, origem, tipolinha, linha, tipo, motorista, data_local, hora_saida, saida_ts, chegada_ts, ocupacao, km, lat_saida, lon_saida, bruto
+  from (
+    select distinct on (coalesce(u.frota, u.placa), u.saida_ts) u.*
+    from (select x.*, 0 as pr from viagens x where x.data_local between p_de and p_ate
+          union all
+          select h.*, 1 from viagens_hist h where h.data_local between p_de and p_ate) u
+    order by coalesce(u.frota, u.placa), u.saida_ts, u.pr, u.coletado_em desc
+  ) z;
 $$;
 
 -- empresa como no .pbix (junta as variações da Hydro)
@@ -240,9 +287,10 @@ begin
                  order by ordem, id), '[]'::json)
                 from bi_paineis where situacao = 'todos' or (ed and situacao in ('admin', 'excluido'))),
     'config', (select json_build_object('lugares', lugares, 'valor_pessoa', valor_pessoa, 'gap_min', gap_min,
-                'viagens_turnos', viagens_turnos, 'viagens_ideal', viagens_ideal, 'areas', areas) from bi_config where id = 1),
+                'viagens_turnos', viagens_turnos, 'viagens_ideal', viagens_ideal, 'areas', areas,
+                'grupos', grupos, 'horarios_excluir', horarios_excluir) from bi_config where id = 1),
     'coleta', (select max(coletado_em) from viagens),
-    'primeiro_dia', (select min(data_local) from viagens),
+    'primeiro_dia', least((select min(data_local) from viagens), (select min(data_local) from viagens_hist)),
     'hoje', _bi_hoje());
 end $$;
 
@@ -276,6 +324,8 @@ begin
     viagens_turnos = coalesce((select array_agg(upper(trim(x))) from jsonb_array_elements_text(p_dados->'viagens_turnos') x where trim(x) <> ''), viagens_turnos),
     viagens_ideal  = coalesce(p_dados->'viagens_ideal', viagens_ideal),
     areas          = coalesce(case when jsonb_typeof(p_dados->'areas') = 'array' then p_dados->'areas' end, areas),
+    grupos         = coalesce(case when jsonb_typeof(p_dados->'grupos') = 'array' then p_dados->'grupos' end, grupos),
+    horarios_excluir = coalesce(p_dados->>'horarios_excluir', horarios_excluir),
     atualizado_em = now(), atualizado_por = q->>'nome'
   where id = 1;
   perform public._central_log((q->>'acesso_id')::bigint, q->>'nome', 'editou', 'bi', 'Ajustes do BI', 'bi_config', '1',
@@ -302,6 +352,8 @@ begin
     'tipolinhas', (select coalesce(json_agg(t order by t), '[]'::json) from (select distinct upper(trim(tipolinha)) as t
                    from viagens where data_local > _bi_hoje() - 60 and coalesce(trim(tipolinha), '') <> '') x),
     'linhas', (select coalesce(json_agg(l order by l), '[]'::json) from (select distinct trim(linha) as l
+                   from viagens where data_local > _bi_hoje() - 60 and coalesce(trim(linha), '') <> '') x),
+    'linhas_tl', (select coalesce(json_agg(json_build_object('l', l, 't', t) order by l), '[]'::json) from (select distinct trim(linha) as l, upper(trim(tipolinha)) as t
                    from viagens where data_local > _bi_hoje() - 60 and coalesce(trim(linha), '') <> '') x));
 end $$;
 
@@ -445,24 +497,26 @@ returns table (data date, cerca text, regra text, cor text, linha text, tipolinh
                hora_real text, origem text, dif int, status text, tem_monitor boolean)
 language sql stable security definer set search_path = public as $$
 with v as (select * from _bi_viagens(p_de, p_ate) where linha is not null and tipo is not null),
+cfg as (select grupos, horarios_excluir from bi_config where id = 1),
 reg as (
-  select c.id as cid, c.nome, c.cor, r.o, r.h
+  select c.id as cid, c.nome, c.cor, r.o, r.h,
+         case when coalesce(trim(r.h->>'grupo'), '') <> ''
+              then (select g from cfg, jsonb_array_elements(cfg.grupos) g where upper(trim(g->>'nome')) = upper(trim(r.h->>'grupo')) limit 1)
+              else jsonb_build_object('tipolinhas', coalesce(r.h->'tipolinhas', '[]'), 'contem', coalesce(r.h->>'linha_contem', ''),
+                                      'excluir', coalesce(r.h->>'linha_exclui', '')) end as f
   from bi_cercas c, jsonb_array_elements(c.horarios) with ordinality as r(h, o)
   where c.ativo and c.finalidade = 'turno'
 ),
 alvo as (
-  select v.*, reg.cid, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), reg.nome) as rnome,
+  select v.*, reg.cid, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), nullif(reg.h->>'grupo', ''), reg.nome) as rnome,
          upper(trim(v.tipo)) as sent,
          case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end as prev,
          case when upper(trim(v.tipo)) = 'IDA' then coalesce((reg.h->>'cheg_antes')::int, 10) else coalesce((reg.h->>'sai_antes')::int, 10) end as ta,
          case when upper(trim(v.tipo)) = 'IDA' then coalesce((reg.h->>'cheg_depois')::int, 10) else coalesce((reg.h->>'sai_depois')::int, 10) end as td
-  from v join reg on
-        (jsonb_array_length(coalesce(reg.h->'tipolinhas', '[]')) = 0
-          or upper(trim(coalesce(v.tipolinha, ''))) in (select upper(trim(x)) from jsonb_array_elements_text(reg.h->'tipolinhas') x))
-    and (coalesce(trim(reg.h->>'linha_contem'), '') = '' or upper(v.linha) like '%' || upper(trim(reg.h->>'linha_contem')) || '%')
+  from v cross join cfg join reg on
+        public._bi_linha_ok(v.tipolinha, v.linha, reg.f, cfg.horarios_excluir)
     and (jsonb_array_length(coalesce(reg.h->'dias', '[]')) = 0
           or extract(isodow from v.data_local)::text in (select jsonb_array_elements_text(reg.h->'dias')))
-    and (jsonb_array_length(coalesce(reg.h->'tipolinhas', '[]')) > 0 or coalesce(trim(reg.h->>'linha_contem'), '') <> '')
   where upper(trim(v.tipo)) in ('IDA', 'VOLTA')
     and (case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end) ~ '^\d{1,2}:\d{2}'
 ),
@@ -515,7 +569,8 @@ declare q jsonb := public._bi_exige(p_token); ed boolean := (q->>'edita')::boole
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); cfg bi_config; res json;
 begin
   if p_de is null or p_ate is null or p_ate < p_de then raise exception 'Período inválido.'; end if;
-  if p_ate - p_de > 92 then raise exception 'Escolha um período de até 3 meses.'; end if;
+  -- Viagens por dia aceita o histórico todo; os outros painéis, até 3 meses (embarques são muitos)
+  if p_ate - p_de > 92 and p_painel <> 'viagens' then raise exception 'Escolha um período de até 3 meses (só Viagens por dia mostra o histórico todo).'; end if;
   select situacao into sit from bi_paineis where id = p_painel;
   if sit is null or sit = 'excluido' or (sit = 'admin' and not ed) then raise exception 'Painel indisponível.'; end if;
   select * into cfg from bi_config where id = 1;
