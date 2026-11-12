@@ -88,6 +88,10 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
 .chks{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:13px}
 .chks label{display:inline-flex;gap:4px;align-items:center;margin:0;color:var(--ink)}
 .chks input{width:auto}
+.dr{cursor:pointer}.rk tr.dr:hover td{background:var(--card2)}svg rect.dr:hover{opacity:.75}table.dt tr.dr:hover td{background:var(--blubg)}
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 12px;overflow-y:auto;z-index:1000}
+.dlg{background:var(--card);border-radius:14px;max-width:1000px;width:100%;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.dlg h2{margin:0 0 8px;font-size:17px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dlg h2 .r{margin-left:auto;display:flex;gap:6px}
 .dica{font-size:12px;color:var(--mut);background:var(--yelbg);border-radius:8px;padding:6px 9px;margin:6px 0}
 </style>
 </head>
@@ -125,6 +129,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
 
   <div id="painel"></div>
 </div>
+<div id="ov" class="ov hidden"><div class="dlg"><h2><span id="ovT"></span><span class="r"><button class="btn sm" id="ovCsv">⬇ Excel</button><button class="btn sm" id="ovX">Fechar</button></span></h2><div class="note" id="ovS"></div><div id="ovC"></div></div></div>
 
 <script src="../rota/leaflet.js"></script>
 <script>
@@ -229,31 +234,34 @@ async function processarCercas(de,ate){
 
 /* ---------------- peças de desenho ---------------- */
 const kpi=(v,l,s,cl)=>'<div class="kpi '+(cl||"")+'"><b>'+v+'</b><span>'+esc(l)+'</span>'+(s?'<small>'+esc(s)+'</small>':'')+'</div>';
-function barras(lista,rot,val,fmt,max){
+const drA=(t,c,v)=>' data-dt="'+esc(t)+'" data-dc="'+esc(c)+'" data-dv="'+esc(v)+'"';
+function barras(lista,rot,val,fmt,max,dr){
   lista=(lista||[]).slice(0,max||30);const mx=Math.max(1,...lista.map(x=>+x[val]||0));fmt=fmt||nf;
   if(!lista.length)return'<div class="note">Sem dados no período.</div>';
-  return'<table class="rk">'+lista.map(x=>'<tr><td>'+esc(typeof rot==="function"?rot(x):x[rot])+'<div class="barra"><i style="width:'+(100*(+x[val]||0)/mx).toFixed(1)+'%"></i></div></td><td class="n">'+fmt(x[val])+'</td></tr>').join("")+'</table>';
+  return'<table class="rk">'+lista.map(x=>'<tr'+(dr?' class="dr"'+drA(dr.t,dr.c,x[dr.k]):'')+' title="'+(dr?"clique para ver o detalhe":"")+'"><td>'+esc(typeof rot==="function"?rot(x):x[rot])+'<div class="barra"><i style="width:'+(100*(+x[val]||0)/mx).toFixed(1)+'%"></i></div></td><td class="n">'+fmt(x[val])+'</td></tr>').join("")+'</table>';
 }
 // colunas por dia (SVG simples)
-function colunasDia(lista,campo,cor){
+function colunasDia(lista,campo,cor,dr,ideal){
   if(!lista||!lista.length)return'<div class="note">Sem dados no período.</div>';
-  const W=Math.max(320,lista.length*28),H=170,mx=Math.max(1,...lista.map(x=>+x[campo]||0)),bw=Math.max(6,W/lista.length-6);
+  ideal=+ideal||0;
+  const W=Math.max(320,lista.length*28),H=170,mx=Math.max(1,ideal,...lista.map(x=>+x[campo]||0)),bw=Math.max(6,W/lista.length-6);
   let s='<svg viewBox="0 0 '+W+' '+(H+24)+'" width="100%" height="'+(H+24)+'" preserveAspectRatio="none" role="img">';
-  lista.forEach((x,i)=>{const h=(H-14)*(+x[campo]||0)/mx,xx=i*(W/lista.length)+3;
-    s+='<rect x="'+xx+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" fill="'+(cor||"#2563eb")+'"><title>'+dBR(x.dia)+': '+nf(x[campo])+'</title></rect>';
+  lista.forEach((x,i)=>{const h=(H-14)*(+x[campo]||0)/mx,xx=i*(W/lista.length)+3,baixo=ideal&&(+x[campo]||0)<ideal;
+    s+='<rect'+(dr?' class="dr"'+drA(dr.t,dr.c,x.dia)+(dr.t2?' data-dc2="'+esc(dr.c2)+'" data-dv2="'+esc(dr.v2)+'"':''):'')+' x="'+xx+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" fill="'+(baixo?"#d97706":(cor||"#2563eb"))+'"><title>'+dBR(x.dia)+': '+nf(x[campo])+(ideal?' de '+ideal+' (ideal)':'')+(dr?' · clique para ver':'')+'</title></rect>';
     if(lista.length<=31)s+='<text x="'+(xx+bw/2)+'" y="'+(H-h-3)+'" text-anchor="middle">'+nf(x[campo])+'</text>';
     if(lista.length<=16||i%Math.ceil(lista.length/16)===0)s+='<text x="'+(xx+bw/2)+'" y="'+(H+14)+'" text-anchor="middle">'+dCurto(x.dia)+'</text>';});
+  if(ideal){const y=H-(H-14)*ideal/mx;s+='<line x1="0" x2="'+W+'" y1="'+y+'" y2="'+y+'" stroke="#0f172a" stroke-dasharray="5 4" stroke-width="1.5"/><text x="'+(W-4)+'" y="'+(y-4)+'" text-anchor="end" style="fill:#0f172a;font-weight:700">ideal '+ideal+'</text>'}
   return'<div class="tb">'+s+'</svg></div>';
 }
 // tabela com ordenação por clique no título; guarda os dados para o botão Baixar Excel
-function tabela(id,cols,linhas,nome){
+function tabela(id,cols,linhas,nome,rowDr){
   CSV={cols,linhas,nome};
   const st={k:null,d:1};
   const pinta=()=>{
     let l=linhas.slice();if(st.k){const c=cols.find(c=>c.k===st.k);l.sort((a,b)=>{const x=a[st.k],y=b[st.k];return(c.num?(+x||0)-(+y||0):String(x??"").localeCompare(String(y??""),"pt-BR"))*st.d})}
     const mostra=l.slice(0,800);
     $(id).innerHTML='<div class="tb scroll"><table class="dt"><thead><tr>'+cols.map(c=>'<th data-k="'+c.k+'">'+esc(c.t)+(st.k===c.k?(st.d>0?" ▲":" ▼"):"")+'</th>').join("")+'</tr></thead><tbody>'
-      +(mostra.length?mostra.map(r=>'<tr>'+cols.map(c=>'<td class="'+(c.num?"n":"")+(c.w?" w":"")+'">'+(c.f?c.f(r[c.k],r):esc(r[c.k]??"—"))+'</td>').join("")+'</tr>').join(""):'<tr><td colspan="'+cols.length+'" class="note">Nada no período.</td></tr>')
+      +(mostra.length?mostra.map(r=>{const d=rowDr&&rowDr(r);return'<tr'+(d?' class="dr" title="clique para ver o detalhe"'+drA(d.t,d.c,d.v):'')+'>'+cols.map(c=>'<td class="'+(c.num?"n":"")+(c.w?" w":"")+'">'+(c.f?c.f(r[c.k],r):esc(r[c.k]??"—"))+'</td>').join("")+'</tr>'}).join(""):'<tr><td colspan="'+cols.length+'" class="note">Nada no período.</td></tr>')
       +'</tbody></table></div>'+(l.length>800?'<div class="note">Mostrando 800 de '+nf(l.length)+'. O Excel leva todas.</div>':'');
     $(id).querySelectorAll("th").forEach(th=>th.onclick=()=>{st.d=st.k===th.dataset.k?-st.d:1;st.k=th.dataset.k;pinta()});
   };pinta();
@@ -266,6 +274,32 @@ $("bCsv").onclick=()=>{
   a.download=(CSV.nome||"bi")+"_"+$("fDe").value+"_a_"+$("fAte").value+".csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
 };
 
+/* ---------------- detalhe (drill-down) ---------------- */
+const NOMEC={linha:"Linha",dia:"Dia",turno:"Turno",status:"Status",empresa:"Empresa",gg:"Gerência",sentido:"Sentido",carro:"Carro"};
+const COLS={
+  viagens:[{k:"data",t:"Data",f:dBR},{k:"hora",t:"Saída"},{k:"hora_ponto",t:"Chegada no ponto"},{k:"chegada",t:"Fechou"},{k:"turno",t:"Turno"},{k:"linha",t:"Linha",w:1},
+    {k:"sentido",t:"Sentido"},{k:"carro",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"ocupacao",t:"Passageiros",num:1}],
+  embarques:[{k:"data",t:"Data",f:dBR},{k:"hora",t:"Hora"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
+    {k:"status",t:"Status"},{k:"linha",t:"Linha usada",w:1},{k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"sentido",t:"Sentido"},{k:"turno",t:"Turno"},{k:"carro",t:"Carro"},{k:"gg",t:"GG"}]};
+let CSV_TELA=null;
+async function drill(t,c,v,c2,v2){
+  const f=filtros();if(c2==="turno")f.tipolinha=v2;if(ABA==="viagens")f.so_turnos_viagens="sim";
+  let de=$("fDe").value,ate=$("fAte").value;
+  $("ovT").textContent=(t==="viagens"?"Viagens":"Embarques")+" · "+(NOMEC[c]||c)+": "+(c==="dia"?dBR(v):v)+(c2?" · "+v2:"");
+  $("ovS").textContent="Carregando…";$("ovC").innerHTML="";$("ov").classList.remove("hidden");
+  CSV_TELA=CSV;
+  try{const r=await rpc("bi_detalhe",{p_token:TOKEN,p_tipo:t,p_de:de,p_ate:ate,p_filtros:f,p_campo:c,p_valor:v});
+    $("ovS").textContent=nf(r.length)+(r.length>=3000?" (mostrando as 3.000 mais recentes)":"")+" registro(s) no período "+dBR(de)+" a "+dBR(ate)+" com os filtros da tela.";
+    tabela("ovC",COLS[t],r,"detalhe_"+t+"_"+String(v).replace(/\W+/g,"_"));
+  }catch(err){$("ovS").textContent="Erro: "+err.message}
+}
+function fecharOv(){$("ov").classList.add("hidden");CSV=CSV_TELA}
+$("ovX").onclick=fecharOv;$("ov").onclick=e=>{if(e.target.id==="ov")fecharOv()};
+$("ovCsv").onclick=()=>$("bCsv").click();
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("ov").classList.contains("hidden"))fecharOv()});
+$("painel").addEventListener("click",e=>{const el=e.target.closest("[data-dt]");if(!el)return;
+  drill(el.dataset.dt,el.dataset.dc,el.dataset.dv,el.dataset.dc2,el.dataset.dv2)});
+
 /* ---------------- Ocupação ---------------- */
 function telaOcupacao(d){
   const k=d.kpi||{};
@@ -274,12 +308,12 @@ function telaOcupacao(d){
   $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques")+kpi(nf(k.pessoas),"pessoas diferentes")+kpi(nf(k.viagens),"viagens")
     +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","média das viagens com leitura")
     +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média","sobre "+k.lugares+" lugares",k.pct>=89?"bad":k.pct<50?"warn":"ok")+'</div>'
-    +'<div class="box"><h3>Pessoas transportadas por dia</h3>'+colunasDia(d.por_dia,"embarques")+'</div>'
-    +'<div class="cols3"><div class="box"><h3>Por linha <span class="r note">clique no título da coluna para ordenar</span></h3><div id="tLinha"></div></div>'
-    +'<div><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n")+'</div>'
-    +'<div class="box"><h3>Turno → empresa</h3>'+tl.map(t=>'<details><summary><b>'+esc(t.turno)+'</b> · '+nf(t.n)+'</summary>'+barras(t.emp.sort((a,b)=>b.n-a.n),"empresa","n",null,15)+'</details>').join("")+'</div></div></div>';
+    +'<div class="box"><h3>Pessoas transportadas por dia <span class="r note">clique na barra para ver quem embarcou</span></h3>'+colunasDia(d.por_dia,"embarques",null,{t:"embarques",c:"dia"})+'</div>'
+    +'<div class="cols3"><div class="box"><h3>Por linha <span class="r note">clique na linha para ver as viagens</span></h3><div id="tLinha"></div></div>'
+    +'<div><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n",null,null,{t:"embarques",c:"status",k:"status"})+'</div>'
+    +'<div class="box"><h3>Turno → empresa</h3>'+tl.map(t=>'<details><summary><b>'+esc(t.turno)+'</b> · '+nf(t.n)+'</summary>'+barras(t.emp.sort((a,b)=>b.n-a.n),"empresa","n",null,15,{t:"embarques",c:"empresa",k:"empresa"})+'</details>').join("")+'</div></div></div>';
   tabela("tLinha",[{k:"linha",t:"Linha",w:1},{k:"viagens",t:"Viagens",num:1},{k:"embarques",t:"Embarques",num:1},{k:"pessoas",t:"Pessoas",num:1},
-    {k:"media_ocup",t:"Média por viagem",num:1},{k:"pct",t:"Ocupação %",num:1,f:v=>v==null?"—":'<span class="chip '+(v>=89?"c-bad":v<50?"c-warn":"c-ok")+'">'+nf(v)+'%</span>'}],d.por_linha||[],"ocupacao_por_linha");
+    {k:"media_ocup",t:"Média por viagem",num:1},{k:"pct",t:"Ocupação %",num:1,f:v=>v==null?"—":'<span class="chip '+(v>=89?"c-bad":v<50?"c-warn":"c-ok")+'">'+nf(v)+'%</span>'}],d.por_linha||[],"ocupacao_por_linha",r=>({t:"viagens",c:"linha",v:r.linha}));
 }
 
 /* ---------------- Horários de entrada e saída ---------------- */
@@ -288,6 +322,7 @@ const STCOR={"no horário":"#16a34a","adiantado":"#d97706","atrasado":"#dc2626"}
 function telaHorarios(d){
   if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma cerca cadastrada ainda. Vá na aba <b>Cercas dos turnos</b>, desenhe a cerca e informe o horário de chegada, de saída e a tolerância.</div>';return}
   const L=d.linhas||[],c={};L.forEach(x=>c[x.status]=(c[x.status]||0)+1);
+  if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem dos turnos das cercas nesse período.<br>Confira: (1) se a coleta da TFleet está em dia (⚙ Gerenciar → Coleta da TFleet); (2) se os turnos marcados na cerca são os mesmos das viagens. Quando houver viagens, o horário aparece também para os dias passados, porque o Monitor guarda o GPS.</div>';return}
   const comHora=L.filter(x=>x.hora_real),pctOk=comHora.length?Math.round(100*(c["no horário"]||0)/comHora.length):null;
   const mon=L.filter(x=>x.origem==="Monitor").length;
   $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens com regra de horário")
@@ -332,9 +367,9 @@ function telaFora(d){
   const k=d.kpi||{};const gg={};(d.por_gg||[]).forEach(x=>{(gg[x.gg]=gg[x.gg]||{gg:x.gg,n:0}).n+=x.n});
   $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques no período")+kpi(nf(k.fora),"fora de rota ou não regulares",k.embarques?Math.round(100*k.fora/k.embarques)+"% dos embarques":"","warn")
     +kpi(nf(k.pessoas),"pessoas")+'</div>'
-    +'<div class="cols"><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n")+'</div>'
-    +'<div class="box"><h3>Gerência (GG)</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40)+'</div></div></div>'
-    +'<div class="box"><h3>Onde essas pessoas embarcaram</h3><div id="mapaFora"></div><div class="leg"><span><i style="background:#dc2626"></i>não cadastrado</span><span><i style="background:#d97706"></i>itinerante</span><span><i style="background:#2563eb"></i>regular em outra linha</span><span><i style="background:#64748b"></i>inativo</span></div></div>'
+    +'<div class="cols"><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n",null,null,{t:"embarques",c:"status",k:"status"})+'</div>'
+    +'<div class="box"><h3>Gerência (GG)</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40,{t:"embarques",c:"gg",k:"gg"})+'</div></div></div>'
+    +'<div class="box"><h3>Onde essas pessoas embarcaram'+(d.pontos_fora_area?' <span class="r note">'+nf(d.pontos_fora_area)+' ponto(s) com GPS errado (fora de Paragominas e Tomé-Açu/Quatro Bocas) não aparecem</span>':'')+'</h3><div id="mapaFora"></div><div class="leg"><span><i style="background:#dc2626"></i>não cadastrado</span><span><i style="background:#d97706"></i>itinerante</span><span><i style="background:#2563eb"></i>regular em outra linha</span><span><i style="background:#64748b"></i>inativo</span></div></div>'
     +'<div class="box"><h3>Pessoas <span class="r note">linha de cadastro × linhas que usou</span></h3><div id="tFora"></div></div>';
   tabela("tFora",[{k:"status",t:"Status"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
     {k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"linhas_usadas",t:"Linhas que usou",w:1},{k:"vezes",t:"Embarques",num:1},{k:"ultimo",t:"Último",f:dBR}],d.lista||[],"fora_de_rota");
@@ -345,14 +380,18 @@ function telaFora(d){
 
 /* ---------------- Viagens por dia ---------------- */
 function telaViagens(d){
-  const k=d.kpi||{};const dias={};(d.por_dia||[]).forEach(x=>{(dias[x.dia]=dias[x.dia]||{dia:x.dia,n:0}).n+=x.n});
-  const turnos=[...new Set((d.por_dia||[]).map(x=>x.turno))];
-  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.viagens),"viagens abertas")+kpi(nf(k.dias),"dias com viagem")+kpi(nf(k.media_dia),"média por dia")+'</div>'
-    +'<div class="box"><h3>Todas as viagens por dia</h3>'+colunasDia(Object.values(dias).sort((a,b)=>a.dia.localeCompare(b.dia)),"n")+'</div>'
-    +'<div class="cols">'+turnos.slice(0,8).map(t=>{const l=(d.por_dia||[]).filter(x=>x.turno===t);const tt=(d.por_turno||[]).find(x=>x.turno===t)||{};
-      return'<div class="box"><h3>'+esc(t)+' <span class="r note">média '+nf(tt.media_dia)+' por dia</span></h3>'+colunasDia(l,"n","#0891b2")+'</div>'}).join("")+'</div>'
-    +'<div class="box"><h3>Por turno</h3><div id="tVg"></div></div>';
-  tabela("tVg",[{k:"turno",t:"Turno"},{k:"n",t:"Viagens",num:1},{k:"media_dia",t:"Média por dia",num:1}],d.por_turno||[],"viagens_por_turno");
+  const ideal=d.ideal||{},turnos=d.turnos||[];
+  const k=d.kpi||{};
+  const card=t=>{const tt=(d.por_turno||[]).find(x=>x.turno===t)||{},id=+ideal[t]||0,m=+tt.media_dia||0;
+    return kpi(tt.media_dia==null?"—":nf(tt.media_dia),t+" · média por dia",id?"ideal "+id+" · "+(m>=id?"ok":"faltam "+nf(Math.round((id-m)*10)/10)+" por dia"):"ideal não definido (⚙ Gerenciar)",id?(m>=id?"ok":m>=id*.9?"warn":"bad"):"")};
+  $("painel").innerHTML='<div class="kpis">'+turnos.map(card).join("")+kpi(nf(k.viagens),"viagens no período",nf(k.dias)+" dia(s)")+'</div>'
+    +'<div class="faixa info">Só '+esc(turnos.join(", "))+' (muda em ⚙ Gerenciar). Barra laranja = dia abaixo do ideal. Clique na barra para ver as viagens que abriram no dia.</div>'
+    +turnos.map(t=>{const l=(d.por_dia||[]).filter(x=>x.turno===t);
+      return'<div class="box"><h3>'+esc(t)+'</h3>'+colunasDia(l,"n","#0891b2",{t:"viagens",c:"dia",t2:1,c2:"turno",v2:t},ideal[t])+'</div>'}).join("")
+    +'<div class="box"><h3>Por dia</h3><div id="tVg"></div></div>';
+  const dias={};(d.por_dia||[]).forEach(x=>{(dias[x.dia]=dias[x.dia]||{dia:x.dia,total:0})[x.turno]=x.n;dias[x.dia].total+=x.n});
+  tabela("tVg",[{k:"dia",t:"Dia",f:dBR}].concat(turnos.map(t=>({k:t,t:t+(ideal[t]?" (ideal "+ideal[t]+")":""),num:1,f:v=>{const id=+ideal[t]||0;return v==null?"0":(id&&v<id?'<span class="chip c-warn">'+nf(v)+'</span>':nf(v))}}))).concat([{k:"total",t:"Total",num:1}]),
+    Object.values(dias).sort((a,b)=>b.dia.localeCompare(a.dia)),"viagens_por_dia",r=>({t:"viagens",c:"dia",v:r.dia}));
 }
 
 /* ---------------- Custo por pessoa ---------------- */
@@ -493,11 +532,33 @@ async function telaGerenciar(){
     +'<label>Valor por pessoa (R$ por embarque, painel de custo)</label><input type="number" id="aVal" min="0" step="0.01" value="'+(cf.valor_pessoa??40.9)+'">'
     +'<label>Buraco de GPS que deixa o horário incerto (min)</label><input type="number" id="aGap" min="1" value="'+(cf.gap_min||5)+'">'
     +'<div style="margin-top:10px"><button class="btn p" id="aSalv">Salvar ajustes</button></div><div id="aMsg" class="msg"></div></div>'
+    +'<div class="box form" style="max-width:720px"><h3>Viagens por dia</h3><div class="note">Turnos que aparecem no painel e o ideal de viagens por dia de cada um.</div>'
+    +'<div id="aVt">'+[...new Set(((OPC&&OPC.tipolinhas)||[]).concat(cf.viagens_turnos||[]))].map(t=>'<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--ink);flex:1"><input type="checkbox" style="width:auto" data-vt="'+esc(t)+'"'+((cf.viagens_turnos||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label><input type="number" min="0" placeholder="ideal/dia" style="width:110px" data-vi="'+esc(t)+'" value="'+esc((cf.viagens_ideal||{})[t]??"")+'"></div>').join("")+'</div></div>'
+    +'<div class="box form" style="max-width:720px"><h3>Áreas válidas dos pontos de embarque</h3><div class="note">Pontos fora destas áreas são GPS errado e não aparecem no mapa. Uma área por linha: nome; lat mín; lat máx; lon mín; lon máx</div>'
+    +'<textarea id="aAreas" rows="4" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:13px monospace">'+esc((cf.areas||[]).map(a=>[a.nome,a.lat_min,a.lat_max,a.lon_min,a.lon_max].join("; ")).join("\n"))+'</textarea>'
+    +'<div style="margin-top:8px"><button class="btn p" id="aSalv2">Salvar viagens e áreas</button></div><div id="aMsg2" class="msg"></div></div>'
+    +'<div class="box"><h3>Coleta da TFleet <span class="r"><button class="btn sm p" id="bColeta">Coletar agora</button></span></h3><div id="coletaSt" class="note">Carregando…</div></div>'
     +'<div class="box"><h3>Acesso</h3><div class="note">Entram no BI: administradores da Central e quem tem o painel <b>bi</b> ou <b>lotacao</b> marcado na Gestão de acessos. Editam (este menu e as cercas): administradores e quem tem <b>bi: editar</b>. A senha de gestores também edita.</div></div>';
   $("painel").querySelectorAll("tr[data-id]").forEach(tr=>tr.querySelector(".btn").onclick=async()=>{
     const [o,t]=tr.querySelectorAll("input"),s=tr.querySelector("select");
     try{await rpc("bi_painel_salvar",{p_token:TOKEN,p_id:tr.dataset.id,p_titulo:t.value,p_ordem:+o.value,p_situacao:s.value});
       INI=await rpc("bi_inicio",{p_token:TOKEN});montarAbas()}catch(err){alert(err.message)}});
+  $("aSalv2").onclick=async()=>{
+    const vt=[...document.querySelectorAll("[data-vt]:checked")].map(x=>x.dataset.vt),vi={};
+    document.querySelectorAll("[data-vi]").forEach(x=>{if(x.value!=="")vi[x.dataset.vi]=+x.value});
+    const areas=[];for(const ln of $("aAreas").value.split("\n")){if(!ln.trim())continue;const p=ln.split(";").map(x=>x.trim());
+      if(p.length<5||p.slice(1).some(x=>isNaN(+x.replace(",",".")))){msg("aMsg2","Linha de área inválida: "+ln,"err");return}
+      areas.push({nome:p[0],lat_min:+p[1].replace(",","."),lat_max:+p[2].replace(",","."),lon_min:+p[3].replace(",","."),lon_max:+p[4].replace(",",".")})}
+    if(!vt.length){msg("aMsg2","Marque pelo menos um turno.","err");return}
+    try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{viagens_turnos:vt,viagens_ideal:vi,areas}});msg("aMsg2","Salvo.","ok")}catch(err){msg("aMsg2",err.message,"err")}};
+  const coleta=async()=>{try{const c=await rpc("bi_coleta_status",{p_token:TOKEN});
+      $("coletaSt").innerHTML=(c.configurada?'':'<div class="faixa warn">Falta colocar o acesso e o token da TFleet (passo 3 do bi-coleta.sql).</div>')
+        +'Última viagem gravada: <b>'+(c.ultima_viagem?dtBR(c.ultima_viagem):"—")+'</b> · último embarque: <b>'+(c.ultimo_embarque?dtBR(c.ultimo_embarque):"—")+'</b>'
+        +'<table class="dt" style="margin-top:6px"><thead><tr><th>Quando</th><th>API</th><th>Resultado</th><th>Quem</th></tr></thead><tbody>'
+        +(c.log||[]).map(l=>'<tr><td>'+dtBR(l.disparado_em)+'</td><td>'+esc(l.endpoint)+'</td><td>'+(!l.processado_em?'<span class="chip c-blu">aguardando</span>':l.erro?'<span class="chip c-bad">erro</span> '+esc(l.erro):'<span class="chip c-ok">ok</span> '+nf(l.linhas)+' linhas')+'</td><td>'+esc(l.por||"")+'</td></tr>').join("")+'</tbody></table>';
+    }catch(err){$("coletaSt").innerHTML=/bi_coleta_status/.test(err.message)?'A coleta pelo Supabase ainda não foi instalada (rodar <b>bi-coleta.sql</b>).':'Erro: '+esc(err.message)}};
+  coleta();
+  $("bColeta").onclick=async()=>{try{const r=await rpc("bi_coleta_agora",{p_token:TOKEN});alert(r==="ok"?"Coleta disparada. O resultado aparece aqui em 1 a 2 minutos.":r);setTimeout(coleta,70000);coleta()}catch(err){alert(err.message)}};
   $("aSalv").onclick=async()=>{try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{lugares:+$("aLug").value,valor_pessoa:+$("aVal").value,gap_min:+$("aGap").value}});msg("aMsg","Salvo.","ok")}catch(err){msg("aMsg",err.message,"err")}};
 }
 
