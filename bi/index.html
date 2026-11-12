@@ -454,17 +454,28 @@ async function mapaViagem(x){
   if(poly&&poly.length>=3){L.polygon(poly,{color:r.cerca.cor||"#2563eb",weight:2,fillOpacity:.2}).bindTooltip("Cerca: "+r.cerca.nome).addTo(MAPA_OV);b.push(...poly)}
   const P=(r.pontos||[]).map(p=>({ll:[p.lat,p.lon],h:minLocal(p.ts),m:(Date.parse(p.ts)-base)/60000}));
   if(P.length){L.polyline(P.map(p=>p.ll),{color:"#facc15",weight:3,opacity:.9}).addTo(MAPA_OV);
-    P.forEach(p=>{const antes=p.m<prev;L.circleMarker(p.ll,{radius:5,color:"#fff",weight:1.5,fillColor:antes?"#38bdf8":"#a78bfa",fillOpacity:1})
+    P.forEach(p=>{const antes=p.m<prev,den=poly&&dentroPoli(p.ll,poly);L.circleMarker(p.ll,{radius:den?6:5,color:"#fff",weight:1.5,fillColor:den?"#22c55e":antes?"#38bdf8":"#a78bfa",fillOpacity:1})
       .bindTooltip(p.h+" · "+(poly?(()=>{const d=distCerca(p.ll,poly);return d===0?"dentro da cerca":d.toFixed(2).replace(".",",")+" km da cerca"})():""))
       .addTo(MAPA_OV);b.push(p.ll)})}
-  (r.eventos||[]).forEach(e=>{const q=P.reduce((m,p)=>Math.abs(Date.parse(e.ts)-base-p.m*60000)<Math.abs(Date.parse(e.ts)-base-m.m*60000)?p:m,P[0]||null);
-    if(q)L.marker(q.ll,{icon:L.divIcon({className:"",html:'<div style="background:'+(e.tipo==="entrada"?"#16a34a":"#dc2626")+';color:#fff;font:700 11px system-ui;padding:3px 6px;border-radius:6px;white-space:nowrap;border:2px solid #fff;transform:translate(-50%,-130%)">'+(e.tipo==="entrada"?"Entrou ":"Saiu ")+minLocal(e.ts)+'</div>',iconSize:[0,0]})}).addTo(MAPA_OV)});
+  // passagens: junta entrada e a saída seguinte numa linha (quanto tempo ficou dentro)
+  const EV=(r.eventos||[]).slice().sort((a,b)=>Date.parse(a.ts)-Date.parse(b.ts)),pas=[];
+  EV.forEach(e=>{if(e.tipo==="entrada")pas.push({ent:e.ts});else{const u=pas[pas.length-1];if(u&&!u.sai)u.sai=e.ts;else pas.push({sai:e.ts})}});
+  const perto=ts=>P.reduce((m,p)=>Math.abs(Date.parse(ts)-base-p.m*60000)<Math.abs(Date.parse(ts)-base-m.m*60000)?p:m,P[0]);
+  const etiqueta=(ll,txt,cor,emb)=>L.marker(ll,{icon:L.divIcon({className:"",html:'<div style="background:'+cor+';color:#fff;font:700 11px system-ui;padding:3px 6px;border-radius:6px;white-space:nowrap;border:2px solid #fff;transform:translate(-50%,'+(emb?'30%':'-130%')+')">'+txt+'</div>',iconSize:[0,0]})}).addTo(MAPA_OV);
+  if(P.length)pas.forEach(q=>{
+    const dur=q.ent&&q.sai?Math.round((Date.parse(q.sai)-Date.parse(q.ent))/60000):null;
+    if(q.ent&&q.sai&&dur<=1)etiqueta(perto(q.ent).ll,"Só passou "+minLocal(q.ent),"#d97706");
+    else{if(q.ent)etiqueta(perto(q.ent).ll,"Entrou "+minLocal(q.ent),"#16a34a");if(q.sai)etiqueta(perto(q.sai).ll,"Saiu "+minLocal(q.sai),"#dc2626",1)}});
+  const listaPas=pas.map(q=>q.ent&&q.sai?"entrou "+minLocal(q.ent)+" e saiu "+minLocal(q.sai)+" ("+Math.round((Date.parse(q.sai)-Date.parse(q.ent))/60000)+" min dentro)"
+    :q.ent?"entrou "+minLocal(q.ent)+" (não saiu até "+(P.length?P[P.length-1].h:"o fim da janela")+")":"saiu "+minLocal(q.sai)+" (já estava dentro antes da janela)");
   let txt="";
   if(P.length){const noPrev=P.reduce((m,p)=>Math.abs(p.m-prev)<Math.abs(m.m-prev)?p:m,P[0]);
     L.marker(noPrev.ll,{icon:L.divIcon({className:"",html:'<div style="background:#0f172a;color:#fff;font:700 11px system-ui;padding:3px 6px;border-radius:6px;white-space:nowrap;border:2px solid #fff;transform:translate(-50%,30%)">Previsto '+x.prevista+'</div>',iconSize:[0,0]})}).addTo(MAPA_OV);
     const d=poly?distCerca(noPrev.ll,poly):null;
     txt="No horário previsto ("+x.prevista+") o carro estava "+(d==null?"no ponto preto":d===0?"dentro da cerca":"a "+d.toFixed(2).replace(".",",")+" km da cerca")+" (posição das "+noPrev.h+"). ";
-    txt+=P.length+" posição(ões) do Monitor entre "+P[0].h+" e "+P[P.length-1].h+". Azul = antes do previsto, lilás = depois. Passe o mouse num ponto para ver a hora e a distância.";
+    txt+="Na cerca nesta janela: "+(listaPas.length?listaPas.join("; "):"nenhuma entrada ou saída")+". ";
+    txt+=P.length+" posição(ões) do Monitor entre "+P[0].h+" e "+P[P.length-1].h+". Verde = dentro da cerca, azul = fora antes do previsto, lilás = fora depois. Passe o mouse num ponto para ver a hora e a distância.";
+    if(pas.some(q=>q.ent&&q.sai&&(Date.parse(q.sai)-Date.parse(q.ent))<=60000))txt+=" \"Só passou\" = o carro cruzou a cerca sem parar nela: se ele deveria parar ali, a cerca pode estar no lugar errado ou pequena demais.";
     if(Math.abs(noPrev.m-prev)>5)txt+=" Atenção: não há posição perto do horário previsto (o celular pode ter ficado sem mandar GPS).";
   }else txt="Sem posições do Monitor para o carro "+x.frota+" nessa janela. Esse carro pode não ter o app Monitor ou o celular estava desligado.";
   $("ovMapN").textContent=txt;
