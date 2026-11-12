@@ -93,6 +93,18 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
 .dlg{background:var(--card);border-radius:14px;max-width:1000px;width:100%;padding:14px 16px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
 .dlg h2{margin:0 0 8px;font-size:17px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.dlg h2 .r{margin-left:auto;display:flex;gap:6px}
 .dica{font-size:12px;color:var(--mut);background:var(--yelbg);border-radius:8px;padding:6px 9px;margin:6px 0}
+.pilha{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#eef2f7}.pilha i{display:block;height:100%}
+.colw{overflow-x:auto;padding:18px 4px 0 34px}
+.plot{position:relative;height:200px;display:flex;align-items:flex-end;justify-content:center;gap:3px;border-bottom:1px solid #94a3b8}
+.plot .c{flex:1 1 0;max-width:60px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;z-index:1}
+.plot .c i{display:block;width:100%;border-radius:3px 3px 0 0;min-height:1px}
+.plot .c b{font-size:11px;font-weight:600;color:#334155;margin-bottom:2px;white-space:nowrap}
+.plot .c.dr:hover i{filter:brightness(1.15)}
+.plot .grade{position:absolute;left:0;right:0;border-top:1px dashed #e2e8f0}
+.plot .grade span{position:absolute;left:-34px;top:-7px;font-size:10px;color:#94a3b8;width:30px;text-align:right}
+.plot .ideal{position:absolute;left:0;right:0;border-top:2px dashed #0f172a;z-index:2;pointer-events:none}
+.plot .ideal span{position:absolute;right:0;top:-17px;font-size:11px;font-weight:700;background:#fff;padding:0 4px}
+.eixo{display:flex;justify-content:center;gap:3px}.eixo span{flex:1 1 0;max-width:60px;font-size:10px;color:#64748b;text-align:center;white-space:nowrap;overflow:visible}
 </style>
 </head>
 <body>
@@ -116,6 +128,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
   <nav class="tabs" id="tabs"></nav>
 
   <div class="bar" id="filtros">
+    <label>Período <select id="fPer"><option value="">escolher…</option><option value="0">Hoje</option><option value="6">Últimos 7 dias</option><option value="29">Últimos 30 dias</option><option value="89">Últimos 90 dias</option><option value="mes">Este mês</option><option value="mesp">Mês passado</option><option value="ano">Este ano</option><option value="365">Últimos 12 meses</option><option value="tudo">Todo o histórico</option></select></label>
     <label>De <input type="date" id="fDe"></label>
     <label>Até <input type="date" id="fAte"></label>
     <label>Linha <input id="fLinha" list="dlLinhas" placeholder="Todas"></label>
@@ -206,6 +219,14 @@ function montarAbas(){
 }
 function filtros(){return{linha:$("fLinha").value.trim()||null,tipolinha:$("fTurno").value||null,sentido:$("fSent").value||null}}
 $("bAtual").onclick=()=>carregar();
+$("fPer").onchange=()=>{const v=$("fPer").value,h=hoje();if(!v)return;let de=h,ate=h;
+  if(/^\d+$/.test(v))de=menosDias(h,+v);
+  else if(v==="mes")de=h.slice(0,8)+"01";
+  else if(v==="mesp"){const d=new Date(Date.parse(h.slice(0,8)+"01T12:00:00Z")-864e5);ate=d.toISOString().slice(0,10);de=ate.slice(0,8)+"01"}
+  else if(v==="ano")de=h.slice(0,5)+"01-01";
+  else if(v==="tudo")de=(INI&&INI.primeiro_dia)||menosDias(h,365);
+  $("fDe").value=de;$("fAte").value=ate;carregar()};
+["fDe","fAte"].forEach(i=>$(i).addEventListener("change",()=>{$("fPer").value=""}));
 ["fDe","fAte","fTurno","fSent"].forEach(i=>$(i).addEventListener("change",()=>carregar()));
 $("fLinha").addEventListener("change",()=>carregar());
 
@@ -217,6 +238,8 @@ async function carregar(){
   if(ABA==="gerenciar")return telaGerenciar();
   if(!ABA){$("painel").innerHTML='<div class="vazio">Nenhum painel liberado para você.</div>';return}
   $("painel").innerHTML='<div class="vazio">Carregando…</div>';
+  if(ABA==="viagens"&&$("fAte").value&&$("fDe").value&&(Date.parse($("fAte").value)-Date.parse($("fDe").value))/864e5<6){
+    $("fDe").value=menosDias($("fAte").value,29);$("fPer").value="";}
   const de=$("fDe").value,ate=$("fAte").value;
   try{
     let aviso="";
@@ -253,15 +276,21 @@ function barras(lista,rot,val,fmt,max,dr){
 // colunas por dia (SVG simples)
 function colunasDia(lista,campo,cor,dr,ideal){
   if(!lista||!lista.length)return'<div class="note">Sem dados no período.</div>';
-  ideal=+ideal||0;
-  const W=Math.max(320,lista.length*28),H=170,mx=Math.max(1,ideal,...lista.map(x=>+x[campo]||0)),bw=Math.max(6,W/lista.length-6);
-  let s='<svg viewBox="0 0 '+W+' '+(H+24)+'" width="100%" height="'+(H+24)+'" preserveAspectRatio="none" role="img">';
-  lista.forEach((x,i)=>{const h=(H-14)*(+x[campo]||0)/mx,xx=i*(W/lista.length)+3,baixo=ideal&&(+x[campo]||0)<ideal;
-    s+='<rect'+(dr?' class="dr"'+drA(dr.t,dr.c,x.dia)+(dr.t2?' data-dc2="'+esc(dr.c2)+'" data-dv2="'+esc(dr.v2)+'"':''):'')+' x="'+xx+'" y="'+(H-h)+'" width="'+bw+'" height="'+h+'" rx="2" fill="'+(baixo?"#d97706":(cor||"#2563eb"))+'"><title>'+dBR(x.dia)+': '+nf(x[campo])+(ideal?' de '+ideal+' (ideal)':'')+(dr?' · clique para ver':'')+'</title></rect>';
-    if(lista.length<=31)s+='<text x="'+(xx+bw/2)+'" y="'+(H-h-3)+'" text-anchor="middle">'+nf(x[campo])+'</text>';
-    if(lista.length<=16||i%Math.ceil(lista.length/16)===0)s+='<text x="'+(xx+bw/2)+'" y="'+(H+14)+'" text-anchor="middle">'+dCurto(x.dia)+'</text>';});
-  if(ideal){const y=H-(H-14)*ideal/mx;s+='<line x1="0" x2="'+W+'" y1="'+y+'" y2="'+y+'" stroke="#0f172a" stroke-dasharray="5 4" stroke-width="1.5"/><text x="'+(W-4)+'" y="'+(y-4)+'" text-anchor="end" style="fill:#0f172a;font-weight:700">ideal '+ideal+'</text>'}
-  return'<div class="tb">'+s+'</svg></div>';
+  ideal=+ideal||0;let porMes=false;
+  if(lista.length>92){// período longo: uma barra por mês com a média por dia
+    const g={};lista.forEach(x=>{const m=String(x.dia).slice(0,7);(g[m]=g[m]||{dia:m+"-01",s:0,n:0});g[m].s+=+x[campo]||0;g[m].n++});
+    lista=Object.values(g).sort((a,b)=>a.dia.localeCompare(b.dia)).map(m=>({dia:m.dia,[campo]:Math.round(10*m.s/m.n)/10,_dias:m.n}));porMes=true;dr=null}
+  const mx=Math.max(1,ideal,...lista.map(x=>+x[campo]||0))*1.12,n=lista.length,rot=n<=20?1:Math.ceil(n/20),mostraV=n<=45;
+  const media=lista.reduce((a,x)=>a+(+x[campo]||0),0)/n;
+  let h='<div class="colw"><div class="plot" style="min-width:'+(n*12)+'px">';
+  [.25,.5,.75,1].forEach(f=>h+='<div class="grade" style="bottom:'+(f*100)+'%"><span>'+nf(Math.round(mx*f))+'</span></div>');
+  lista.forEach((x,i)=>{const v=+x[campo]||0,baixo=ideal&&v<ideal;
+    h+='<div class="c'+(dr?' dr':'')+'"'+(dr?drA(dr.t,dr.c,x.dia)+(dr.t2?' data-dc2="'+esc(dr.c2)+'" data-dv2="'+esc(dr.v2)+'"':''):'')+' title="'+esc((porMes?"mês "+x.dia.slice(5,7)+"/"+x.dia.slice(0,4)+" ("+x._dias+" dias), média por dia":dBR(x.dia))+': '+nf(v)+(ideal?' (ideal '+ideal+')':'')+(dr?' · clique para ver':''))+'">'
+      +(mostraV?'<b>'+nf(v)+'</b>':'')+'<i style="height:'+(100*v/mx).toFixed(1)+'%;background:'+(baixo?"#f59e0b":(cor||"#2563eb"))+'"></i></div>'});
+  if(ideal)h+='<div class="ideal" style="bottom:'+(100*ideal/mx).toFixed(1)+'%"></div>';
+  h+='</div><div class="eixo" style="min-width:'+(n*12)+'px">'+lista.map((x,i)=>'<span>'+(i%rot===0?(porMes?x.dia.slice(5,7)+"/"+x.dia.slice(2,4):dCurto(x.dia)):'')+'</span>').join("")+'</div></div>'
+    +'<div class="note">'+(porMes?'Período longo: cada barra é um mês, com a média por dia. Para clicar e ver as viagens, escolha até 3 meses. · ':'')+n+(porMes?' mês(es)':' dia(s)')+' · média '+nf(Math.round(media*10)/10)+' por dia'+(ideal?' · linha tracejada = ideal '+nf(ideal)+' · '+lista.filter(x=>(+x[campo]||0)<ideal).length+(porMes?' mês(es)':' dia(s)')+' abaixo do ideal (barra laranja)':'')+'</div>';
+  return h;
 }
 // tabela com ordenação por clique no título; guarda os dados para o botão Baixar Excel
 function tabela(id,cols,linhas,nome,rowDr){
@@ -342,14 +371,45 @@ function telaHorarios(d){
     +kpi(nf(mon),"medidas pelo Monitor",L.length?Math.round(100*mon/L.length)+"% das viagens":"")+'</div>'
     +'<div class="faixa info">A hora vem da <b>cerca</b> (GPS do Monitor, ±1 min) quando o carro tem Monitor. Sem Monitor, usa a hora da <b>TFleet</b>: chegada no ponto (IDA) ou abertura da viagem (VOLTA). Nada é estimado ou sorteado: sem hora fica "sem dado".</div>'
     +['IDA','VOLTA'].filter(s=>!$("fSent").value||$("fSent").value===s).map(s=>'<div class="box"><h3>'+(s==="IDA"?"Chegada na cerca (IDA)":"Saída da cerca (VOLTA)")+'</h3>'
-       +'<div class="leg"><span><i style="background:#cbd5e1;border-radius:2px"></i>faixa da tolerância</span><span><i style="background:#0f172a;border-radius:0;width:3px"></i>previsto</span><span><i style="background:#16a34a"></i>no horário</span><span><i style="background:#d97706"></i>adiantado</span><span><i style="background:#dc2626"></i>atrasado</span></div>'
-       +graficoFaixas(L.filter(x=>x.tipo===s&&x.hora_real))+'</div>').join("")
+       +'<div class="note" style="margin-bottom:6px">Uma linha por rota. A barra conta as viagens: <b style="color:#16a34a">verde</b> no horário (dentro da tolerância), <b style="color:#d97706">laranja</b> adiantada, <b style="color:#dc2626">vermelho</b> atrasada, <b style="color:#94a3b8">cinza</b> sem hora. Clique na rota para ver viagem por viagem.</div>'
+       +resumoRotas(L.filter(x=>x.tipo===s),s)+'</div>').join("")
     +'<div class="box"><h3>Viagens <span class="r note">clique no título da coluna para ordenar</span></h3><div id="tHor"></div></div>';
   tabela("tHor",[{k:"data",t:"Data",f:dBR},{k:"cerca",t:"Cerca"},{k:"regra",t:"Regra"},{k:"linha",t:"Linha",w:1},{k:"tipo",t:"Sentido"},{k:"frota",t:"Carro"},
     {k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"prevista",t:"Previsto"},{k:"hora_real",t:"Hora real",f:(v,r)=>esc(v||"—")+(r.monitor_gap>5?' <span class="note" title="o celular ficou '+r.monitor_gap+' min sem mandar posição antes">±'+Math.round(r.monitor_gap)+'min</span>':"")},
     {k:"origem",t:"De onde veio"},{k:"dif",t:"Diferença (min)",num:1,f:v=>v==null?"—":(v>0?"+":"")+v},{k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},
     {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],L,"horarios_entrada_saida");
 }
+// resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
+let HR_GRUPOS={};
+const difTxt=(v,s)=>v==null?"—":v===0?"no minuto previsto":Math.abs(v)+" min "+(v>0?"depois":"antes");
+function resumoRotas(L,sent){
+  if(!L.length)return'<div class="note">Nenhuma viagem nesse período e filtro.</div>';
+  const g={};L.forEach(x=>{const k=sent+"|"+x.linha+"|"+x.prevista;(g[k]=g[k]||{k,linha:x.linha,prev:x.prevista,ta:x.tol_antes,td:x.tol_depois,v:[]}).v.push(x)});
+  const rows=Object.values(g).map(r=>{const n=r.v.length,c={ok:0,ad:0,at:0,sd:0};const difs=[];
+    r.v.forEach(x=>{if(x.status==="no horário")c.ok++;else if(x.status==="adiantado")c.ad++;else if(x.status==="atrasado")c.at++;else c.sd++;if(x.dif!=null)difs.push(x.dif)});
+    r.n=n;r.c=c;r.media=difs.length?Math.round(difs.reduce((a,b)=>a+b,0)/difs.length):null;
+    r.pior=difs.length?difs.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a):null;r.prob=(c.ad+c.at)/Math.max(1,n-c.sd);return r})
+    .sort((a,b)=>b.prob-a.prob||Math.abs(b.pior||0)-Math.abs(a.pior||0));
+  rows.forEach(r=>HR_GRUPOS[r.k]=r);
+  const seg=(n,tot,cor)=>n?'<i style="width:'+(100*n/tot).toFixed(1)+'%;background:'+cor+'" title="'+n+'"></i>':'';
+  return'<div class="tb"><table class="dt"><thead><tr><th>Rota</th><th>Previsto</th><th class="n">Viagens</th><th style="min-width:170px">Situação</th><th>Em média</th><th>Pior caso</th></tr></thead><tbody>'
+    +rows.map(r=>'<tr class="dr" data-hr="'+esc(r.k)+'" title="clique para ver viagem por viagem"><td class="w"><b>'+esc(r.linha)+'</b></td>'
+      +'<td>'+esc(r.prev)+'<div class="note">tolerância −'+r.ta+'/+'+r.td+' min</div></td><td class="n">'+r.n+'</td>'
+      +'<td><div class="pilha">'+seg(r.c.ok,r.n,"#16a34a")+seg(r.c.ad,r.n,"#d97706")+seg(r.c.at,r.n,"#dc2626")+seg(r.c.sd,r.n,"#cbd5e1")+'</div>'
+      +'<div class="note">'+[r.c.ok&&r.c.ok+" no horário",r.c.ad&&r.c.ad+" adiant.",r.c.at&&r.c.at+" atras.",r.c.sd&&r.c.sd+" sem hora"].filter(Boolean).join(" · ")+'</div></td>'
+      +'<td>'+(r.media==null?"—":'<span class="chip '+(r.media<-r.ta?"c-warn":r.media>r.td?"c-bad":"c-ok")+'">'+difTxt(r.media)+'</span>')+'</td>'
+      +'<td>'+(r.pior==null?"—":esc(difTxt(r.pior)))+'</td></tr>').join("")+'</tbody></table></div>';
+}
+$("painel").addEventListener("click",e=>{const el=e.target.closest("[data-hr]");if(!el)return;const r=HR_GRUPOS[el.dataset.hr];if(!r)return;
+  const ida=r.k.startsWith("IDA");
+  $("ovT").textContent=r.linha+" · "+(ida?"chegada":"saída")+" prevista "+r.prev;
+  $("ovS").textContent=r.n+" viagem(ns). Tolerância: até "+r.ta+" min antes e "+r.td+" min depois.";
+  CSV_TELA=CSV;$("ov").classList.remove("hidden");
+  const lin=r.v.map(x=>Object.assign({},x,{frase:x.hora_real?(ida?"Chegou":"Saiu")+" às "+x.hora_real+" — "+difTxt(x.dif)+" do previsto":(x.status==="sem passagem na cerca"?"Tem Monitor, mas não passou pela cerca":"Sem hora (sem Monitor e sem hora da TFleet)")}));
+  tabela("ovC",[{k:"data",t:"Data",f:dBR},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"frase",t:"O que aconteceu",w:1},
+    {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"origem",t:"Hora veio de"},{k:"ocupacao",t:"Passageiros",num:1}],
+    lin.sort((a,b)=>String(b.data).localeCompare(String(a.data))),"horarios_"+r.linha.replace(/\W+/g,"_"));
+});
 // uma linha por rota: faixa cinza = previsto ± tolerância, traço = previsto, pontos = horas reais
 function graficoFaixas(L){
   if(!L.length)return'<div class="note">Nenhuma viagem com hora nesse período e filtro.</div>';
@@ -449,7 +509,7 @@ function listaCercas(){
   $("mapaDica").textContent="";
   if(camada){camada.clearLayers();const b=[];CERCAS.forEach(c=>{if((c.pontos||[]).length>=3){L.polygon(c.pontos,{color:c.cor,weight:2,fillOpacity:c.ativo?.25:.08,dashArray:c.ativo?null:"4 4"}).bindTooltip(c.nome).addTo(camada);b.push(...c.pontos)}});
     if(b.length)mapa.fitBounds(b,{padding:[30,30],maxZoom:17})}
-  const resumo=h=>'<li><b>'+esc(h.rotulo||"Horário")+'</b>: '+(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")
+  const resumo=h=>'<li><b>'+esc(h.rotulo||h.grupo||"Horário")+'</b>: '+(h.grupo?'rotas do grupo <b>'+esc(h.grupo)+'</b>':(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")+(h.linha_exclui?' · sem "'+esc(h.linha_exclui)+'"':""))
     +'<br>chegada '+esc(h.chegada||"—")+' (−'+(h.cheg_antes??10)+'/+'+(h.cheg_depois??10)+' min) · saída '+esc(h.saida||"—")+' (−'+(h.sai_antes??10)+'/+'+(h.sai_depois??10)+' min)'
     +(h.dias&&h.dias.length&&h.dias.length<7?' · '+h.dias.map(d=>DIAS[d]).join(" "):"")+'</li>';
   $("lado").innerHTML='<div class="box"><h3>Cercas dos turnos'+(QUEM.edita?' <button class="btn sm p r" id="bNova">+ Nova cerca</button>':'')+'</h3>'
@@ -465,7 +525,17 @@ function listaCercas(){
     if(!confirm('Remover a cerca "'+c.nome+'"? As entradas e saídas calculadas para ela somem junto.'))return;
     try{await rpc("bi_cerca_remover",{p_token:TOKEN,p_id:c.id});telaCercas()}catch(err){alert(err.message)}});
 }
-const regraNova=()=>({rotulo:"",tipolinhas:[],linha_contem:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
+// mesma regra do banco (_bi_linha_ok): turno da linha + "contém" (^ = começa com) − "não contém" − palavras que nunca entram
+const termos=x=>String(x||"").split(",").map(t=>t.trim().toUpperCase()).filter(Boolean);
+const temT=(linha,t)=>{linha=String(linha||"").toUpperCase().trim();return t[0]==="^"?linha.startsWith(t.slice(1).trim()):linha.includes(t)};
+function linhaOk(tl,linha,f,excl){if(!f)return false;const T=(f.tipolinhas||[]).map(x=>x.toUpperCase()),inc=termos(f.contem),exc=termos(f.excluir).concat(termos(excl));
+  if(!T.length&&!inc.length)return false;if(T.length&&!T.includes(String(tl||"").toUpperCase().trim()))return false;
+  if(inc.length&&!inc.some(t=>temT(linha,t)))return false;return!exc.some(t=>temT(linha,t))}
+const GRUPOS=()=>((INI&&INI.config&&INI.config.grupos)||[]);
+const filtroRegra=h=>h.grupo?GRUPOS().find(g=>g.nome.toUpperCase()===h.grupo.toUpperCase()):{tipolinhas:h.tipolinhas||[],contem:h.linha_contem||"",excluir:h.linha_exclui||""};
+function previaLinhas(f,excl){const L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,f,excl));
+  return'<div class="note" style="margin-top:4px"><b>'+L.length+' rota(s)</b>'+(L.length?': '+esc(L.map(x=>x.l).join(" · ")):' — nenhuma rota dos últimos 60 dias entra.')+'</div>'}
+const regraNova=()=>({rotulo:"",grupo:"",tipolinhas:[],linha_contem:"",linha_exclui:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
 function editar(c){
   ED=c?JSON.parse(JSON.stringify(c)):{id:null,nome:"",turno:"",finalidade:"turno",cor:"#2563eb",ativo:true,pontos:[],horarios:[regraNova()]};
   ED.finalidade=ED.finalidade||"turno";
@@ -489,8 +559,11 @@ function formEd(){
   const rg=(h,i)=>'<div class="regra" data-i="'+i+'"><div style="display:flex;gap:6px;align-items:center"><b style="font-size:13px">Horário '+(i+1)+'</b>'
     +(ED.horarios.length>1?'<button class="btn sm red" data-rmr="'+i+'" style="margin-left:auto">Tirar</button>':'')+'</div>'
     +'<label>Nome do horário (ex.: Turno 01 manhã)</label><input data-f="rotulo" value="'+esc(h.rotulo)+'">'
-    +'<label>Viagens da TFleet que contam (turno da linha)</label><div class="chks">'+tl.map(t=>'<label><input type="checkbox" data-tl="'+esc(t)+'"'+((h.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
-    +'<label>e/ou nome da linha contém (opcional, ex.: MINA)</label><input data-f="linha_contem" value="'+esc(h.linha_contem||"")+'">'
+    +'<label>Quais rotas este horário acompanha</label><select data-f="grupo" class="selGrupo">'+GRUPOS().map(g=>'<option'+(g.nome===h.grupo?" selected":"")+'>'+esc(g.nome)+'</option>').join("")+'<option value=""'+(!h.grupo?" selected":"")+'>Personalizado (escolher aqui)</option></select>'
+    +(h.grupo?'':'<div class="chks" style="margin-top:6px">'+tl.map(t=>'<label><input type="checkbox" data-tl="'+esc(t)+'"'+((h.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
+      +'<label>Nome da linha contém (separe por vírgula; ^CT = começa com CT)</label><input data-f="linha_contem" value="'+esc(h.linha_contem||"")+'">'
+      +'<label>Nome da linha NÃO contém</label><input data-f="linha_exclui" value="'+esc(h.linha_exclui||"")+'">')
+    +previaLinhas(filtroRegra(h),INI&&INI.config&&INI.config.horarios_excluir)
     +'<div class="g"><label>Chegada prevista<input type="time" data-f="chegada" value="'+esc(h.chegada||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="cheg_antes" value="'+(h.cheg_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="cheg_depois" value="'+(h.cheg_depois??10)+'"></label>'
     +'<label>Saída prevista<input type="time" data-f="saida" value="'+esc(h.saida||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="sai_antes" value="'+(h.sai_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="sai_depois" value="'+(h.sai_depois??10)+'"></label></div>'
     +'<label>Dias</label><div class="chks">'+[1,2,3,4,5,6,7].map(d=>'<label><input type="checkbox" data-dia="'+d+'"'+((h.dias||[]).includes(d)?" checked":"")+'>'+DIAS[d]+'</label>').join("")+'</div></div>';
@@ -508,6 +581,7 @@ function formEd(){
     $("regras").querySelectorAll(".regra").forEach(div=>{const h=ED.horarios[+div.dataset.i];
       div.querySelectorAll("[data-f]").forEach(inp=>{const f=inp.dataset.f;h[f]=inp.type==="number"?(inp.value===""?0:+inp.value):inp.value.trim()});
       h.tipolinhas=[...div.querySelectorAll("[data-tl]:checked")].map(x=>x.dataset.tl);
+      if(h.grupo){h.tipolinhas=[];h.linha_contem="";h.linha_exclui=""}
       h.dias=[...div.querySelectorAll("[data-dia]:checked")].map(x=>+x.dataset.dia);});};
   $("eCor").oninput=()=>{ED.cor=$("eCor").value;desenharEd()};
   $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd()};
@@ -515,11 +589,12 @@ function formEd(){
   $("eFin").onchange=()=>{ler();formEd();desenharEd()};
   if($("bAddR"))$("bAddR").onclick=()=>{ler();ED.horarios.push(regraNova());formEd();desenharEd()};
   $("regras").querySelectorAll("[data-rmr]").forEach(b=>b.onclick=()=>{ler();ED.horarios.splice(+b.dataset.rmr,1);formEd();desenharEd()});
+  $("regras").querySelectorAll(".selGrupo,[data-tl],[data-f=linha_contem],[data-f=linha_exclui]").forEach(x=>x.onchange=()=>{ler();formEd();desenharEd()});
   $("bCanc").onclick=()=>{ED=null;listaCercas()};
   $("bSalv").onclick=async()=>{ler();
     if(!ED.nome.trim()){msg("eMsg","Dê um nome para a cerca.","err");return}
     if(ED.pontos.length<3){msg("eMsg","Marque pelo menos 3 pontos no mapa.","err");return}
-    if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, marque o turno das viagens ou preencha o nome da linha.","err");return}
+    if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h.grupo&&!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, escolha o grupo de rotas (ou, no personalizado, marque o turno ou o nome da linha).","err");return}
       if(!h.chegada&&!h.saida){msg("eMsg","Em cada horário, informe a chegada e/ou a saída prevista.","err");return}}
     msg("eMsg","Salvando…");
     try{await rpc("bi_cerca_salvar",{p_token:TOKEN,p_dados:ED});ED=null;telaCercas()}catch(err){msg("eMsg",err.message,"err")}};
@@ -544,6 +619,9 @@ async function telaGerenciar(){
     +'<div style="margin-top:10px"><button class="btn p" id="aSalv">Salvar ajustes</button></div><div id="aMsg" class="msg"></div></div>'
     +'<div class="box form" style="max-width:720px"><h3>Viagens por dia</h3><div class="note">Turnos que aparecem no painel e o ideal de viagens por dia de cada um.</div>'
     +'<div id="aVt">'+[...new Set(((OPC&&OPC.tipolinhas)||[]).concat(cf.viagens_turnos||[]))].map(t=>'<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--ink);flex:1"><input type="checkbox" style="width:auto" data-vt="'+esc(t)+'"'+((cf.viagens_turnos||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label><input type="number" min="0" placeholder="ideal/dia" style="width:110px" data-vi="'+esc(t)+'" value="'+esc((cf.viagens_ideal||{})[t]??"")+'"></div>').join("")+'</div></div>'
+    +'<div class="box form" style="max-width:900px"><h3>Rotas de cada turno (painel Horários)</h3><div class="note">Cada grupo diz quais rotas da TFleet são de um turno. Na cerca, cada horário escolhe um grupo. Ex.: os CTs (terceiras) ficam num grupo próprio para terem horário diferente do ADM. Embaixo de cada grupo aparecem as rotas que entram.</div>'
+    +'<label>Rotas que NUNCA entram no painel Horários (nome contém, separe por vírgula)</label><input id="gExcl" value="'+esc(cf.horarios_excluir??"APRENDIZ, EXTRA")+'">'
+    +'<div id="gLista"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" id="gAdd">+ Novo grupo</button><button class="btn p" id="gSalv">Salvar grupos</button></div><div id="gMsg" class="msg"></div></div>'
     +'<div class="box form" style="max-width:720px"><h3>Áreas válidas dos pontos de embarque</h3><div class="note">Pontos fora destas áreas são GPS errado e não aparecem no mapa. Uma área por linha: nome; lat mín; lat máx; lon mín; lon máx</div>'
     +'<textarea id="aAreas" rows="4" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:13px monospace">'+esc((cf.areas||[]).map(a=>[a.nome,a.lat_min,a.lat_max,a.lon_min,a.lon_max].join("; ")).join("\n"))+'</textarea>'
     +'<div style="margin-top:8px"><button class="btn p" id="aSalv2">Salvar viagens e áreas</button></div><div id="aMsg2" class="msg"></div></div>'
@@ -561,6 +639,25 @@ async function telaGerenciar(){
       areas.push({nome:p[0],lat_min:+p[1].replace(",","."),lat_max:+p[2].replace(",","."),lon_min:+p[3].replace(",","."),lon_max:+p[4].replace(",",".")})}
     if(!vt.length){msg("aMsg2","Marque pelo menos um turno.","err");return}
     try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{viagens_turnos:vt,viagens_ideal:vi,areas}});msg("aMsg2","Salvo.","ok")}catch(err){msg("aMsg2",err.message,"err")}};
+  // ---- grupos de rotas
+  let GR=JSON.parse(JSON.stringify(cf.grupos||[]));
+  const lerG=()=>{$("gLista").querySelectorAll(".regra").forEach(div=>{const g=GR[+div.dataset.i];
+    g.nome=div.querySelector("[data-g=nome]").value.trim();g.contem=div.querySelector("[data-g=contem]").value.trim();g.excluir=div.querySelector("[data-g=excluir]").value.trim();
+    g.tipolinhas=[...div.querySelectorAll("[data-gtl]:checked")].map(x=>x.dataset.gtl)})};
+  const pintaG=()=>{const tl=(OPC&&OPC.tipolinhas)||[];
+    $("gLista").innerHTML=GR.map((g,i)=>'<div class="regra" data-i="'+i+'"><div style="display:flex;gap:6px;align-items:center"><input data-g="nome" value="'+esc(g.nome)+'" placeholder="Nome do grupo" style="font-weight:600;flex:1"><button class="btn sm red" data-grm="'+i+'">Tirar</button></div>'
+      +'<label>Turno da linha na TFleet (deixe sem marcar para não filtrar por turno)</label><div class="chks">'+tl.map(t=>'<label><input type="checkbox" data-gtl="'+esc(t)+'"'+((g.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
+      +'<div class="g" style="grid-template-columns:1fr 1fr"><label>Nome da linha contém<input data-g="contem" value="'+esc(g.contem||"")+'" placeholder="ex.: ^CT  (^ = começa com)"></label><label>Nome da linha NÃO contém<input data-g="excluir" value="'+esc(g.excluir||"")+'" placeholder="ex.: ^CT, MINA"></label></div>'
+      +previaLinhas(g,$("gExcl").value)+'</div>').join("")||'<div class="note">Nenhum grupo.</div>';
+    $("gLista").querySelectorAll("input").forEach(x=>x.onchange=()=>{lerG();pintaG()});
+    $("gLista").querySelectorAll("[data-grm]").forEach(b=>b.onclick=()=>{lerG();GR.splice(+b.dataset.grm,1);pintaG()});};
+  pintaG();$("gExcl").onchange=()=>{lerG();pintaG()};
+  $("gAdd").onclick=()=>{lerG();GR.push({nome:"",tipolinhas:[],contem:"",excluir:""});pintaG()};
+  $("gSalv").onclick=async()=>{lerG();
+    if(GR.some(g=>!g.nome)){msg("gMsg","Dê um nome para cada grupo.","err");return}
+    if(new Set(GR.map(g=>g.nome.toUpperCase())).size<GR.length){msg("gMsg","Há dois grupos com o mesmo nome.","err");return}
+    if(GR.some(g=>!(g.tipolinhas||[]).length&&!g.contem)){msg("gMsg","Em cada grupo, marque um turno ou preencha \"contém\".","err");return}
+    try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{grupos:GR,horarios_excluir:$("gExcl").value}});INI=await rpc("bi_inicio",{p_token:TOKEN});msg("gMsg","Salvo. Nas cercas, escolha o grupo em cada horário.","ok")}catch(err){msg("gMsg",err.message,"err")}};
   const coleta=async()=>{try{const c=await rpc("bi_coleta_status",{p_token:TOKEN});
       $("coletaSt").innerHTML=(c.configurada?'':'<div class="faixa warn">Falta colocar o acesso e o token da TFleet (passo 3 do bi-coleta.sql).</div>')
         +'Última viagem gravada: <b>'+(c.ultima_viagem?dtBR(c.ultima_viagem):"—")+'</b> · último embarque: <b>'+(c.ultimo_embarque?dtBR(c.ultimo_embarque):"—")+'</b>'
@@ -574,5 +671,6 @@ async function telaGerenciar(){
 
 iniciar();
 </script>
+<script src="../central-voltar.js"></script>
 </body>
 </html>
