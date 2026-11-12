@@ -357,60 +357,79 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- entrada / saída pelas cercas
--- Calcula as entradas e saídas de UMA cerca num dia de Belém, a partir das posições do Monitor.
--- entrada = 1ª posição dentro depois de uma posição fora; saída = 1ª posição fora depois de dentro.
-create or replace function public._bi_processar(p_cerca bigint, p_dia date) returns int
+-- Processa TODAS as cercas pendentes de UM dia numa leitura só das posições do Monitor.
+-- Cada posição é comparada com a anterior do mesmo celular; só os pares perto da cerca (bbox) são testados no polígono.
+create or replace function public._bi_processar_dia(p_dia date, p_cercas bigint[]) returns int
 language plpgsql security definer set search_path = public as $$
-declare c bi_cercas; n int; ini timestamptz := (p_dia::timestamp at time zone 'America/Belem');
+declare n int; ini timestamptz := (p_dia::timestamp at time zone 'America/Belem');
 begin
-  select * into c from bi_cercas where id = p_cerca;
-  if c.id is null then return 0; end if;
-  delete from bi_cerca_eventos where cerca_id = p_cerca and dia = p_dia;
-  with s as (
-    select device_id, public.normaliza_tag(device_name) as frota, ts,
-           (lat between c.lat_min and c.lat_max and lon between c.lon_min and c.lon_max
-            and public._bi_dentro(lat, lon, c.poly)) as dentro
+  delete from bi_cerca_eventos where dia = p_dia and cerca_id = any (p_cercas);
+  create temp table if not exists _bi_s (device_id text, frota text, ts timestamptz, lat float8, lon float8,
+                                         ts0 timestamptz, lat0 float8, lon0 float8) on commit drop;
+  truncate _bi_s;
+  insert into _bi_s
+    select device_id, null, ts, lat, lon, lag(ts) over w, lag(lat) over w, lag(lon) over w
     from samples
     where ts >= ini - interval '1 hour' and ts < ini + interval '1 day'
       and lat is not null and lon is not null and not (lat = 0 and lon = 0)
-      and public.normaliza_tag(device_name) is not null
-  ), t as (
-    select device_id, frota, ts, dentro, lag(dentro) over w as antes, lag(ts) over w as ts_antes
-    from s window w as (partition by device_id order by ts)
+    window w as (partition by device_id order by ts);
+  delete from _bi_s where ts < ini;
+  -- frota (número do ônibus) uma vez por celular
+  update _bi_s s set frota = d.frota
+    from (select device_id, public.normaliza_tag(max(device_name)) as frota from samples
+          where ts >= ini - interval '1 hour' and ts < ini + interval '1 day' and device_name is not null
+          group by device_id) d
+   where d.device_id = s.device_id;
+  with c as (select id, poly, lat_min, lat_max, lon_min, lon_max from bi_cercas where id = any (p_cercas) and poly is not null),
+  p as (
+    select c.id as cid, s.device_id, s.frota, s.ts, s.ts0,
+           (s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max and public._bi_dentro(s.lat,  s.lon,  c.poly)) as dentro,
+           (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max and public._bi_dentro(s.lat0, s.lon0, c.poly)) as antes
+    from _bi_s s join c on s.frota is not null and s.ts0 is not null
+      and ((s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max)
+        or (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max))
   )
   insert into bi_cerca_eventos (cerca_id, dia, frota, device_id, tipo, ts, gap_min)
-  select p_cerca, p_dia, frota, device_id, case when dentro then 'entrada' else 'saida' end, ts,
-         round((extract(epoch from ts - ts_antes) / 60.0)::numeric, 1)
-  from t where antes is not null and dentro <> antes and ts >= ini
+  select cid, p_dia, frota, device_id, case when dentro then 'entrada' else 'saida' end, ts,
+         round((extract(epoch from ts - ts0) / 60.0)::numeric, 1)
+  from p where dentro <> antes
   on conflict do nothing;
   get diagnostics n = row_count;
   insert into bi_cerca_dias (cerca_id, dia, processado_em, frotas)
-  values (p_cerca, p_dia, now(), coalesce((select array_agg(distinct public.normaliza_tag(device_name)) from samples
-            where ts >= ini and ts < ini + interval '1 day' and lat is not null and public.normaliza_tag(device_name) is not null), '{}'))
+  select x, p_dia, now(), coalesce((select array_agg(distinct frota) from _bi_s where frota is not null), '{}')
+  from unnest(p_cercas) x
   on conflict (cerca_id, dia) do update set processado_em = now(), frotas = excluded.frotas;
   return n;
 end $$;
+revoke execute on function public._bi_processar_dia(date, bigint[]) from public, anon, authenticated;
+
+-- (compatível com a versão anterior) uma cerca num dia
+create or replace function public._bi_processar(p_cerca bigint, p_dia date) returns int
+language sql security definer set search_path = public as $$ select public._bi_processar_dia(p_dia, array[p_cerca]) $$;
 revoke execute on function public._bi_processar(bigint, date) from public, anon, authenticated;
 
 -- A página chama em laços: processa até p_max dias pendentes por chamada (cabe no tempo limite do Supabase)
 -- e devolve quantos ainda faltam. Dia pendente = nunca processado ou processado antes de o dia acabar.
-create or replace function public.bi_processar(p_token text, p_de date, p_ate date, p_max int default 4) returns json
+drop function if exists public.bi_processar(text, date, date, int);
+create or replace function public.bi_processar(p_token text, p_de date, p_ate date, p_max int default 2) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token); r record; feitos int := 0; falta int;
 begin
   if p_ate - p_de > 62 then raise exception 'Escolha um período de até 2 meses.'; end if;
+  -- um DIA por vez, com todas as cercas pendentes daquele dia numa leitura só do GPS
   for r in
-    select c.id, d::date as dia from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
+    select d::date as dia, array_agg(c.id order by c.id) as cercas
+    from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
     left join bi_cerca_dias k on k.cerca_id = c.id and k.dia = d::date
     where c.ativo and (k.dia is null or k.processado_em < ((d::date + 1)::timestamp at time zone 'America/Belem') + interval '10 minutes'
                        and k.processado_em < now() - interval '5 minutes')
-    order by d::date, c.id
+    group by d::date order by d::date desc
   loop
-    exit when feitos >= greatest(1, least(p_max, 10));
-    perform public._bi_processar(r.id, r.dia);
+    exit when feitos >= greatest(1, least(p_max, 5));
+    perform public._bi_processar_dia(r.dia, r.cercas);
     feitos := feitos + 1;
   end loop;
-  select count(*) into falta from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
+  select count(distinct d::date) into falta from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
     left join bi_cerca_dias k on k.cerca_id = c.id and k.dia = d::date
     where c.ativo and (k.dia is null or k.processado_em < ((d::date + 1)::timestamp at time zone 'America/Belem') + interval '10 minutes'
                        and k.processado_em < now() - interval '5 minutes');
