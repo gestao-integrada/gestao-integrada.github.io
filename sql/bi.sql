@@ -178,13 +178,14 @@ revoke all on public.viagens_hist from anon, authenticated;
 create or replace function public._bi_viagens(p_de date, p_ate date)
 returns setof public.viagens
 language sql stable security definer set search_path = public as $$
-  select id, coletado_em, placa, frota, empresa, origem, tipolinha, linha, tipo, motorista, data_local, hora_saida, saida_ts, chegada_ts, ocupacao, km, lat_saida, lon_saida, bruto
+  -- registro inteiro (funciona com qualquer coluna a mais que a tabela viagens tenha)
+  select (z.v).*
   from (
-    select distinct on (coalesce(u.frota, u.placa), u.saida_ts) u.*
-    from (select x.*, 0 as pr from viagens x where x.data_local between p_de and p_ate
+    select distinct on (coalesce((u.v).frota, (u.v).placa), (u.v).saida_ts) u.v
+    from (select x as v, 0 as pr from viagens x where x.data_local between p_de and p_ate
           union all
-          select h.*, 1 from viagens_hist h where h.data_local between p_de and p_ate) u
-    order by coalesce(u.frota, u.placa), u.saida_ts, u.pr, u.coletado_em desc
+          select jsonb_populate_record(null::public.viagens, to_jsonb(h)), 1 from viagens_hist h where h.data_local between p_de and p_ate) u
+    order by coalesce((u.v).frota, (u.v).placa), (u.v).saida_ts, u.pr, (u.v).coletado_em desc
   ) z;
 $$;
 
