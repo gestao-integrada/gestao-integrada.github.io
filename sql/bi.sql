@@ -109,6 +109,10 @@ insert into public.bi_paineis (id, titulo, descricao, ordem) values
   ('nao_cad',    'Não cadastrados',              'Itinerantes e passageiros não cadastrados, com o crachá lido para consulta.', 6),
   ('roteiro',    'Roteirização',                 'Hora em que cada viagem passou em cada ponto (cerca) da rota: saída, meio do caminho, descida, chegada.', 7)
 on conflict (id) do nothing;
+-- Roteirização fica logo depois de Horários (só na 1ª vez; depois a ordem é a que estiver em Gerenciar)
+update public.bi_paineis set ordem = ordem + 1
+ where id <> 'roteiro' and ordem >= 3 and exists (select 1 from public.bi_paineis where id = 'roteiro' and ordem = 7);
+update public.bi_paineis set ordem = 3 where id = 'roteiro' and ordem = 7;
 
 -- cercas: polígono + regras de horário. horarios = [{rotulo, tipolinhas[], linha_contem, chegada "07:40",
 --   cheg_antes, cheg_depois, saida "17:00", sai_antes, sai_depois, dias[1..7 seg..dom]}]
