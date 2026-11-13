@@ -390,20 +390,22 @@ function telaHorarios(d){
   if($("hrKpiX"))$("hrKpiX").onclick=e=>{e.preventDefault();HR_KPI=null;telaHorarios(d)};
 }
 let HR_KPI=null;
-// ---------------- Roteirização: hora de passagem em cada ponto (cerca) da rota
+// ---------------- Roteirização: hora em que cada viagem passou em cada cerca da rota x horário previsto
 function telaRoteiro(d){
-  if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma cerca de roteirização ainda. Em <b>Cercas dos turnos</b>, crie uma cerca, escolha "Controle de roteirização" e informe a rota e a ordem do ponto.</div>';return}
+  if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma roteirização ainda. Em <b>Cercas dos turnos</b>, clique em <b>+ Nova roteirização</b>.</div>';return}
   const P=d.pontos||[],L=d.linhas||[];
-  if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem das rotas com pontos de controle nesse período e filtro.</div>';return}
-  const rotas=[...new Set(P.map(p=>p.rota))].filter(r=>L.some(x=>x.rota===r));
-  $("painel").innerHTML='<div class="faixa info">Cada coluna é um ponto da rota, na ordem cadastrada. A hora é a <b>entrada</b> do carro na cerca (GPS do Monitor) durante a viagem; entre parênteses, os minutos desde a saída. "—" = não passou ou o carro não tinha Monitor.</div>'
-    +rotas.map((r,i)=>{const pts=P.filter(p=>p.rota===r),V=L.filter(x=>x.rota===r),n=V.length;
-      const ok=pts.map(p=>V.filter(v=>(v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{}).ent).length);
-      return'<div class="box"><h3>Rota "'+esc(r)+'" <span class="r note">'+n+' viagem(ns) · '+pts.map((p,j)=>esc(p.ordem+". "+p.nome)+": "+ok[j]+"/"+n).join(" · ")+'</span></h3><div id="tRot'+i+'"></div></div>'}).join("");
-  rotas.forEach((r,i)=>{const pts=P.filter(p=>p.rota===r),V=L.filter(x=>x.rota===r).map(v=>{const o=Object.assign({},v);
-      pts.forEach((p,j)=>{const q=v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{};o["p"+j]=q.ent?q.ent+(q.min!=null?" (+"+q.min+")":"")+(q.sai?" → saiu "+q.sai:""):"—"});return o});
-    tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"tipo",t:"Sentido"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
-      .concat(pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome}))).concat([{k:"chegada",t:"Chegada (TFleet)"}]),V,"roteirizacao_"+r.replace(/\W+/g,"_"))});
+  if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem das linhas das roteirizações nesse período e filtro. Confira em Cercas dos turnos o texto da linha da ida e da volta.</div>';return}
+  const blocos=[];[...new Set(P.map(p=>p.roteiro))].forEach(r=>["IDA","VOLTA"].forEach(sn=>{const V=L.filter(x=>x.roteiro===r&&x.sentido===sn);if(V.length)blocos.push({r,sn,V,pts:P.filter(p=>p.roteiro===r)})}));
+  const c={};L.forEach(v=>v.p.forEach(q=>c[q.status]=(c[q.status]||0)+1));const tot=Object.values(c).reduce((a,b)=>a+b,0),com=tot-(c["sem passagem"]||0);
+  $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens")+kpi(com?Math.round(100*(c["no horário"]||0)/com)+"%":"—","passagens no horário","de "+com+" com hora","ok")
+    +kpi(nf(c["adiantado"]||0),"adiantadas","","warn")+kpi(nf(c["atrasado"]||0),"atrasadas","","bad")+kpi(nf(c["sem passagem"]||0),"sem passagem","não passou ou sem Monitor")+'</div>'
+    +'<div class="faixa info">Cada coluna é uma cerca da roteirização, na ordem. Mostra a hora em que o carro <b>entrou</b> na cerca (GPS do Monitor) e a diferença para o horário previsto daquele sentido. Passe o mouse para ver o previsto e a hora em que saiu.</div>'
+    +blocos.map((b,i)=>'<div class="box"><h3>'+esc(b.r)+' · '+(b.sn==="IDA"?"Ida":"Volta")+' <span class="r note">'+b.V.length+' viagem(ns)</span></h3><div id="tRot'+i+'"></div></div>').join("");
+  blocos.forEach((b,i)=>{const V=b.V.map(v=>{const o=Object.assign({},v);b.pts.forEach((p,j)=>{const q=v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{};o["p"+j]=q});return o});
+    tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
+      .concat(b.pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome+((b.sn==="IDA"?p.ida:p.volta)?" ("+(b.sn==="IDA"?p.ida:p.volta)+")":""),
+        f:q=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip '+(ST[q.status]||"c-blu")+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:""))+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+'</span>'})))
+      .concat([{k:"chegada",t:"Chegada (TFleet)"}]),V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
 }
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
@@ -604,9 +606,10 @@ const FIN={turno:"Entrada e saída do turno",roteiro:"Controle de roteirização
 async function telaCercas(){
   $("painel").innerHTML='<div class="cols3"><div class="box"><div id="mapa"></div><div class="note" id="mapaDica" style="margin-top:6px"></div></div><div id="lado"></div></div>';
   if(!window.L){$("mapa").innerHTML='<div class="vazio">O mapa não carregou.</div>'}
-  else{mapa=novoMapa("mapa");camada=L.layerGroup().addTo(mapa);mapa.on("click",e=>{if(!ED)return;ED.pontos.push([+e.latlng.lat.toFixed(6),+e.latlng.lng.toFixed(6)]);desenharEd()})}
+  else{mapa=novoMapa("mapa");camada=L.layerGroup().addTo(mapa);mapa.on("click",e=>{if(!ED)return;ED.pontos.push([+e.latlng.lat.toFixed(6),+e.latlng.lng.toFixed(6)]);desenharEd();
+    if(RT&&ED.pontos.length===3){lerRot();formRot();desenharEd()}})}
   try{CERCAS=await rpc("bi_cercas",{p_token:TOKEN})}catch(err){$("lado").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
-  ED=null;listaCercas();
+  ED=null;RT=null;listaCercas();
 }
 function listaCercas(){
   $("mapaDica").textContent="";
@@ -615,14 +618,29 @@ function listaCercas(){
   const resumo=h=>'<li><b>'+esc(h.rotulo||h.grupo||"Horário")+'</b>: '+(h.grupo?'rotas do grupo <b>'+esc(h.grupo)+'</b>':(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")+(h.linha_exclui?' · sem "'+esc(h.linha_exclui)+'"':""))
     +'<br>chegada '+esc(h.chegada||"—")+' (−'+(h.cheg_antes??10)+'/+'+(h.cheg_depois??10)+' min) · saída '+esc(h.saida||"—")+' (−'+(h.sai_antes??10)+'/+'+(h.sai_depois??10)+' min)'
     +(h.dias&&h.dias.length&&h.dias.length<7?' · '+h.dias.map(d=>DIAS[d]).join(" "):"")+'</li>';
-  $("lado").innerHTML='<div class="box"><h3>Cercas dos turnos'+(QUEM.edita?' <button class="btn sm p r" id="bNova">+ Nova cerca</button>':'')+'</h3>'
+  const CR=CERCAS.filter(c=>c.finalidade==="roteiro"),CN=CERCAS.filter(c=>c.finalidade!=="roteiro");
+  const grupos={};CR.forEach(c=>{const h=(c.horarios||[])[0]||{};const g=h.roteiro||h.rota||"(sem nome)";(grupos[g]=grupos[g]||[]).push(c)});
+  const boxRot='<div class="box"><h3>Roteirizações'+(QUEM.edita?' <button class="btn sm p r" id="bNovaR">+ Nova roteirização</button>':'')+'</h3>'
+    +'<div class="note" style="margin-bottom:8px">Um conjunto de cercas de uma rota (saída, meio do caminho, descida, chegada), cada uma com o horário em que o carro deve passar na ida e na volta.</div>'
+    +(Object.keys(grupos).length?Object.keys(grupos).sort().map(g=>{const L=grupos[g].slice().sort((a,b)=>((a.horarios[0]||{}).ordem||0)-((b.horarios[0]||{}).ordem||0)),h0=(L[0].horarios||[])[0]||{};
+      return'<div class="cerca" style="border-left-color:'+esc(L[0].cor)+'"><b>'+esc(g)+'</b> <span class="chip c-blu">'+L.length+' cerca(s)</span>'
+        +'<div class="note">Ida: linha contém "'+esc(h0.rota_ida||h0.rota||"")+'"'+(h0.rota_volta?' · Volta: linha contém "'+esc(h0.rota_volta)+'"':'')+'</div>'
+        +'<ul>'+L.map(c=>{const h=(c.horarios||[])[0]||{};return'<li>'+esc((h.ordem||"")+". "+c.nome)+(h.ida?' · ida '+esc(h.ida):'')+(h.volta?' · volta '+esc(h.volta):'')+'</li>'}).join("")+'</ul>'
+        +(QUEM.edita?'<div class="acts"><button class="btn sm" data-edr="'+esc(g)+'">Editar</button><button class="btn sm red" data-rmr2="'+esc(g)+'">Remover</button></div>':'')+'</div>'}).join(""):'<div class="vazio">Nenhuma roteirização ainda.</div>')+'</div>';
+  ROT_GRUPOS=grupos;
+  $("lado").innerHTML=boxRot+'<div class="box"><h3>Cercas dos turnos'+(QUEM.edita?' <button class="btn sm p r" id="bNova">+ Nova cerca</button>':'')+'</h3>'
     +'<div class="note" style="margin-bottom:8px">Cada cerca é a área onde o ônibus chega e de onde sai no turno. A entrada e a saída são medidas pelo GPS do app Monitor.</div>'
-    +(CERCAS.length?CERCAS.map(c=>'<div class="cerca" style="border-left-color:'+esc(c.cor)+'"><b>'+esc(c.nome)+'</b> '+(c.turno?'<span class="chip c-blu">'+esc(c.turno)+'</span> ':'')+'<span class="chip '+(c.finalidade==="turno"?"c-ok":"c-gry")+'">'+esc(FIN[c.finalidade]||c.finalidade)+'</span> '+(c.ativo?'':'<span class="chip c-gry">desligada</span>')
+    +(CN.length?CN.map(c=>'<div class="cerca" style="border-left-color:'+esc(c.cor)+'"><b>'+esc(c.nome)+'</b> '+(c.turno?'<span class="chip c-blu">'+esc(c.turno)+'</span> ':'')+'<span class="chip '+(c.finalidade==="turno"?"c-ok":"c-gry")+'">'+esc(FIN[c.finalidade]||c.finalidade)+'</span> '+(c.ativo?'':'<span class="chip c-gry">desligada</span>')
       +(c.finalidade==="turno"?'<ul>'+(c.horarios||[]).map(resumo).join("")+'</ul>':c.finalidade==="roteiro"?'<ul>'+(c.horarios||[]).filter(h=>h.rota).map(h=>'<li>Ponto '+esc(h.ordem||1)+' da rota <b>'+esc(h.rota)+'</b></li>').join("")+'</ul>':'<div class="note">Entradas e saídas já são gravadas; o painel desta finalidade entra depois.</div>')
       +(QUEM.edita?'<div class="acts"><button class="btn sm" data-ed="'+c.id+'">Editar</button><button class="btn sm red" data-rm="'+c.id+'">Remover</button></div>':'')
       +'<div class="note">'+(c.atualizado_por?'Alterada por '+esc(c.atualizado_por)+' em '+dtBR(c.atualizado_em):'')+'</div></div>').join("")
       :'<div class="vazio">Nenhuma cerca ainda.'+(QUEM.edita?' Clique em <b>+ Nova cerca</b>.':'')+'</div>')+'</div>';
   if($("bNova"))$("bNova").onclick=()=>editar(null);
+  if($("bNovaR"))$("bNovaR").onclick=()=>editarRot(null);
+  $("lado").querySelectorAll("[data-edr]").forEach(b=>b.onclick=()=>editarRot(b.dataset.edr));
+  $("lado").querySelectorAll("[data-rmr2]").forEach(b=>b.onclick=async()=>{const L=ROT_GRUPOS[b.dataset.rmr2]||[];
+    if(!confirm('Remover a roteirização "'+b.dataset.rmr2+'" e as '+L.length+' cercas dela?'))return;
+    try{for(const c of L)await rpc("bi_cerca_remover",{p_token:TOKEN,p_id:c.id});telaCercas()}catch(err){alert(err.message)}});
   $("lado").querySelectorAll("[data-ed]").forEach(b=>b.onclick=()=>editar(CERCAS.find(c=>c.id==b.dataset.ed)));
   $("lado").querySelectorAll("[data-rm]").forEach(b=>b.onclick=async()=>{const c=CERCAS.find(x=>x.id==b.dataset.rm);
     if(!confirm('Remover a cerca "'+c.nome+'"? As entradas e saídas calculadas para ela somem junto.'))return;
@@ -639,7 +657,63 @@ const filtroRegra=h=>h.grupo?GRUPOS().find(g=>g.nome.toUpperCase()===h.grupo.toU
 function previaLinhas(f,excl){const L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,f,excl));
   return'<div class="note" style="margin-top:4px"><b>'+L.length+' rota(s)</b>'+(L.length?': '+esc(L.map(x=>x.l).join(" · ")):' — nenhuma rota dos últimos 60 dias entra.')+'</div>'}
 const regraNova=()=>({rotulo:"",grupo:"",tipolinhas:[],linha_contem:"",linha_exclui:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
-function editar(c){
+// ---------------- editor de roteirização: várias cercas de uma vez, cada uma com horário da ida e da volta
+let RT=null,ROT_GRUPOS={};
+function editarRot(nome){
+  const L=nome?(ROT_GRUPOS[nome]||[]).slice().sort((a,b)=>((a.horarios[0]||{}).ordem||0)-((b.horarios[0]||{}).ordem||0)):[];
+  const h0=L.length?(L[0].horarios||[])[0]||{}:{};
+  RT={nomeAntigo:nome,nome:nome||"",rota_ida:h0.rota_ida||h0.rota||"",rota_volta:h0.rota_volta||"",tol_antes:h0.tol_antes??10,tol_depois:h0.tol_depois??10,
+      cor:L.length?L[0].cor:"#7c3aed",itens:L.map(c=>{const h=(c.horarios||[])[0]||{};return{id:c.id,nome:c.nome,ida:h.ida||"",volta:h.volta||"",pontos:JSON.parse(JSON.stringify(c.pontos||[])),cor:c.cor}}),removidos:[]};
+  if(!RT.itens.length)RT.itens=[1,2,3].map(()=>({id:null,nome:"",ida:"",volta:"",pontos:[]}));
+  RT.sel=0;ED=RT.itens[0];ED.cor=RT.cor;formRot();desenharEd();
+  const b=[].concat(...RT.itens.map(it=>it.pontos));if(mapa&&b.length>=3)mapa.fitBounds(b,{padding:[40,40],maxZoom:16});
+}
+function lerRot(){if(!RT)return;RT.nome=$("rNome").value.trim();RT.rota_ida=$("rIda").value.trim();RT.rota_volta=$("rVolta").value.trim();
+  RT.tol_antes=+$("rTa").value||0;RT.tol_depois=+$("rTd").value||0;RT.cor=$("rCor").value;
+  $("rItens").querySelectorAll("[data-it]").forEach(div=>{const it=RT.itens[+div.dataset.it];
+    it.nome=div.querySelector("[data-f=nome]").value.trim();it.ida=div.querySelector("[data-f=ida]").value;it.volta=div.querySelector("[data-f=volta]").value});}
+function formRot(){
+  $("mapaDica").innerHTML='Desenhando a <b>cerca '+(RT.sel+1)+'</b>'+(RT.itens[RT.sel].nome?' ('+esc(RT.itens[RT.sel].nome)+')':'')+': clique no mapa para marcar os cantos, contornando a área. Para desenhar outra, clique em ✏ na lista ao lado.';
+  $("lado").innerHTML='<div class="box form"><h3>'+(RT.nomeAntigo?"Editar roteirização":"Nova roteirização")+'</h3>'
+    +'<label>Nome da roteirização</label><input id="rNome" value="'+esc(RT.nome)+'" placeholder="Ex.: PGM ⇄ Belém">'
+    +'<div class="g"><label>Linha da IDA contém<input id="rIda" list="dlLinhas" value="'+esc(RT.rota_ida)+'" placeholder="Ex.: ^PGM - BELÉM"></label>'
+    +'<label>Linha da VOLTA contém<input id="rVolta" list="dlLinhas" value="'+esc(RT.rota_volta)+'" placeholder="Ex.: ^BELÉM - PGM"></label></div>'
+    +'<div class="note">Use ^ para "começa com". Se a ida e a volta têm o mesmo nome de linha, deixe a volta vazia: o sentido vem da TFleet (IDA/VOLTA).</div>'
+    +'<div class="g"><label>Tolerância antes (min)<input id="rTa" type="number" min="0" value="'+RT.tol_antes+'"></label><label>Tolerância depois (min)<input id="rTd" type="number" min="0" value="'+RT.tol_depois+'"></label><label>Cor<input id="rCor" type="color" value="'+esc(RT.cor)+'" style="padding:2px;height:36px"></label></div>'
+    +'<div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px"><label style="flex:1">Quantas cercas<input id="rQtd" type="number" min="1" max="30" value="'+RT.itens.length+'"></label><button class="btn sm" id="rAplic">Aplicar</button></div>'
+    +'<div class="note" style="margin-top:6px">'+RT.itens.length+' cerca(s) nesta roteirização. Em cada uma: nome, horário que o carro deve passar na ida e na volta, e o desenho no mapa.</div>'
+    +'<div id="rItens">'+RT.itens.map((it,i)=>'<div class="regra" data-it="'+i+'" style="'+(i===RT.sel?'border-color:#2563eb;background:#eff6ff':'')+'">'
+      +'<div style="display:flex;gap:6px;align-items:center"><b style="font-size:13px">Cerca '+(i+1)+'</b><span class="note">'+(it.pontos.length>=3?it.pontos.length+' pontos ✔':'<span style="color:#b45309">falta desenhar</span>')+'</span>'
+      +'<button class="btn sm'+(i===RT.sel?' p':'')+'" data-sel="'+i+'" style="margin-left:auto">✏ Desenhar</button><button class="btn sm" data-lp="'+i+'" title="Limpar o desenho">↺</button><button class="btn sm red" data-rmi="'+i+'">✕</button></div>'
+      +'<div class="g"><label>Nome<input data-f="nome" value="'+esc(it.nome)+'" placeholder="Ex.: Saída Alagoas"></label><label>Passa na ida<input type="time" data-f="ida" value="'+esc(it.ida)+'"></label><label>Passa na volta<input type="time" data-f="volta" value="'+esc(it.volta)+'"></label></div></div>').join("")+'</div>'
+    +'<div style="display:flex;gap:6px;margin-top:6px"><span class="note" id="nPts"></span><button class="btn sm" id="bDesf">Desfazer ponto</button></div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="rCanc">Cancelar</button><button class="btn p" id="rSalv">Salvar roteirização</button></div><div id="rMsg" class="msg"></div></div>';
+  $("rCor").oninput=()=>{RT.cor=$("rCor").value;ED.cor=RT.cor;desenharEd()};
+  $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd();lerRot();formRot();desenharEd()};
+  $("rAplic").onclick=()=>{lerRot();const n=Math.max(1,Math.min(30,+$("rQtd").value||1));
+    while(RT.itens.length<n)RT.itens.push({id:null,nome:"",ida:"",volta:"",pontos:[]});
+    while(RT.itens.length>n){const x=RT.itens.pop();if(x.id)RT.removidos.push(x.id)}
+    RT.sel=Math.min(RT.sel,n-1);ED=RT.itens[RT.sel];ED.cor=RT.cor;formRot();desenharEd()};
+  $("rItens").querySelectorAll("[data-sel]").forEach(b=>b.onclick=()=>{lerRot();RT.sel=+b.dataset.sel;ED=RT.itens[RT.sel];ED.cor=RT.cor;formRot();desenharEd();
+    if(mapa&&ED.pontos.length>=3)mapa.fitBounds(ED.pontos,{padding:[40,40],maxZoom:18})});
+  $("rItens").querySelectorAll("[data-lp]").forEach(b=>b.onclick=()=>{lerRot();RT.itens[+b.dataset.lp].pontos.length=0;formRot();desenharEd()});
+  $("rItens").querySelectorAll("[data-rmi]").forEach(b=>b.onclick=()=>{lerRot();if(RT.itens.length<=1)return;const x=RT.itens.splice(+b.dataset.rmi,1)[0];if(x.id)RT.removidos.push(x.id);
+    RT.sel=Math.min(RT.sel,RT.itens.length-1);ED=RT.itens[RT.sel];ED.cor=RT.cor;formRot();desenharEd()});
+  $("rCanc").onclick=()=>{RT=null;ED=null;listaCercas()};
+  $("rSalv").onclick=async()=>{lerRot();
+    if(!RT.nome){msg("rMsg","Dê um nome para a roteirização.","err");return}
+    if(!RT.rota_ida){msg("rMsg","Informe o trecho do nome da linha da IDA.","err");return}
+    if(RT.nomeAntigo!==RT.nome&&ROT_GRUPOS[RT.nome]){msg("rMsg","Já existe uma roteirização com esse nome.","err");return}
+    const falta=RT.itens.findIndex(it=>it.pontos.length<3);if(falta>=0){msg("rMsg","Desenhe a cerca "+(falta+1)+" no mapa (mínimo 3 pontos).","err");return}
+    msg("rMsg","Salvando…");
+    try{for(let i=0;i<RT.itens.length;i++){const it=RT.itens[i];
+        await rpc("bi_cerca_salvar",{p_token:TOKEN,p_dados:{id:it.id,nome:it.nome||(RT.nome+" - cerca "+(i+1)),turno:"",finalidade:"roteiro",cor:RT.cor,ativo:true,pontos:it.pontos,
+          horarios:[{roteiro:RT.nome,ordem:i+1,rota_ida:RT.rota_ida,rota_volta:RT.rota_volta,ida:it.ida,volta:it.volta,tol_antes:RT.tol_antes,tol_depois:RT.tol_depois}]}})}
+      for(const id of RT.removidos)await rpc("bi_cerca_remover",{p_token:TOKEN,p_id:id});
+      RT=null;ED=null;telaCercas()}catch(err){msg("rMsg",err.message,"err")}};
+  const n=$("nPts");if(n)n.textContent="Cerca "+(RT.sel+1)+": "+ED.pontos.length+" ponto(s)";
+}
+function editar(c){RT=null;
   ED=c?JSON.parse(JSON.stringify(c)):{id:null,nome:"",turno:"",finalidade:"turno",cor:"#2563eb",ativo:true,pontos:[],horarios:[regraNova()]};
   ED.finalidade=ED.finalidade||"turno";
   if(!ED.horarios||!ED.horarios.length)ED.horarios=[regraNova()];
@@ -649,13 +723,14 @@ function editar(c){
 }
 function desenharEd(){
   if(!camada)return;camada.clearLayers();
-  CERCAS.filter(c=>!ED||c.id!==ED.id).forEach(c=>{if((c.pontos||[]).length>=3)L.polygon(c.pontos,{color:c.cor,weight:1,fillOpacity:.08}).addTo(camada)});
+  CERCAS.filter(c=>(!ED||c.id!==ED.id)&&!(RT&&RT.itens.some(it=>it.id===c.id))).forEach(c=>{if((c.pontos||[]).length>=3)L.polygon(c.pontos,{color:c.cor,weight:1,fillOpacity:.08,interactive:false}).addTo(camada)});
+  if(RT)RT.itens.forEach((it,i)=>{if(it!==ED&&it.pontos.length>=3)L.polygon(it.pontos,{color:RT.cor,weight:2,fillOpacity:.15,dashArray:"5 4",interactive:false}).bindTooltip((i+1)+". "+(it.nome||"cerca "+(i+1)),{permanent:true,direction:"center",className:"lbl"}).addTo(camada)});
   if(!ED)return;
-  if(ED.pontos.length>=3)L.polygon(ED.pontos,{color:ED.cor,weight:3,fillOpacity:.3}).addTo(camada);
+  if(ED.pontos.length>=3)L.polygon(ED.pontos,{color:ED.cor,weight:3,fillOpacity:.3,interactive:false}).addTo(camada);
   else if(ED.pontos.length===2)L.polyline(ED.pontos,{color:ED.cor,weight:3}).addTo(camada);
   ED.pontos.forEach((p,i)=>{const mk=L.marker(p,{draggable:true,icon:L.divIcon({className:"",html:'<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid '+esc(ED.cor)+'"></div>',iconSize:[14,14],iconAnchor:[7,7]})}).addTo(camada);
     mk.on("dragend",e=>{const ll=e.target.getLatLng();ED.pontos[i]=[+ll.lat.toFixed(6),+ll.lng.toFixed(6)];desenharEd()});});
-  const n=$("nPts");if(n)n.textContent=ED.pontos.length+" ponto(s) marcados";
+  const n=$("nPts");if(n)n.textContent=(RT?"Cerca "+(RT.sel+1)+": ":"")+ED.pontos.length+" ponto(s) marcados";
 }
 function formEd(){
   const tl=(OPC&&OPC.tipolinhas)||[];
@@ -673,7 +748,7 @@ function formEd(){
   $("lado").innerHTML='<div class="box form"><h3>'+(ED.id?"Editar cerca":"Nova cerca")+'</h3>'
     +'<label>Nome da cerca</label><input id="eNome" value="'+esc(ED.nome)+'" placeholder="Ex.: Cerca turno ADM">'
     +'<div style="display:grid;grid-template-columns:2fr 1fr;gap:6px"><div><label>Turno</label><input id="eTurno" value="'+esc(ED.turno||"")+'" placeholder="ADM, Turno, Gemin" list="dlTurnos"><datalist id="dlTurnos"><option>ADM</option><option>Turno</option><option>Gemin</option><option>Manutenção</option></datalist></div><div><label>Cor</label><input id="eCor" type="color" value="'+esc(ED.cor)+'" style="padding:2px;height:36px"></div></div>'
-    +'<label>Para que serve esta cerca</label><select id="eFin">'+Object.keys(FIN).map(k=>'<option value="'+k+'"'+(k===ED.finalidade?" selected":"")+'>'+FIN[k]+'</option>').join("")+'</select>'
+    +'<label>Para que serve esta cerca</label><select id="eFin">'+Object.keys(FIN).filter(k=>k!=="roteiro"||ED.finalidade==="roteiro").map(k=>'<option value="'+k+'"'+(k===ED.finalidade?" selected":"")+'>'+FIN[k]+'</option>').join("")+'</select>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note" id="nPts"></span><button class="btn sm" id="bDesf">Desfazer ponto</button><button class="btn sm" id="bLimp">Limpar pontos</button></div>'
     +'<label class="chks" style="margin-top:8px"><label><input type="checkbox" id="eAtivo"'+(ED.ativo?" checked":"")+'> Cerca ligada</label></label>'
     +(ED.finalidade==="turno"?'<div class="dica">A chegada é comparada com as viagens de IDA e a saída com as de VOLTA. Turno 12x12 com troca de manhã e de noite: use um horário para cada troca.</div>'
