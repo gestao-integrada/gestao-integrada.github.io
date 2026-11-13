@@ -65,6 +65,24 @@ language sql immutable as $$
   from t;
 $$;
 
+-- distância em metros entre dois pontos (aproximação plana, boa para poucos km)
+create or replace function public._bi_m(la1 float8, lo1 float8, la2 float8, lo2 float8) returns float8
+language sql immutable as $$
+  select sqrt(power((la2 - la1) * 110540, 2) + power((lo2 - lo1) * 111320 * cos(radians(la1)), 2));
+$$;
+
+-- "pulo" de GPS: o ponto vai para longe e o seguinte volta para perto do anterior (posição velha da rede
+-- celular misturada com o GPS). Fica de fora do mapa e do cálculo de entrada/saída da cerca.
+create or replace function public._bi_pulo(la0 float8, lo0 float8, t0 timestamptz, la float8, lo float8, t timestamptz,
+                                           la2 float8, lo2 float8, t2 timestamptz) returns boolean
+language sql immutable as $$
+  select la0 is not null and la2 is not null
+     and public._bi_m(la0, lo0, la, lo) > 300 and public._bi_m(la, lo, la2, lo2) > 300
+     and public._bi_m(la0, lo0, la2, lo2) < 0.5 * least(public._bi_m(la0, lo0, la, lo), public._bi_m(la, lo, la2, lo2))
+     and greatest(public._bi_m(la0, lo0, la, lo) / greatest(extract(epoch from t - t0), 1),
+                  public._bi_m(la, lo, la2, lo2) / greatest(extract(epoch from t2 - t), 1)) * 3.6 > 120;
+$$;
+
 -- ponto dentro de alguma das áreas válidas
 create or replace function public._bi_na_area(la float8, lo float8, areas jsonb) returns boolean
 language sql immutable as $$
@@ -445,9 +463,15 @@ begin
   truncate _bi_s;
   insert into _bi_s
     select device_id, null, ts, lat, lon, lag(ts) over w, lag(lat) over w, lag(lon) over w
-    from samples
-    where ts >= ini - interval '1 hour' and ts < ini + interval '1 day'
-      and lat is not null and lon is not null and not (lat = 0 and lon = 0)
+    from (select * from (
+            select device_id, ts, lat, lon,
+                   public._bi_pulo(lag(lat) over v, lag(lon) over v, lag(ts) over v, lat, lon, ts,
+                                   lead(lat) over v, lead(lon) over v, lead(ts) over v) as pulo
+            from samples
+            where ts >= ini - interval '1 hour' and ts < ini + interval '1 day'
+              and lat is not null and lon is not null and not (lat = 0 and lon = 0)
+            window v as (partition by device_id order by ts)) a
+          where not a.pulo) b
     window w as (partition by device_id order by ts);
   delete from _bi_s where ts < ini;
   -- frota (número do ônibus) uma vez por celular
@@ -803,8 +827,13 @@ begin
   if p_ate - p_de > interval '6 hours' then raise exception 'Janela grande demais (máximo 6 horas).'; end if;
   return json_build_object(
     'pontos', (select coalesce(json_agg(json_build_object('ts', ts, 'lat', lat, 'lon', lon) order by ts), '[]'::json)
-               from samples where ts between p_de and p_ate and lat is not null and lon is not null and not (lat = 0 and lon = 0)
-                 and public.normaliza_tag(device_name) = f),
+               from (select ts, lat, lon,
+                            public._bi_pulo(lag(lat) over v, lag(lon) over v, lag(ts) over v, lat, lon, ts,
+                                            lead(lat) over v, lead(lon) over v, lead(ts) over v) as pulo
+                     from samples where ts between p_de and p_ate and lat is not null and lon is not null and not (lat = 0 and lon = 0)
+                       and public.normaliza_tag(device_name) = f
+                     window v as (order by ts)) x
+               where not x.pulo),
     'eventos', (select coalesce(json_agg(json_build_object('ts', e.ts, 'tipo', e.tipo, 'gap_min', e.gap_min) order by e.ts), '[]'::json)
                from bi_cerca_eventos e join bi_cercas c on c.id = e.cerca_id
                where e.frota = f and e.ts between p_de and p_ate and (p_cerca is null or c.nome = p_cerca)),
