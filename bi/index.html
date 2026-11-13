@@ -178,7 +178,8 @@ async function rpc(fn,body){
 
 /* ---------------- entrar ---------------- */
 async function iniciar(){
-  $("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);
+  // sempre abre no dia de hoje (Horários, grupo ADM — ver entrar)
+  $("fAte").value=hoje();$("fDe").value=hoje();$("fPer").value="0";
   const cand=[ls.get(K_SESS),ls.get(K_CENTRAL),ls.get(K_SOL)].filter(s=>s&&s.token);
   for(const s of cand){try{const q=await rpc("bi_sessao",{p_token:s.token});if(q&&!q.erro){entrar(s.token);return}}catch(e){}}
   mostrarLogin();
@@ -198,9 +199,15 @@ async function entrar(tk){
   const col=INI.coleta?new Date(INI.coleta):null,atraso=col?(Date.now()-col)/36e5:99;
   $("coleta").classList.toggle("hidden",atraso<2);
   $("coleta").textContent=col?"⚠ A coleta da TFleet está parada desde "+dtBR(INI.coleta)+": viagens e embarques depois disso ainda não entram aqui.":"⚠ Ainda não há viagens coletadas da TFleet.";
+  const montaTurno=tl=>{const atual=$("fTurno").value;
+    $("fTurno").innerHTML='<option value="">Todos</option>'+(GRUPOS().length?'<optgroup label="Grupos (Gerenciar)">'+GRUPOS().map(g=>'<option value="G:'+esc(g.nome)+'">'+esc(g.nome)+'</option>').join("")+'</optgroup><optgroup label="Turnos da TFleet">':'')+(tl||[]).map(t=>'<option>'+esc(t)+'</option>').join("")+(GRUPOS().length?'</optgroup>':'');
+    $("fTurno").value=atual;if($("fTurno").value!==atual)$("fTurno").value=""};
+  // ao abrir: Horários de entrada e saída, grupo ADM, hoje
+  montaTurno([]);const gAdm=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");if(gAdm)$("fTurno").value="G:"+gAdm.nome;
+  if(abasVisiveis().some(x=>x.id==="horarios"))ABA="horarios";
   rpc("bi_opcoes",{p_token:TOKEN}).then(o=>{OPC=o;
     $("dlLinhas").innerHTML=(o.linhas||[]).map(l=>'<option value="'+esc(l)+'">').join("");
-    $("fTurno").innerHTML='<option value="">Todos</option>'+(GRUPOS().length?'<optgroup label="Grupos (Gerenciar)">'+GRUPOS().map(g=>'<option value="G:'+esc(g.nome)+'">'+esc(g.nome)+'</option>').join("")+'</optgroup><optgroup label="Turnos da TFleet">':'')+(o.tipolinhas||[]).map(t=>'<option>'+esc(t)+'</option>').join("")+(GRUPOS().length?'</optgroup>':'');
+    montaTurno(o.tipolinhas);
   }).catch(()=>{});
   montarAbas();
 }
@@ -382,7 +389,8 @@ function telaHorarios(d){
   tabela("tHor",[{k:"data",t:"Data",f:dBR},{k:"cerca",t:"Cerca"},{k:"regra",t:"Regra"},{k:"linha",t:"Linha",w:1},{k:"tipo",t:"Sentido"},{k:"frota",t:"Carro"},
     {k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"prevista",t:"Previsto"},{k:"hora_real",t:"Hora real",f:(v,r)=>esc(v||"—")+(r.monitor_gap>5?' <span class="note" title="o celular ficou '+r.monitor_gap+' min sem mandar posição antes">±'+Math.round(r.monitor_gap)+'min</span>':"")},
     {k:"origem",t:"De onde veio"},{k:"dif",t:"Diferença (min)",num:1,f:v=>v==null?"—":(v>0?"+":"")+v},{k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},
-    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],Lf,"horarios_entrada_saida");
+    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],
+    Lf.slice().sort((a,b)=>(PIOR[a.status]??9)-(PIOR[b.status]??9)||Math.abs(b.dif||0)-Math.abs(a.dif||0)),"horarios_entrada_saida");
   // indicadores clicáveis: filtram as rotas e a tabela; clicar de novo (ou no 1º) mostra todas
   [...$("hrKpis").children].forEach((el,i)=>{el.style.cursor="pointer";el.title=i?"Clique para ver só essas viagens":"Mostrar todas";
     if(fk&&FK[i]===fk)el.style.outline="3px solid #2563eb";
@@ -390,6 +398,7 @@ function telaHorarios(d){
   if($("hrKpiX"))$("hrKpiX").onclick=e=>{e.preventDefault();HR_KPI=null;telaHorarios(d)};
 }
 let HR_KPI=null;
+const PIOR={"atrasado":0,"adiantado":1,"sem passagem na cerca":2,"sem dado":3,"no horário":4};
 // ---------------- Roteirização: hora em que cada viagem passou em cada cerca da rota x horário previsto
 let ROT_MP=[];
 $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-rmp]");if(!el)return;const x=ROT_MP[+el.dataset.rmp];if(!x)return;
