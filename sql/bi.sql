@@ -769,40 +769,67 @@ begin
     ) into res;
 
   elsif p_painel = 'roteiro' then
-    -- cercas de roteirização: horarios = [{rota: "trecho do nome da linha", ordem: 1}]; uma cerca pode servir a várias rotas
+    -- roteirização = conjunto de cercas (pontos) de uma rota. Cada cerca: horarios = [{roteiro, ordem, rota_ida, rota_volta,
+    -- ida "06:30", volta "19:30", tol_antes, tol_depois}]. A viagem entra pela linha (rota_ida / rota_volta, ^ = começa com);
+    -- hora real = entrada na cerca mais perto do horário previsto daquele sentido (até 3 h antes/depois).
     if p_ate - p_de > 31 then raise exception 'Escolha um período de até 1 mês.'; end if;
     with pts as (
-      select c.id as cid, c.nome, c.cor, trim(h->>'rota') as rota, coalesce(nullif(h->>'ordem', '')::int, 1) as ordem
+      select c.id as cid, c.nome, c.cor,
+             coalesce(nullif(trim(h->>'roteiro'), ''), trim(h->>'rota')) as roteiro,
+             coalesce(nullif(h->>'ordem', '')::int, 1) as ordem,
+             upper(coalesce(nullif(trim(h->>'rota_ida'), ''), trim(h->>'rota'), '')) as ri,
+             upper(coalesce(trim(h->>'rota_volta'), '')) as rv,
+             nullif(trim(h->>'ida'), '') as ida, nullif(trim(h->>'volta'), '') as volta,
+             coalesce(nullif(h->>'tol_antes', '')::int, 10) as ta, coalesce(nullif(h->>'tol_depois', '')::int, 10) as td
       from bi_cercas c cross join jsonb_array_elements(coalesce(c.horarios, '[]'::jsonb)) h
-      where c.ativo and c.finalidade = 'roteiro' and coalesce(trim(h->>'rota'), '') <> ''),
+      where c.ativo and c.finalidade = 'roteiro'),
+    rts as (select distinct on (roteiro) roteiro, ri, rv from pts where roteiro is not null and ri <> '' order by roteiro, ordem),
     vg as (
-      select v.*, p.rota from _bi_viagens(p_de, p_ate) v
-      join (select distinct rota from pts) p on public._bi_tem(v.linha, p.rota)
+      select v.*, r.roteiro,
+             case when r.rv <> '' and public._bi_tem(v.linha, r.rv) and not public._bi_tem(v.linha, r.ri) then 'VOLTA'
+                  when r.rv <> '' then 'IDA' else upper(trim(v.tipo)) end as sent
+      from _bi_viagens(p_de, p_ate) v
+      join rts r on public._bi_tem(v.linha, r.ri) or (r.rv <> '' and public._bi_tem(v.linha, r.rv))
       where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft)
-        and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs)),
+        and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null))),
+    vg2 as (select * from vg where fs is null or sent = fs),
     pas as (
-      select vg.rota, vg.data_local, vg.linha, upper(trim(vg.tipo)) as tipo, vg.frota, vg.motorista, vg.saida_ts, vg.chegada_ts,
-             p.ordem, p.nome, ent.ts as ent, sai.ts as sai
-      from vg join pts p on p.rota = vg.rota
+      select vg2.roteiro, vg2.sent, vg2.data_local, vg2.linha, vg2.frota, vg2.motorista, vg2.saida_ts, vg2.chegada_ts,
+             p.ordem, p.nome, p.ta, p.td,
+             case when vg2.sent = 'VOLTA' then p.volta else p.ida end as prev, ev.ts as ent, sai.ts as sai
+      from vg2 join pts p on p.roteiro = vg2.roteiro
+      left join lateral (
+        select e.ts from bi_cerca_eventos e
+        where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg2.frota) and e.tipo = 'entrada'
+          and case when (case when vg2.sent = 'VOLTA' then p.volta else p.ida end) ~ '^\d{1,2}:\d{2}$'
+                   then e.ts between ((vg2.data_local + (case when vg2.sent = 'VOLTA' then p.volta else p.ida end)::time) at time zone 'America/Belem') - interval '3 hours'
+                                 and ((vg2.data_local + (case when vg2.sent = 'VOLTA' then p.volta else p.ida end)::time) at time zone 'America/Belem') + interval '3 hours'
+                   else e.ts between vg2.saida_ts - interval '20 minutes' and coalesce(vg2.chegada_ts, vg2.saida_ts + interval '5 hours') + interval '20 minutes' end
+        order by case when (case when vg2.sent = 'VOLTA' then p.volta else p.ida end) ~ '^\d{1,2}:\d{2}$'
+                      then abs(extract(epoch from e.ts - ((vg2.data_local + (case when vg2.sent = 'VOLTA' then p.volta else p.ida end)::time) at time zone 'America/Belem')))
+                      else extract(epoch from e.ts - vg2.saida_ts) end
+        limit 1) ev on true
       left join lateral (select min(e.ts) as ts from bi_cerca_eventos e
-                         where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg.frota) and e.tipo = 'entrada'
-                           and e.ts between vg.saida_ts - interval '20 minutes'
-                                        and coalesce(vg.chegada_ts, vg.saida_ts + interval '5 hours') + interval '20 minutes') ent on true
-      left join lateral (select min(e.ts) as ts from bi_cerca_eventos e
-                         where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg.frota) and e.tipo = 'saida'
-                           and e.ts > ent.ts and e.ts < ent.ts + interval '3 hours') sai on ent.ts is not null)
+                         where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg2.frota) and e.tipo = 'saida'
+                           and e.ts > ev.ts and e.ts < ev.ts + interval '3 hours') sai on ev.ts is not null),
+    fim as (
+      select a.*, to_char(a.ent at time zone 'America/Belem', 'HH24:MI') as hr,
+             case when a.ent is not null and a.prev ~ '^\d{1,2}:\d{2}$'
+                  then ((_bi_min(to_char(a.ent at time zone 'America/Belem', 'HH24:MI')) - _bi_min(a.prev) + 720 + 1440) % 1440) - 720 end as dif
+      from pas a)
     select json_build_object(
       'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'roteiro'),
-      'pontos', (select coalesce(json_agg(json_build_object('rota', rota, 'ordem', ordem, 'nome', nome, 'cor', cor) order by rota, ordem, nome), '[]'::json) from pts),
-      'linhas', (select coalesce(json_agg(x order by x.rota, x.data desc, x.saida desc), '[]'::json) from (
-          select rota, data_local as data, linha, tipo, frota, motorista,
+      'pontos', (select coalesce(json_agg(json_build_object('roteiro', roteiro, 'ordem', ordem, 'nome', nome, 'cor', cor, 'ida', ida, 'volta', volta,
+                   'rota_ida', ri, 'rota_volta', rv) order by roteiro, ordem, nome), '[]'::json) from pts where roteiro is not null),
+      'linhas', (select coalesce(json_agg(x order by x.roteiro, x.sentido, x.data desc, x.saida desc), '[]'::json) from (
+          select roteiro, sent as sentido, data_local as data, linha, frota, motorista,
                  to_char(saida_ts at time zone 'America/Belem', 'HH24:MI') as saida,
                  to_char(chegada_ts at time zone 'America/Belem', 'HH24:MI') as chegada,
-                 json_agg(json_build_object('ordem', ordem, 'nome', nome,
-                     'ent', to_char(ent at time zone 'America/Belem', 'HH24:MI'),
-                     'sai', to_char(sai at time zone 'America/Belem', 'HH24:MI'),
-                     'min', round(extract(epoch from ent - saida_ts) / 60)) order by ordem) as p
-          from pas group by rota, data_local, linha, tipo, frota, motorista, saida_ts, chegada_ts limit 3000) x)
+                 json_agg(json_build_object('ordem', ordem, 'nome', nome, 'prev', prev, 'ent', hr,
+                     'sai', to_char(sai at time zone 'America/Belem', 'HH24:MI'), 'dif', dif,
+                     'status', case when hr is null then 'sem passagem' when dif is null then 'passou'
+                                    when dif < -ta then 'adiantado' when dif > td then 'atrasado' else 'no horário' end) order by ordem) as p
+          from fim group by roteiro, sent, data_local, linha, frota, motorista, saida_ts, chegada_ts limit 3000) x)
     ) into res;
 
   else
