@@ -391,7 +391,16 @@ function telaHorarios(d){
 }
 let HR_KPI=null;
 // ---------------- Roteirização: hora em que cada viagem passou em cada cerca da rota x horário previsto
-function telaRoteiro(d){
+let ROT_MP=[];
+$("painel").addEventListener("click",e=>{const el=e.target.closest("[data-rmp]");if(!el)return;const x=ROT_MP[+el.dataset.rmp];if(!x)return;
+  $("ovT").textContent=x.cerca+" · "+(x.sentido==="IDA"?"ida":"volta")+" · carro "+x.frota;
+  $("ovS").textContent=x.linha+" · "+dBR(x.data)+" · previsto "+x.prevista+" · passou "+x.hora_real;
+  CSV_TELA=CSV;$("ov").classList.remove("hidden");
+  $("ovC").innerHTML='<div id="ovMapW" class="hidden" style="margin:8px 0"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><b id="ovMapT"></b>'
+    +'<label class="note" style="margin-left:auto">Mostrar <select id="ovJan"><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 hora</option></select> antes e depois</label></div>'
+    +'<div id="ovMapa" style="height:420px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div>';
+  mapaViagem(x)});
+function telaRoteiro(d){ROT_MP=[];
   if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma roteirização ainda. Em <b>Cercas dos turnos</b>, clique em <b>+ Nova roteirização</b>.</div>';return}
   const P=d.pontos||[],L=d.linhas||[];
   if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem das linhas das roteirizações nesse período e filtro. Confira em Cercas dos turnos o texto da linha da ida e da volta.</div>';return}
@@ -404,7 +413,7 @@ function telaRoteiro(d){
   blocos.forEach((b,i)=>{const V=b.V.map(v=>{const o=Object.assign({},v);b.pts.forEach((p,j)=>{const q=v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{};o["p"+j]=q});return o});
     tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
       .concat(b.pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome+((b.sn==="IDA"?p.ida:p.volta)?" ("+(b.sn==="IDA"?p.ida:p.volta)+")":""),
-        f:q=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip '+(ST[q.status]||"c-blu")+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:""))+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+'</span>'})))
+        f:(q,v)=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip '+(ST[q.status]||"c-blu")+'" style="cursor:pointer" data-rmp="'+(ROT_MP.push({data:v.data,frota:v.frota,cerca:q.nome,prevista:q.prev||q.ent,hora_real:q.ent,dif:q.prev?q.dif:0,linha:v.linha,sentido:b.sn})-1)+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:"")+" · clique para ver no mapa")+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+' 🗺</span>'})))
       .concat([{k:"chegada",t:"Chegada (TFleet)"}]),V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
 }
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
@@ -484,8 +493,8 @@ async function mapaViagem(x){
   const b=[],poly=r.cerca&&r.cerca.pontos;
   if(poly&&poly.length>=3){L.polygon(poly,{color:r.cerca.cor||"#2563eb",weight:2,fillOpacity:.2}).bindTooltip("Cerca: "+r.cerca.nome).addTo(MAPA_OV);b.push(...poly)}
   const P=(r.pontos||[]).map(p=>({ll:[p.lat,p.lon],h:minLocal(p.ts),m:(Date.parse(p.ts)-base)/60000}));
+  const MARG=+((INI&&INI.config&&INI.config.margem_m)??30)/1000;
   if(P.length){L.polyline(P.map(p=>p.ll),{color:"#facc15",weight:3,opacity:.9}).addTo(MAPA_OV);
-    const MARG=+((INI&&INI.config&&INI.config.margem_m)??30)/1000;
     P.forEach(p=>{const antes=p.m<prev,den=poly&&(dentroPoli(p.ll,poly)||distCerca(p.ll,poly)<=MARG);L.circleMarker(p.ll,{radius:den?6:5,color:"#fff",weight:1.5,fillColor:den?"#22c55e":antes?"#38bdf8":"#a78bfa",fillOpacity:1})
       .bindTooltip(p.h+" · "+(poly?(()=>{const d=distCerca(p.ll,poly);return d===0?"dentro da cerca":d<=MARG?"a "+Math.round(d*1000)+" m da borda (conta como dentro pela margem)":d<1?Math.round(d*1000)+" m da cerca":d.toFixed(2).replace(".",",")+" km da cerca"})():""))
       .addTo(MAPA_OV);b.push(p.ll)})}
