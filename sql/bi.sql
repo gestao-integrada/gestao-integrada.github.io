@@ -106,7 +106,8 @@ insert into public.bi_paineis (id, titulo, descricao, ordem) values
   ('fora_rota',  'Fora de rota',                 'Passageiros que embarcaram numa linha diferente da linha de cadastro, e os não regulares.', 3),
   ('viagens',    'Viagens por dia',              'Quantas viagens foram abertas por dia em cada turno e a média do período.', 4),
   ('custo',      'Custo por pessoa',             'Embarques vezes o valor por pessoa, por gerência, turno e linha.', 5),
-  ('nao_cad',    'Não cadastrados',              'Itinerantes e passageiros não cadastrados, com o crachá lido para consulta.', 6)
+  ('nao_cad',    'Não cadastrados',              'Itinerantes e passageiros não cadastrados, com o crachá lido para consulta.', 6),
+  ('roteiro',    'Roteirização',                 'Hora em que cada viagem passou em cada ponto (cerca) da rota: saída, meio do caminho, descida, chegada.', 7)
 on conflict (id) do nothing;
 
 -- cercas: polígono + regras de horário. horarios = [{rotulo, tipolinhas[], linha_contem, chegada "07:40",
@@ -132,7 +133,7 @@ create table if not exists public.bi_cercas (
 -- as entradas e saídas e entram em painéis próprios depois.
 alter table public.bi_cercas add column if not exists finalidade text not null default 'turno';
 alter table public.bi_cercas drop constraint if exists bi_cercas_finalidade_check;
-alter table public.bi_cercas add constraint bi_cercas_finalidade_check check (finalidade in ('turno', 'terminal', 'fim_rota', 'outra'));
+alter table public.bi_cercas add constraint bi_cercas_finalidade_check check (finalidade in ('turno', 'terminal', 'fim_rota', 'outra', 'roteiro'));
 
 create table if not exists public.bi_cerca_eventos (
   cerca_id  bigint not null references public.bi_cercas(id) on delete cascade,
@@ -405,7 +406,7 @@ declare q jsonb := public._bi_exige(p_token, true); v_id bigint := nullif(p_dado
         pts jsonb := coalesce(p_dados->'pontos', '[]'::jsonb); arr float8[]; old bi_cercas;
         v_fin text := coalesce(nullif(p_dados->>'finalidade', ''), 'turno');
 begin
-  if v_fin not in ('turno', 'terminal', 'fim_rota', 'outra') then raise exception 'Finalidade inválida.'; end if;
+  if v_fin not in ('turno', 'terminal', 'fim_rota', 'outra', 'roteiro') then raise exception 'Finalidade inválida.'; end if;
   if coalesce(trim(p_dados->>'nome'), '') = '' then raise exception 'Dê um nome para a cerca.'; end if;
   if jsonb_typeof(pts) <> 'array' or jsonb_array_length(pts) < 3 then raise exception 'Marque pelo menos 3 pontos no mapa.'; end if;
   select array_agg(x order by o, k) into arr from (
@@ -765,6 +766,43 @@ begin
                     left join bi_cerca_dias k on k.cerca_id = c.id and k.dia = d::date where c.ativo and k.dia is null),
       'linhas', (select coalesce(json_agg(h), '[]'::json) from _bi_horarios(p_de, p_ate) h
                  where (fl is null or h.linha = fl) and (ft is null or h.tipolinha = ft) and (fg is null or public._bi_linha_ok(h.tipolinha, h.linha, fg, null)) and (fs is null or h.tipo = fs))
+    ) into res;
+
+  elsif p_painel = 'roteiro' then
+    -- cercas de roteirização: horarios = [{rota: "trecho do nome da linha", ordem: 1}]; uma cerca pode servir a várias rotas
+    if p_ate - p_de > 31 then raise exception 'Escolha um período de até 1 mês.'; end if;
+    with pts as (
+      select c.id as cid, c.nome, c.cor, trim(h->>'rota') as rota, coalesce(nullif(h->>'ordem', '')::int, 1) as ordem
+      from bi_cercas c cross join jsonb_array_elements(coalesce(c.horarios, '[]'::jsonb)) h
+      where c.ativo and c.finalidade = 'roteiro' and coalesce(trim(h->>'rota'), '') <> ''),
+    vg as (
+      select v.*, p.rota from _bi_viagens(p_de, p_ate) v
+      join (select distinct rota from pts) p on public._bi_tem(v.linha, p.rota)
+      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft)
+        and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs)),
+    pas as (
+      select vg.rota, vg.data_local, vg.linha, upper(trim(vg.tipo)) as tipo, vg.frota, vg.motorista, vg.saida_ts, vg.chegada_ts,
+             p.ordem, p.nome, ent.ts as ent, sai.ts as sai
+      from vg join pts p on p.rota = vg.rota
+      left join lateral (select min(e.ts) as ts from bi_cerca_eventos e
+                         where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg.frota) and e.tipo = 'entrada'
+                           and e.ts between vg.saida_ts - interval '20 minutes'
+                                        and coalesce(vg.chegada_ts, vg.saida_ts + interval '5 hours') + interval '20 minutes') ent on true
+      left join lateral (select min(e.ts) as ts from bi_cerca_eventos e
+                         where e.cerca_id = p.cid and e.frota = public.normaliza_tag(vg.frota) and e.tipo = 'saida'
+                           and e.ts > ent.ts and e.ts < ent.ts + interval '3 hours') sai on ent.ts is not null)
+    select json_build_object(
+      'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'roteiro'),
+      'pontos', (select coalesce(json_agg(json_build_object('rota', rota, 'ordem', ordem, 'nome', nome, 'cor', cor) order by rota, ordem, nome), '[]'::json) from pts),
+      'linhas', (select coalesce(json_agg(x order by x.rota, x.data desc, x.saida desc), '[]'::json) from (
+          select rota, data_local as data, linha, tipo, frota, motorista,
+                 to_char(saida_ts at time zone 'America/Belem', 'HH24:MI') as saida,
+                 to_char(chegada_ts at time zone 'America/Belem', 'HH24:MI') as chegada,
+                 json_agg(json_build_object('ordem', ordem, 'nome', nome,
+                     'ent', to_char(ent at time zone 'America/Belem', 'HH24:MI'),
+                     'sai', to_char(sai at time zone 'America/Belem', 'HH24:MI'),
+                     'min', round(extract(epoch from ent - saida_ts) / 60)) order by ordem) as p
+          from pas group by rota, data_local, linha, tipo, frota, motorista, saida_ts, chegada_ts limit 3000) x)
     ) into res;
 
   else
