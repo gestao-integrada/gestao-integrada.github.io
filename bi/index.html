@@ -203,13 +203,20 @@ async function entrar(tk){
     $("fTurno").innerHTML='<option value="">Todos</option>'+(GRUPOS().length?'<optgroup label="Grupos (Gerenciar)">'+GRUPOS().map(g=>'<option value="G:'+esc(g.nome)+'">'+esc(g.nome)+'</option>').join("")+'</optgroup><optgroup label="Turnos da TFleet">':'')+(tl||[]).map(t=>'<option>'+esc(t)+'</option>').join("")+(GRUPOS().length?'</optgroup>':'');
     $("fTurno").value=atual;if($("fTurno").value!==atual)$("fTurno").value=""};
   // ao abrir: Horários de entrada e saída, grupo ADM, hoje
-  montaTurno([]);const gAdm=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");if(gAdm)$("fTurno").value="G:"+gAdm.nome;
+  montaTurno([]);
   if(abasVisiveis().some(x=>x.id==="horarios"))ABA="horarios";
+  padraoAba(ABA);
   rpc("bi_opcoes",{p_token:TOKEN}).then(o=>{OPC=o;
     $("dlLinhas").innerHTML=(o.linhas||[]).map(l=>'<option value="'+esc(l)+'">').join("");
     montaTurno(o.tipolinhas);
   }).catch(()=>{});
   montarAbas();
+}
+// filtros com que cada aba abre: Horários = grupo ADM, hoje; Roteirização = últimos 7 dias, tudo liberado
+function padraoAba(id){
+  if(id==="horarios"){const g=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");
+    $("fTurno").value=g?"G:"+g.nome:"";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=hoje();$("fPer").value="0"}
+  else if(id==="roteiro"){$("fTurno").value="";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);$("fPer").value="6"}
 }
 function abasVisiveis(){
   const p=(INI.paineis||[]).filter(x=>x.situacao!=="excluido");
@@ -222,7 +229,7 @@ function montarAbas(){
   const a=abasVisiveis();
   const salvo=ls.get(K_TAB);ABA=a.find(x=>x.id===(ABA||salvo))?(ABA||salvo):(a[0]&&a[0].id);
   $("tabs").innerHTML=a.map(x=>'<button class="tab'+(x.id===ABA?" on":"")+'" data-id="'+x.id+'">'+esc(x.titulo)+(x.sit==="admin"?'<span class="tag">só admin</span>':'')+'</button>').join("");
-  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.id;ls.set(K_TAB,ABA);montarAbas()});
+  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.id;ls.set(K_TAB,ABA);padraoAba(ABA);montarAbas()});
   carregar();
 }
 function filtros(){return{linha:$("fLinha").value.trim()||null,tipolinha:$("fTurno").value||null,sentido:$("fSent").value||null}}
