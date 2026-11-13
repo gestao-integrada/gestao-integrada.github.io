@@ -414,7 +414,7 @@ function telaRoteiro(d){ROT_MP=[];
     tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
       .concat(b.pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome+((b.sn==="IDA"?p.ida:p.volta)?" ("+(b.sn==="IDA"?p.ida:p.volta)+")":""),
         f:(q,v)=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip '+(ST[q.status]||"c-blu")+'" style="cursor:pointer" data-rmp="'+(ROT_MP.push({data:v.data,frota:v.frota,cerca:q.nome,prevista:q.prev||q.ent,hora_real:q.ent,dif:q.prev?q.dif:0,linha:v.linha,sentido:b.sn})-1)+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:"")+" · clique para ver no mapa")+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+' 🗺</span>'})))
-      .concat([{k:"chegada",t:"Chegada (TFleet)"}]),V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
+      ,V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
 }
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
