@@ -245,9 +245,9 @@ async function carregar(){
   const de=$("fDe").value,ate=$("fAte").value;
   try{
     let aviso="";
-    if(ABA==="horarios")aviso=await processarCercas(de,ate);
+    if(ABA==="horarios"||ABA==="roteiro")aviso=await processarCercas(de,ate);
     DADOS=await rpc("bi_dados",{p_token:TOKEN,p_painel:ABA,p_de:de,p_ate:ate,p_filtros:filtros()});
-    ({ocupacao:telaOcupacao,horarios:telaHorarios,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad}[ABA]||(()=>{}))(DADOS);
+    ({ocupacao:telaOcupacao,horarios:telaHorarios,roteiro:telaRoteiro,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad}[ABA]||(()=>{}))(DADOS);
     if(aviso)$("painel").insertAdjacentHTML("afterbegin",'<div class="note" style="color:#b45309">'+esc(aviso)+'</div>');
   }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
 }
@@ -390,6 +390,21 @@ function telaHorarios(d){
   if($("hrKpiX"))$("hrKpiX").onclick=e=>{e.preventDefault();HR_KPI=null;telaHorarios(d)};
 }
 let HR_KPI=null;
+// ---------------- Roteirização: hora de passagem em cada ponto (cerca) da rota
+function telaRoteiro(d){
+  if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma cerca de roteirização ainda. Em <b>Cercas dos turnos</b>, crie uma cerca, escolha "Controle de roteirização" e informe a rota e a ordem do ponto.</div>';return}
+  const P=d.pontos||[],L=d.linhas||[];
+  if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem das rotas com pontos de controle nesse período e filtro.</div>';return}
+  const rotas=[...new Set(P.map(p=>p.rota))].filter(r=>L.some(x=>x.rota===r));
+  $("painel").innerHTML='<div class="faixa info">Cada coluna é um ponto da rota, na ordem cadastrada. A hora é a <b>entrada</b> do carro na cerca (GPS do Monitor) durante a viagem; entre parênteses, os minutos desde a saída. "—" = não passou ou o carro não tinha Monitor.</div>'
+    +rotas.map((r,i)=>{const pts=P.filter(p=>p.rota===r),V=L.filter(x=>x.rota===r),n=V.length;
+      const ok=pts.map(p=>V.filter(v=>(v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{}).ent).length);
+      return'<div class="box"><h3>Rota "'+esc(r)+'" <span class="r note">'+n+' viagem(ns) · '+pts.map((p,j)=>esc(p.ordem+". "+p.nome)+": "+ok[j]+"/"+n).join(" · ")+'</span></h3><div id="tRot'+i+'"></div></div>'}).join("");
+  rotas.forEach((r,i)=>{const pts=P.filter(p=>p.rota===r),V=L.filter(x=>x.rota===r).map(v=>{const o=Object.assign({},v);
+      pts.forEach((p,j)=>{const q=v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{};o["p"+j]=q.ent?q.ent+(q.min!=null?" (+"+q.min+")":"")+(q.sai?" → saiu "+q.sai:""):"—"});return o});
+    tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"tipo",t:"Sentido"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
+      .concat(pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome}))).concat([{k:"chegada",t:"Chegada (TFleet)"}]),V,"roteirizacao_"+r.replace(/\W+/g,"_"))});
+}
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
 const difTxt=(v,s)=>v==null?"—":v===0?"no minuto previsto":Math.abs(v)+" min "+(v>0?"depois":"antes");
@@ -585,7 +600,7 @@ function novoMapa(id){
 /* ---------------- Cercas ---------------- */
 let CERCAS=[],mapa=null,camada=null,ED=null,edLayer=null;
 const DIAS=["","Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
-const FIN={turno:"Entrada e saída do turno",terminal:"Chegada e saída do terminal",fim_rota:"Fim das rotas",outra:"Outra"};
+const FIN={turno:"Entrada e saída do turno",roteiro:"Controle de roteirização (pontos de uma rota)",terminal:"Chegada e saída do terminal",fim_rota:"Fim das rotas",outra:"Outra"};
 async function telaCercas(){
   $("painel").innerHTML='<div class="cols3"><div class="box"><div id="mapa"></div><div class="note" id="mapaDica" style="margin-top:6px"></div></div><div id="lado"></div></div>';
   if(!window.L){$("mapa").innerHTML='<div class="vazio">O mapa não carregou.</div>'}
@@ -603,7 +618,7 @@ function listaCercas(){
   $("lado").innerHTML='<div class="box"><h3>Cercas dos turnos'+(QUEM.edita?' <button class="btn sm p r" id="bNova">+ Nova cerca</button>':'')+'</h3>'
     +'<div class="note" style="margin-bottom:8px">Cada cerca é a área onde o ônibus chega e de onde sai no turno. A entrada e a saída são medidas pelo GPS do app Monitor.</div>'
     +(CERCAS.length?CERCAS.map(c=>'<div class="cerca" style="border-left-color:'+esc(c.cor)+'"><b>'+esc(c.nome)+'</b> '+(c.turno?'<span class="chip c-blu">'+esc(c.turno)+'</span> ':'')+'<span class="chip '+(c.finalidade==="turno"?"c-ok":"c-gry")+'">'+esc(FIN[c.finalidade]||c.finalidade)+'</span> '+(c.ativo?'':'<span class="chip c-gry">desligada</span>')
-      +(c.finalidade==="turno"?'<ul>'+(c.horarios||[]).map(resumo).join("")+'</ul>':'<div class="note">Entradas e saídas já são gravadas; o painel desta finalidade entra depois.</div>')
+      +(c.finalidade==="turno"?'<ul>'+(c.horarios||[]).map(resumo).join("")+'</ul>':c.finalidade==="roteiro"?'<ul>'+(c.horarios||[]).filter(h=>h.rota).map(h=>'<li>Ponto '+esc(h.ordem||1)+' da rota <b>'+esc(h.rota)+'</b></li>').join("")+'</ul>':'<div class="note">Entradas e saídas já são gravadas; o painel desta finalidade entra depois.</div>')
       +(QUEM.edita?'<div class="acts"><button class="btn sm" data-ed="'+c.id+'">Editar</button><button class="btn sm red" data-rm="'+c.id+'">Remover</button></div>':'')
       +'<div class="note">'+(c.atualizado_por?'Alterada por '+esc(c.atualizado_por)+' em '+dtBR(c.atualizado_em):'')+'</div></div>').join("")
       :'<div class="vazio">Nenhuma cerca ainda.'+(QUEM.edita?' Clique em <b>+ Nova cerca</b>.':'')+'</div>')+'</div>';
@@ -663,6 +678,8 @@ function formEd(){
     +'<label class="chks" style="margin-top:8px"><label><input type="checkbox" id="eAtivo"'+(ED.ativo?" checked":"")+'> Cerca ligada</label></label>'
     +(ED.finalidade==="turno"?'<div class="dica">A chegada é comparada com as viagens de IDA e a saída com as de VOLTA. Turno 12x12 com troca de manhã e de noite: use um horário para cada troca.</div>'
       +'<div id="regras">'+ED.horarios.map(rg).join("")+'</div><button class="btn sm" id="bAddR">+ Outro horário</button>'
+      :ED.finalidade==="roteiro"?'<div class="dica">Ponto de controle de uma rota (saída, meio do caminho, descida, chegada). Informe o trecho do nome da linha (ex.: "BELÉM") e a ordem do ponto na rota. A mesma cerca pode ser ponto de várias rotas. O painel <b>Roteirização</b> mostra a hora em que cada viagem passou aqui.</div>'
+      +'<div id="regras">'+ED.horarios.map((h,i)=>'<div class="regra" data-i="'+i+'"><div class="g"><label>Rota (nome da linha contém)<input data-f="rota" list="dlLinhas" value="'+esc(h.rota||"")+'" placeholder="Ex.: BELÉM"></label><label>Ordem do ponto<input type="number" min="1" data-f="ordem" value="'+(h.ordem||i+1)+'"></label></div><button class="btn sm" data-rmr="'+i+'">Remover</button></div>').join("")+'</div><button class="btn sm" id="bAddR">+ Outra rota</button>'
       :'<div class="dica">As entradas e saídas nesta cerca já ficam gravadas a partir de agora. O painel dela (horário de chegada, saída ou fim de rota) entra no BI na próxima etapa.</div><div id="regras"></div>')
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="bCanc">Cancelar</button><button class="btn p" id="bSalv">Salvar cerca</button></div><div id="eMsg" class="msg"></div></div>';
   const ler=()=>{ED.finalidade=$("eFin").value;ED.nome=$("eNome").value;ED.turno=$("eTurno").value;ED.cor=$("eCor").value;ED.ativo=$("eAtivo").checked;
@@ -674,8 +691,11 @@ function formEd(){
   $("eCor").oninput=()=>{ED.cor=$("eCor").value;desenharEd()};
   $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd()};
   $("bLimp").onclick=()=>{if(confirm("Apagar todos os pontos desta cerca?")){ED.pontos=[];desenharEd()}};
-  $("eFin").onchange=()=>{ler();formEd();desenharEd()};
-  if($("bAddR"))$("bAddR").onclick=()=>{ler();ED.horarios.push(regraNova());formEd();desenharEd()};
+  $("eFin").onchange=()=>{ler();
+    if(ED.finalidade==="roteiro"&&!ED.horarios.some(h=>"rota" in h))ED.horarios=[{rota:"",ordem:1}];
+    if(ED.finalidade==="turno"&&!ED.horarios.some(h=>"chegada" in h||"saida" in h))ED.horarios=[regraNova()];
+    formEd();desenharEd()};
+  if($("bAddR"))$("bAddR").onclick=()=>{ler();ED.horarios.push(ED.finalidade==="roteiro"?{rota:"",ordem:ED.horarios.length+1}:regraNova());formEd();desenharEd()};
   $("regras").querySelectorAll("[data-rmr]").forEach(b=>b.onclick=()=>{ler();ED.horarios.splice(+b.dataset.rmr,1);formEd();desenharEd()});
   $("regras").querySelectorAll(".selGrupo,[data-tl],[data-f=linha_contem],[data-f=linha_exclui]").forEach(x=>x.onchange=()=>{ler();formEd();desenharEd()});
   $("bCanc").onclick=()=>{ED=null;listaCercas()};
@@ -684,6 +704,8 @@ function formEd(){
     if(ED.pontos.length<3){msg("eMsg","Marque pelo menos 3 pontos no mapa.","err");return}
     if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h.grupo&&!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, escolha o grupo de rotas (ou, no personalizado, marque o turno ou o nome da linha).","err");return}
       if(!h.chegada&&!h.saida){msg("eMsg","Em cada horário, informe a chegada e/ou a saída prevista.","err");return}}
+    if(ED.finalidade==="roteiro"){ED.horarios=ED.horarios.filter(h=>h.rota).map(h=>({rota:h.rota,ordem:+h.ordem||1}));
+      if(!ED.horarios.length){msg("eMsg","Informe a rota (trecho do nome da linha) deste ponto.","err");return}}
     msg("eMsg","Salvando…");
     try{await rpc("bi_cerca_salvar",{p_token:TOKEN,p_dados:ED});ED=null;telaCercas()}catch(err){msg("eMsg",err.message,"err")}};
 }
