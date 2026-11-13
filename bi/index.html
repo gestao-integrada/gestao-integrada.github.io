@@ -44,7 +44,7 @@ header.top .sub{color:var(--mut);font-size:13px;margin:0}
 .kpi b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
 .kpi span{font-size:12px;color:var(--mut)}
 .kpi small{display:block;font-size:11px;color:var(--mut)}
-.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}
+.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}.kpi.blu b{color:var(--blu)}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
 .cols3{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:8px 0}
 @media (max-width:820px){.cols,.cols3{grid-template-columns:1fr}}
@@ -65,6 +65,7 @@ table.dt td.n{text-align:right;font-variant-numeric:tabular-nums}
 .chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
 .c-ok{background:var(--grnbg);color:var(--grn)}.c-bad{background:var(--redbg);color:var(--red)}.c-warn{background:var(--orabg);color:var(--ora)}
 .c-gry{background:var(--grybg);color:var(--gry)}.c-blu{background:var(--blubg);color:var(--blu)}
+.chip.rot{font-size:15px;padding:4px 11px}
 .vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:14px;color:var(--mut);text-align:center}
 .note{font-size:12px;color:var(--mut)}
 .leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mut);margin:4px 0}
@@ -203,13 +204,20 @@ async function entrar(tk){
     $("fTurno").innerHTML='<option value="">Todos</option>'+(GRUPOS().length?'<optgroup label="Grupos (Gerenciar)">'+GRUPOS().map(g=>'<option value="G:'+esc(g.nome)+'">'+esc(g.nome)+'</option>').join("")+'</optgroup><optgroup label="Turnos da TFleet">':'')+(tl||[]).map(t=>'<option>'+esc(t)+'</option>').join("")+(GRUPOS().length?'</optgroup>':'');
     $("fTurno").value=atual;if($("fTurno").value!==atual)$("fTurno").value=""};
   // ao abrir: Horários de entrada e saída, grupo ADM, hoje
-  montaTurno([]);const gAdm=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");if(gAdm)$("fTurno").value="G:"+gAdm.nome;
+  montaTurno([]);
   if(abasVisiveis().some(x=>x.id==="horarios"))ABA="horarios";
+  padraoAba(ABA);
   rpc("bi_opcoes",{p_token:TOKEN}).then(o=>{OPC=o;
     $("dlLinhas").innerHTML=(o.linhas||[]).map(l=>'<option value="'+esc(l)+'">').join("");
     montaTurno(o.tipolinhas);
   }).catch(()=>{});
   montarAbas();
+}
+// filtros com que cada aba abre: Horários = grupo ADM, hoje; Roteirização = últimos 7 dias, tudo liberado
+function padraoAba(id){
+  if(id==="horarios"){const g=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");
+    $("fTurno").value=g?"G:"+g.nome:"";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=hoje();$("fPer").value="0"}
+  else if(id==="roteiro"){$("fTurno").value="";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);$("fPer").value="6"}
 }
 function abasVisiveis(){
   const p=(INI.paineis||[]).filter(x=>x.situacao!=="excluido");
@@ -222,7 +230,7 @@ function montarAbas(){
   const a=abasVisiveis();
   const salvo=ls.get(K_TAB);ABA=a.find(x=>x.id===(ABA||salvo))?(ABA||salvo):(a[0]&&a[0].id);
   $("tabs").innerHTML=a.map(x=>'<button class="tab'+(x.id===ABA?" on":"")+'" data-id="'+x.id+'">'+esc(x.titulo)+(x.sit==="admin"?'<span class="tag">só admin</span>':'')+'</button>').join("");
-  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.id;ls.set(K_TAB,ABA);montarAbas()});
+  $("tabs").querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ABA=b.dataset.id;ls.set(K_TAB,ABA);padraoAba(ABA);montarAbas()});
   carregar();
 }
 function filtros(){return{linha:$("fLinha").value.trim()||null,tipolinha:$("fTurno").value||null,sentido:$("fSent").value||null}}
@@ -365,6 +373,7 @@ function telaOcupacao(d){
 }
 
 /* ---------------- Horários de entrada e saída ---------------- */
+const ST_ROT={"no horário":"c-ok","adiantado":"c-blu","atrasado":"c-bad"};
 const ST={"no horário":"c-ok","adiantado":"c-warn","atrasado":"c-bad","sem dado":"c-gry","sem passagem na cerca":"c-gry"};
 const STCOR={"no horário":"#16a34a","adiantado":"#d97706","atrasado":"#dc2626"};
 function telaHorarios(d){
@@ -416,13 +425,13 @@ function telaRoteiro(d){ROT_MP=[];
   const blocos=[];[...new Set(P.map(p=>p.roteiro))].forEach(r=>["IDA","VOLTA"].forEach(sn=>{const V=L.filter(x=>x.roteiro===r&&x.sentido===sn);if(V.length)blocos.push({r,sn,V,pts:P.filter(p=>p.roteiro===r)})}));
   const c={};L.forEach(v=>v.p.forEach(q=>c[q.status]=(c[q.status]||0)+1));const tot=Object.values(c).reduce((a,b)=>a+b,0),com=tot-(c["sem passagem"]||0);
   $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens")+kpi(com?Math.round(100*(c["no horário"]||0)/com)+"%":"—","passagens no horário","de "+com+" com hora","ok")
-    +kpi(nf(c["adiantado"]||0),"adiantadas","","warn")+kpi(nf(c["atrasado"]||0),"atrasadas","","bad")+kpi(nf(c["sem passagem"]||0),"sem passagem","não passou ou sem Monitor")+'</div>'
-    +'<div class="faixa info">Cada coluna é uma cerca da roteirização, na ordem. Mostra a hora em que o carro <b>entrou</b> na cerca (GPS do Monitor) e a diferença para o horário previsto daquele sentido. Passe o mouse para ver o previsto e a hora em que saiu.</div>'
+    +kpi(nf(c["adiantado"]||0),"adiantadas","rodando bem","blu")+kpi(nf(c["atrasado"]||0),"atrasadas","","bad")+kpi(nf(c["sem passagem"]||0),"sem passagem","não passou ou sem Monitor")+'</div>'
+    +'<div class="faixa info">Cada coluna é uma cerca da roteirização, na ordem. Mostra a hora em que o carro <b>entrou</b> na cerca (GPS do Monitor) e a diferença para o horário previsto daquele sentido. <b style="color:var(--blu)">Azul</b> = chegou antes (rodando bem), <b style="color:var(--grn)">verde</b> = dentro da tolerância, <b style="color:var(--red)">vermelho</b> = atrasado. Passe o mouse para ver o previsto e a hora em que saiu.</div>'
     +blocos.map((b,i)=>'<div class="box"><h3>'+esc(b.r)+' · '+(b.sn==="IDA"?"Ida":"Volta")+' <span class="r note">'+b.V.length+' viagem(ns)</span></h3><div id="tRot'+i+'"></div></div>').join("");
   blocos.forEach((b,i)=>{const V=b.V.map(v=>{const o=Object.assign({},v);b.pts.forEach((p,j)=>{const q=v.p.find(q=>q.ordem===p.ordem&&q.nome===p.nome)||{};o["p"+j]=q});return o});
     tabela("tRot"+i,[{k:"data",t:"Data",f:dBR},{k:"saida",t:"Saída"},{k:"linha",t:"Linha",w:1},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))}]
       .concat(b.pts.map((p,j)=>({k:"p"+j,t:p.ordem+". "+p.nome+((b.sn==="IDA"?p.ida:p.volta)?" ("+(b.sn==="IDA"?p.ida:p.volta)+")":""),
-        f:(q,v)=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip '+(ST[q.status]||"c-blu")+'" style="cursor:pointer" data-rmp="'+(ROT_MP.push({data:v.data,frota:v.frota,cerca:q.nome,prevista:q.prev||q.ent,hora_real:q.ent,dif:q.prev?q.dif:0,linha:v.linha,sentido:b.sn})-1)+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:"")+" · clique para ver no mapa")+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+' 🗺</span>'})))
+        f:(q,v)=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip rot '+(ST_ROT[q.status]||"c-gry")+'" style="cursor:pointer" data-rmp="'+(ROT_MP.push({data:v.data,frota:v.frota,cerca:q.nome,prevista:q.prev||q.ent,hora_real:q.ent,dif:q.prev?q.dif:0,linha:v.linha,sentido:b.sn})-1)+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:"")+" · clique para ver no mapa")+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+' 🗺</span>'})))
       ,V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
 }
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
