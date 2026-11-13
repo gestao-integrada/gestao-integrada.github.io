@@ -135,6 +135,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
     <label>Turno <select id="fTurno"><option value="">Todos</option></select></label>
     <label>Sentido <select id="fSent"><option value="">IDA e VOLTA</option><option>IDA</option><option>VOLTA</option></select></label>
     <button class="btn p" id="bAtual" style="align-self:flex-end">Atualizar</button>
+    <button class="btn" id="bLimpar" style="align-self:flex-end" title="Volta Linha, Turno e Sentido para Todos">✕ Limpar filtros</button>
     <button class="btn" id="bCsv" style="align-self:flex-end">⬇ Baixar Excel</button>
   </div>
   <datalist id="dlLinhas"></datalist>
@@ -229,6 +230,7 @@ $("fPer").onchange=()=>{const v=$("fPer").value,h=hoje();if(!v)return;let de=h,a
 ["fDe","fAte"].forEach(i=>$(i).addEventListener("change",()=>{$("fPer").value=""}));
 ["fDe","fAte","fTurno","fSent"].forEach(i=>$(i).addEventListener("change",()=>carregar()));
 $("fLinha").addEventListener("change",()=>carregar());
+$("bLimpar").addEventListener("click",()=>{$("fLinha").value="";$("fTurno").value="";$("fSent").value="";carregar()});
 
 async function carregar(){
   const semFiltro=ABA==="cercas"||ABA==="gerenciar";
