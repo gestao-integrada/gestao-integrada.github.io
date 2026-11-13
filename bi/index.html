@@ -435,7 +435,10 @@ $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-hr]");
     +'<label class="note" style="margin-left:auto">Mostrar <select id="ovJan"><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 hora</option></select> antes e depois</label></div>'
     +'<div id="ovMapa" style="height:380px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div><div id="ovTab"></div>';
   tabela("ovTab",[{k:"data",t:"Data",f:dBR},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"frase",t:"O que aconteceu",w:1},
-    {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"origem",t:"Hora veio de"},{k:"ocupacao",t:"Passageiros",num:1},
+    {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"prevista",t:"Previsto"},
+    {k:"tfleet",t:"Hora TFleet",f:(v,x)=>!v?"—":x.origem&&x.origem.startsWith("TFleet")?"<b>"+esc(v)+"</b> ✔":esc(v)},
+    {k:"monitor",t:"Hora Monitor",f:(v,x)=>!v?'<span class="note">sem passagem</span>':x.origem==="Monitor"?"<b>"+esc(v)+"</b> ✔":esc(v)},
+    {k:"origem",t:"Usou",f:v=>esc(v||"—")},{k:"ocupacao",t:"Passageiros",num:1},
     {k:"_i",t:"Mapa",f:(v,x)=>'<button class="btn sm" data-mp="'+HR_LIN.indexOf(x)+'">🗺 Ver</button>'}],
     HR_LIN,"horarios_"+r.linha.replace(/\W+/g,"_"));
 });
