@@ -581,14 +581,23 @@ ev as (
     order by abs(extract(epoch from e.ts - ((c.data_local + c.prev::time) at time zone 'America/Belem')))
     limit 1) m on true
 ),
-fim as (
+-- Monitor e TFleet são redundantes: vale a hora (das duas) mais perto do previsto
+fim0 as (
   select e.*, to_char(e.ev_ts at time zone 'America/Belem', 'HH24:MI') as mon,
-         coalesce(to_char(e.ev_ts at time zone 'America/Belem', 'HH24:MI'), case when e.tf ~ '^\d{1,2}:\d{2}' and e.tf not in ('00:00') then e.tf end) as rl
+         case when e.tf ~ '^\d{1,2}:\d{2}' and e.tf not in ('00:00') then e.tf end as tfv
   from ev e
+),
+fim as (
+  select f0.*,
+    case when f0.mon is null then f0.tfv when f0.tfv is null then f0.mon
+         when abs(((_bi_min(f0.tfv) - _bi_min(f0.prev) + 720 + 1440) % 1440) - 720)
+            < abs(((_bi_min(f0.mon) - _bi_min(f0.prev) + 720 + 1440) % 1440) - 720) then f0.tfv
+         else f0.mon end as rl
+  from fim0 f0
 )
 select f.data_local, f.cnome, f.rnome, f.ccor, f.linha, upper(trim(f.tipolinha)), f.sent, f.frota, f.motorista, f.ocupacao,
        f.prev, f.ta, f.td, f.mon, f.ev_gap, f.tf, f.rl,
-       case when f.mon is not null then 'Monitor' when f.rl is not null then (case when f.sent = 'IDA' then 'TFleet (ponto)' else 'TFleet (abertura)' end) end,
+       case when f.mon is not null and f.rl = f.mon then 'Monitor' when f.rl is not null then (case when f.sent = 'IDA' then 'TFleet (ponto)' else 'TFleet (abertura)' end) end,
        d.dif,
        case when f.rl is null then (case when coalesce(f.tem_mon, false) then 'sem passagem na cerca' else 'sem dado' end)
             when d.dif < -f.ta then 'adiantado' when d.dif > f.td then 'atrasado' else 'no horário' end,
