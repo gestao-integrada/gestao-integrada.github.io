@@ -41,6 +41,8 @@ alter table public.bi_config add column if not exists grupos jsonb not null defa
     {"nome":"Turno 12x12","tipolinhas":["TURNO 01 12X12","TURNO 02 12X12"],"contem":"","excluir":""},
     {"nome":"CT (terceiras)","tipolinhas":["ADM"],"contem":"^CT","excluir":""}]'::jsonb;
 alter table public.bi_config add column if not exists horarios_excluir text not null default 'APRENDIZ, EXTRA';
+-- margem da cerca: parar a até X metros da borda (do lado de fora) conta como dentro (GPS tem erro de ~10–30 m)
+alter table public.bi_config add column if not exists margem_m int not null default 30;
 
 -- nome da linha contém o termo; termo começando com ^ = "começa com" (ex.: ^CT pega CT1, CT2... e não PROTECT)
 create or replace function public._bi_tem(p_linha text, p_termo text) returns boolean
@@ -158,6 +160,26 @@ begin
     j := i;
   end loop;
   return d;
+end $$;
+
+-- distância em metros de um ponto até a borda do polígono (aprox. plana, boa para cercas de até alguns km)
+create or replace function public._bi_dist_m(la float8, lo float8, p float8[]) returns float8
+language plpgsql immutable as $$
+declare n int := coalesce(array_length(p, 1), 0) / 2; i int; j int; kx float8; ky float8 := 110540;
+        ax float8; ay float8; bx float8; bwy float8; dx float8; dy float8; t float8; m float8 := 1e12; d float8;
+begin
+  if n < 2 or la is null or lo is null then return null; end if;
+  kx := 111320 * cos(radians(la));
+  j := n;
+  for i in 1..n loop
+    ax := (p[2*j] - lo) * kx; ay := (p[2*j-1] - la) * ky; bx := (p[2*i] - lo) * kx; bwy := (p[2*i-1] - la) * ky;
+    dx := bx - ax; dy := bwy - ay;
+    t := case when dx = 0 and dy = 0 then 0 else greatest(0, least(1, -(ax*dx + ay*dy) / (dx*dx + dy*dy))) end;
+    d := sqrt((ax + t*dx)^2 + (ay + t*dy)^2);
+    if d < m then m := d; end if;
+    j := i;
+  end loop;
+  return m;
 end $$;
 
 -- viagens sem repetição (se a TFleet corrigiu a viagem, vale a versão mais nova), como em aberturas.sql
@@ -289,7 +311,7 @@ begin
                 from bi_paineis where situacao = 'todos' or (ed and situacao in ('admin', 'excluido'))),
     'config', (select json_build_object('lugares', lugares, 'valor_pessoa', valor_pessoa, 'gap_min', gap_min,
                 'viagens_turnos', viagens_turnos, 'viagens_ideal', viagens_ideal, 'areas', areas,
-                'grupos', grupos, 'horarios_excluir', horarios_excluir) from bi_config where id = 1),
+                'grupos', grupos, 'horarios_excluir', horarios_excluir, 'margem_m', margem_m) from bi_config where id = 1),
     'coleta', (select max(coletado_em) from viagens),
     'primeiro_dia', least((select min(data_local) from viagens), (select min(data_local) from viagens_hist)),
     'hoje', _bi_hoje());
@@ -322,6 +344,7 @@ begin
     lugares      = greatest(1, coalesce((p_dados->>'lugares')::int, lugares)),
     valor_pessoa = greatest(0, coalesce((p_dados->>'valor_pessoa')::numeric, valor_pessoa)),
     gap_min      = greatest(1, coalesce((p_dados->>'gap_min')::int, gap_min)),
+    margem_m     = least(300, greatest(0, coalesce((p_dados->>'margem_m')::int, margem_m))),
     viagens_turnos = coalesce((select array_agg(upper(trim(x))) from jsonb_array_elements_text(p_dados->'viagens_turnos') x where trim(x) <> ''), viagens_turnos),
     viagens_ideal  = coalesce(p_dados->'viagens_ideal', viagens_ideal),
     areas          = coalesce(case when jsonb_typeof(p_dados->'areas') = 'array' then p_dados->'areas' end, areas),
@@ -433,11 +456,18 @@ begin
           where ts >= ini - interval '1 hour' and ts < ini + interval '1 day' and device_name is not null
           group by device_id) d
    where d.device_id = s.device_id;
-  with c as (select id, poly, lat_min, lat_max, lon_min, lon_max from bi_cercas where id = any (p_cercas) and poly is not null),
+  -- caixa da cerca alargada pela margem (metros → graus)
+  with mg as (select coalesce((select margem_m from bi_config where id = 1), 30)::float8 as m),
+  c as (select id, poly, mg.m,
+               lat_min - mg.m / 110540.0 as lat_min, lat_max + mg.m / 110540.0 as lat_max,
+               lon_min - mg.m / (111320.0 * cos(radians(lat_min))) as lon_min, lon_max + mg.m / (111320.0 * cos(radians(lat_min))) as lon_max
+        from bi_cercas, mg where id = any (p_cercas) and poly is not null),
   p as (
     select c.id as cid, s.device_id, s.frota, s.ts, s.ts0,
-           (s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max and public._bi_dentro(s.lat,  s.lon,  c.poly)) as dentro,
-           (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max and public._bi_dentro(s.lat0, s.lon0, c.poly)) as antes
+           (s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max
+            and (public._bi_dentro(s.lat, s.lon, c.poly) or public._bi_dist_m(s.lat, s.lon, c.poly) <= c.m)) as dentro,
+           (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max
+            and (public._bi_dentro(s.lat0, s.lon0, c.poly) or public._bi_dist_m(s.lat0, s.lon0, c.poly) <= c.m)) as antes
     from _bi_s s join c on s.frota is not null
       and ((s.lat  between c.lat_min and c.lat_max and s.lon  between c.lon_min and c.lon_max)
         or (s.lat0 between c.lat_min and c.lat_max and s.lon0 between c.lon_min and c.lon_max))

@@ -454,8 +454,9 @@ async function mapaViagem(x){
   if(poly&&poly.length>=3){L.polygon(poly,{color:r.cerca.cor||"#2563eb",weight:2,fillOpacity:.2}).bindTooltip("Cerca: "+r.cerca.nome).addTo(MAPA_OV);b.push(...poly)}
   const P=(r.pontos||[]).map(p=>({ll:[p.lat,p.lon],h:minLocal(p.ts),m:(Date.parse(p.ts)-base)/60000}));
   if(P.length){L.polyline(P.map(p=>p.ll),{color:"#facc15",weight:3,opacity:.9}).addTo(MAPA_OV);
-    P.forEach(p=>{const antes=p.m<prev,den=poly&&dentroPoli(p.ll,poly);L.circleMarker(p.ll,{radius:den?6:5,color:"#fff",weight:1.5,fillColor:den?"#22c55e":antes?"#38bdf8":"#a78bfa",fillOpacity:1})
-      .bindTooltip(p.h+" · "+(poly?(()=>{const d=distCerca(p.ll,poly);return d===0?"dentro da cerca":d.toFixed(2).replace(".",",")+" km da cerca"})():""))
+    const MARG=+((INI&&INI.config&&INI.config.margem_m)??30)/1000;
+    P.forEach(p=>{const antes=p.m<prev,den=poly&&(dentroPoli(p.ll,poly)||distCerca(p.ll,poly)<=MARG);L.circleMarker(p.ll,{radius:den?6:5,color:"#fff",weight:1.5,fillColor:den?"#22c55e":antes?"#38bdf8":"#a78bfa",fillOpacity:1})
+      .bindTooltip(p.h+" · "+(poly?(()=>{const d=distCerca(p.ll,poly);return d===0?"dentro da cerca":d<=MARG?"a "+Math.round(d*1000)+" m da borda (conta como dentro pela margem)":d<1?Math.round(d*1000)+" m da cerca":d.toFixed(2).replace(".",",")+" km da cerca"})():""))
       .addTo(MAPA_OV);b.push(p.ll)})}
   // passagens: junta entrada e a saída seguinte numa linha (quanto tempo ficou dentro)
   const EV=(r.eventos||[]).slice().sort((a,b)=>Date.parse(a.ts)-Date.parse(b.ts)),pas=[];
@@ -474,7 +475,7 @@ async function mapaViagem(x){
     const d=poly?distCerca(noPrev.ll,poly):null;
     txt="No horário previsto ("+x.prevista+") o carro estava "+(d==null?"no ponto preto":d===0?"dentro da cerca":"a "+d.toFixed(2).replace(".",",")+" km da cerca")+" (posição das "+noPrev.h+"). ";
     txt+="Na cerca nesta janela: "+(listaPas.length?listaPas.join("; "):"nenhuma entrada ou saída")+". ";
-    txt+=P.length+" posição(ões) do Monitor entre "+P[0].h+" e "+P[P.length-1].h+". Verde = dentro da cerca, azul = fora antes do previsto, lilás = fora depois. Passe o mouse num ponto para ver a hora e a distância.";
+    txt+=P.length+" posição(ões) do Monitor entre "+P[0].h+" e "+P[P.length-1].h+". Verde = dentro da cerca (ou a até "+Math.round(MARG*1000)+" m da borda), azul = fora antes do previsto, lilás = fora depois. Passe o mouse num ponto para ver a hora e a distância.";
     if(pas.some(q=>q.ent&&q.sai&&(Date.parse(q.sai)-Date.parse(q.ent))<=60000))txt+=" \"Só passou\" = o carro cruzou a cerca sem parar nela: se ele deveria parar ali, a cerca pode estar no lugar errado ou pequena demais.";
     if(Math.abs(noPrev.m-prev)>5)txt+=" Atenção: não há posição perto do horário previsto (o celular pode ter ficado sem mandar GPS).";
   }else txt="Sem posições do Monitor para o carro "+x.frota+" nessa janela. Esse carro pode não ter o app Monitor ou o celular estava desligado.";
@@ -689,6 +690,7 @@ async function telaGerenciar(){
     +'<label>Lugares por ônibus (para a ocupação %)</label><input type="number" id="aLug" min="1" value="'+(cf.lugares||45)+'">'
     +'<label>Valor por pessoa (R$ por embarque, painel de custo)</label><input type="number" id="aVal" min="0" step="0.01" value="'+(cf.valor_pessoa??40.9)+'">'
     +'<label>Buraco de GPS que deixa o horário incerto (min)</label><input type="number" id="aGap" min="1" value="'+(cf.gap_min||5)+'">'
+    +'<label>Margem das cercas (metros): parar até essa distância da borda, do lado de fora, conta como dentro</label><input type="number" id="aMarg" min="0" max="300" value="'+(cf.margem_m??30)+'">'
     +'<div style="margin-top:10px"><button class="btn p" id="aSalv">Salvar ajustes</button></div><div id="aMsg" class="msg"></div></div>'
     +'<div class="box form" style="max-width:720px"><h3>Viagens por dia</h3><div class="note">Turnos que aparecem no painel e o ideal de viagens por dia de cada um.</div>'
     +'<div id="aVt">'+[...new Set(((OPC&&OPC.tipolinhas)||[]).concat(cf.viagens_turnos||[]))].map(t=>'<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--ink);flex:1"><input type="checkbox" style="width:auto" data-vt="'+esc(t)+'"'+((cf.viagens_turnos||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label><input type="number" min="0" placeholder="ideal/dia" style="width:110px" data-vi="'+esc(t)+'" value="'+esc((cf.viagens_ideal||{})[t]??"")+'"></div>').join("")+'</div></div>'
@@ -739,7 +741,9 @@ async function telaGerenciar(){
     }catch(err){$("coletaSt").innerHTML=/bi_coleta_status/.test(err.message)?'A coleta pelo Supabase ainda não foi instalada (rodar <b>bi-coleta.sql</b>).':'Erro: '+esc(err.message)}};
   coleta();
   $("bColeta").onclick=async()=>{try{const r=await rpc("bi_coleta_agora",{p_token:TOKEN});alert(r==="ok"?"Coleta disparada. O resultado aparece aqui em 1 a 2 minutos.":r);setTimeout(coleta,70000);coleta()}catch(err){alert(err.message)}};
-  $("aSalv").onclick=async()=>{try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{lugares:+$("aLug").value,valor_pessoa:+$("aVal").value,gap_min:+$("aGap").value}});msg("aMsg","Salvo.","ok")}catch(err){msg("aMsg",err.message,"err")}};
+  $("aSalv").onclick=async()=>{try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{lugares:+$("aLug").value,valor_pessoa:+$("aVal").value,gap_min:+$("aGap").value,margem_m:+$("aMarg").value}});
+      if(INI.config&&+$("aMarg").value!==+(INI.config.margem_m??30))msg("aMsg","Salvo. A margem mudou: os dias já calculados são refeitos quando você abrir o Horários (rode também: delete from bi_cerca_dias;).","ok");else msg("aMsg","Salvo.","ok");
+      INI=await rpc("bi_inicio",{p_token:TOKEN})}catch(err){msg("aMsg",err.message,"err")}};
 }
 
 iniciar();
