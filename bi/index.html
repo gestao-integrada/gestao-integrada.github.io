@@ -200,7 +200,7 @@ async function entrar(tk){
   $("coleta").textContent=col?"⚠ A coleta da TFleet está parada desde "+dtBR(INI.coleta)+": viagens e embarques depois disso ainda não entram aqui.":"⚠ Ainda não há viagens coletadas da TFleet.";
   rpc("bi_opcoes",{p_token:TOKEN}).then(o=>{OPC=o;
     $("dlLinhas").innerHTML=(o.linhas||[]).map(l=>'<option value="'+esc(l)+'">').join("");
-    $("fTurno").innerHTML='<option value="">Todos</option>'+(o.tipolinhas||[]).map(t=>'<option>'+esc(t)+'</option>').join("");
+    $("fTurno").innerHTML='<option value="">Todos</option>'+(GRUPOS().length?'<optgroup label="Grupos (Gerenciar)">'+GRUPOS().map(g=>'<option value="G:'+esc(g.nome)+'">'+esc(g.nome)+'</option>').join("")+'</optgroup><optgroup label="Turnos da TFleet">':'')+(o.tipolinhas||[]).map(t=>'<option>'+esc(t)+'</option>').join("")+(GRUPOS().length?'</optgroup>':'');
   }).catch(()=>{});
   montarAbas();
 }
@@ -366,21 +366,30 @@ function telaHorarios(d){
   if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem dos turnos das cercas nesse período.<br>Confira: (1) se a coleta da TFleet está em dia (⚙ Gerenciar → Coleta da TFleet); (2) se os turnos marcados na cerca são os mesmos das viagens. Quando houver viagens, o horário aparece também para os dias passados, porque o Monitor guarda o GPS.</div>';return}
   const comHora=L.filter(x=>x.hora_real),pctOk=comHora.length?Math.round(100*(c["no horário"]||0)/comHora.length):null;
   const mon=L.filter(x=>x.origem==="Monitor").length;
-  $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens com regra de horário")
+  const FK=[null,"no horário","adiantado","atrasado","sem hora","Monitor"],fk=FK.includes(HR_KPI)?HR_KPI:null;
+  const Lf=fk==null?L:L.filter(x=>fk==="sem hora"?!x.hora_real:fk==="Monitor"?x.origem==="Monitor":x.status===fk);
+  $("painel").innerHTML='<div class="kpis" id="hrKpis">'+kpi(nf(L.length),"viagens com regra de horário")
     +kpi(pctOk==null?"—":pctOk+"%","no horário","das "+comHora.length+" com hora",pctOk>=90?"ok":pctOk>=70?"warn":"bad")
     +kpi(nf(c["adiantado"]||0),"adiantadas","antes da tolerância","warn")+kpi(nf(c["atrasado"]||0),"atrasadas","depois da tolerância","bad")
     +kpi(nf((c["sem dado"]||0)+(c["sem passagem na cerca"]||0)),"sem hora","sem Monitor e sem hora da TFleet")
     +kpi(nf(mon),"medidas pelo Monitor",L.length?Math.round(100*mon/L.length)+"% das viagens":"")+'</div>'
+    +(fk?'<div class="faixa info">Mostrando só: <b>'+esc(fk==="Monitor"?"medidas pelo Monitor":fk)+'</b> ('+Lf.length+' viagens). <a href="#" id="hrKpiX">Mostrar todas</a></div>':'')
     +'<div class="faixa info">A hora vem da <b>cerca</b> (GPS do Monitor, ±1 min) quando o carro tem Monitor. Sem Monitor, usa a hora da <b>TFleet</b>: chegada no ponto (IDA) ou abertura da viagem (VOLTA). Nada é estimado ou sorteado: sem hora fica "sem dado".</div>'
     +['IDA','VOLTA'].filter(s=>!$("fSent").value||$("fSent").value===s).map(s=>'<div class="box"><h3>'+(s==="IDA"?"Chegada na cerca (IDA)":"Saída da cerca (VOLTA)")+'</h3>'
        +'<div class="note" style="margin-bottom:6px">Uma linha por rota. A barra conta as viagens: <b style="color:#16a34a">verde</b> no horário (dentro da tolerância), <b style="color:#d97706">laranja</b> adiantada, <b style="color:#dc2626">vermelho</b> atrasada, <b style="color:#94a3b8">cinza</b> sem hora. Clique na rota para ver viagem por viagem.</div>'
-       +resumoRotas(L.filter(x=>x.tipo===s),s)+'</div>').join("")
+       +resumoRotas(Lf.filter(x=>x.tipo===s),s)+'</div>').join("")
     +'<div class="box"><h3>Viagens <span class="r note">clique no título da coluna para ordenar</span></h3><div id="tHor"></div></div>';
   tabela("tHor",[{k:"data",t:"Data",f:dBR},{k:"cerca",t:"Cerca"},{k:"regra",t:"Regra"},{k:"linha",t:"Linha",w:1},{k:"tipo",t:"Sentido"},{k:"frota",t:"Carro"},
     {k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"prevista",t:"Previsto"},{k:"hora_real",t:"Hora real",f:(v,r)=>esc(v||"—")+(r.monitor_gap>5?' <span class="note" title="o celular ficou '+r.monitor_gap+' min sem mandar posição antes">±'+Math.round(r.monitor_gap)+'min</span>':"")},
     {k:"origem",t:"De onde veio"},{k:"dif",t:"Diferença (min)",num:1,f:v=>v==null?"—":(v>0?"+":"")+v},{k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},
-    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],L,"horarios_entrada_saida");
+    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],Lf,"horarios_entrada_saida");
+  // indicadores clicáveis: filtram as rotas e a tabela; clicar de novo (ou no 1º) mostra todas
+  [...$("hrKpis").children].forEach((el,i)=>{el.style.cursor="pointer";el.title=i?"Clique para ver só essas viagens":"Mostrar todas";
+    if(fk&&FK[i]===fk)el.style.outline="3px solid #2563eb";
+    el.onclick=()=>{HR_KPI=(i===0||FK[i]===fk)?null:FK[i];telaHorarios(d)}});
+  if($("hrKpiX"))$("hrKpiX").onclick=e=>{e.preventDefault();HR_KPI=null;telaHorarios(d)};
 }
+let HR_KPI=null;
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
 const difTxt=(v,s)=>v==null?"—":v===0?"no minuto previsto":Math.abs(v)+" min "+(v>0?"depois":"antes");

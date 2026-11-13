@@ -605,7 +605,7 @@ create or replace function public.bi_dados(p_token text, p_painel text, p_de dat
 returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token); ed boolean := (q->>'edita')::boolean; sit text;
-        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), '');
+        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); cfg bi_config; res json;
 begin
   if p_de is null or p_ate is null or p_ate < p_de then raise exception 'Período inválido.'; end if;
@@ -614,18 +614,23 @@ begin
   select situacao into sit from bi_paineis where id = p_painel;
   if sit is null or sit = 'excluido' or (sit = 'admin' and not ed) then raise exception 'Painel indisponível.'; end if;
   select * into cfg from bi_config where id = 1;
+  -- filtro Turno pode ser um grupo de Gerenciar (valor "G:nome")
+  if ft like 'G:%' then
+    select g into fg from jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) g where upper(trim(g->>'nome')) = trim(substr(ft, 3)) limit 1;
+    fg := coalesce(fg, '{"tipolinhas":["-sem grupo-"]}'::jsonb); ft := null;
+  end if;
 
   if p_painel in ('ocupacao', 'fora_rota', 'custo', 'nao_cad') then
     create temp table if not exists _bi_e on commit drop as select * from embarques limit 0;
     truncate _bi_e;
     insert into _bi_e select * from embarques e
      where e.data_local between p_de and p_ate
-       and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fs is null or upper(trim(e.sentido)) = fs);
+       and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs);
   end if;
 
   if p_painel = 'ocupacao' then
     with vg as (select * from _bi_viagens(p_de, p_ate) v where (fl is null or v.linha = fl)
-                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fs is null or upper(trim(v.tipo)) = fs))
+                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs))
     select json_build_object(
       'kpi', json_build_object(
          'embarques', (select count(*) from _bi_e),
@@ -707,7 +712,7 @@ begin
   elsif p_painel = 'viagens' then
     with vg as (select * from _bi_viagens(p_de, p_ate) v where upper(trim(coalesce(v.tipolinha, ''))) = any (cfg.viagens_turnos)
                   and (fl is null or v.linha = fl)
-                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fs is null or upper(trim(v.tipo)) = fs))
+                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs))
     select json_build_object(
       'kpi', json_build_object('viagens', (select count(*) from vg), 'dias', (select count(distinct data_local) from vg),
              'media_dia', (select round(count(*)::numeric / nullif(count(distinct data_local), 0), 1) from vg)),
@@ -726,7 +731,7 @@ begin
       'pendentes', (select count(*) from bi_cercas c cross join generate_series(p_de, least(p_ate, _bi_hoje()), interval '1 day') d
                     left join bi_cerca_dias k on k.cerca_id = c.id and k.dia = d::date where c.ativo and k.dia is null),
       'linhas', (select coalesce(json_agg(h), '[]'::json) from _bi_horarios(p_de, p_ate) h
-                 where (fl is null or h.linha = fl) and (ft is null or h.tipolinha = ft) and (fs is null or h.tipo = fs))
+                 where (fl is null or h.linha = fl) and (ft is null or h.tipolinha = ft) and (fg is null or public._bi_linha_ok(h.tipolinha, h.linha, fg, null)) and (fs is null or h.tipo = fs))
     ) into res;
 
   else
@@ -741,18 +746,23 @@ create or replace function public.bi_detalhe(p_token text, p_tipo text, p_de dat
   p_campo text default null, p_valor text default null) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token);
-        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), '');
+        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); vv text := nullif(trim(p_valor), ''); cfg bi_config;
 begin
   if p_ate - p_de > 92 then raise exception 'Escolha um período de até 3 meses.'; end if;
   select * into cfg from bi_config where id = 1;
+  -- filtro Turno pode ser um grupo de Gerenciar (valor "G:nome")
+  if ft like 'G:%' then
+    select g into fg from jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) g where upper(trim(g->>'nome')) = trim(substr(ft, 3)) limit 1;
+    fg := coalesce(fg, '{"tipolinhas":["-sem grupo-"]}'::jsonb); ft := null;
+  end if;
   if p_tipo = 'viagens' then
     return (select coalesce(json_agg(x order by x.data desc, x.hora desc), '[]'::json) from (
       select v.data_local as data, to_char(v.hora_saida, 'HH24:MI') as hora, to_char(v.chegada_ts at time zone 'America/Belem', 'HH24:MI') as chegada,
              upper(trim(v.tipolinha)) as turno, v.linha, upper(trim(v.tipo)) as sentido, v.frota as carro, v.motorista, v.ocupacao,
              nullif(left(trim(v.bruto->>'hrsla'), 5), '') as hora_ponto
       from _bi_viagens(p_de, p_ate) v
-      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft) and (fs is null or upper(trim(v.tipo)) = fs)
+      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs)
         and (coalesce(p_filtros->>'so_turnos_viagens', '') <> 'sim' or upper(trim(coalesce(v.tipolinha, ''))) = any (cfg.viagens_turnos))
         and (vv is null or case p_campo when 'linha' then v.linha = vv when 'dia' then v.data_local = vv::date
                when 'turno' then upper(trim(coalesce(v.tipolinha, ''))) = upper(vv) when 'sentido' then upper(trim(v.tipo)) = upper(vv)
@@ -765,7 +775,7 @@ begin
              upper(trim(e.tipolinha)) as turno, e.frota as carro, e.gg, e.ga
       from embarques e
       where e.data_local between p_de and p_ate
-        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fs is null or upper(trim(e.sentido)) = fs)
+        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs)
         and (vv is null or case p_campo when 'linha' then e.linha = vv when 'dia' then e.data_local = vv::date
                when 'turno' then upper(trim(coalesce(e.tipolinha, ''))) = upper(vv)
                when 'status' then coalesce(nullif(upper(trim(e.tipopassageiro)), ''), 'SEM STATUS') = upper(vv)
