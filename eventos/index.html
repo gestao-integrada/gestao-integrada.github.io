@@ -281,7 +281,7 @@ async function detalhe(e){
     abrirOv(nomeTipo(e.tipo),'<div class="just"><b>'+esc(e.titulo)+'</b><div class="note">'+dBR(e.data)+' '+esc(e.hora||"")+'</div></div>'+
       '<p>'+sitChip(e.situacao)+(e.para?' · enviado para '+esc(e.para):"")+'</p>'+
       (e.respondido_por||e.justificativa?'<div class="just"><b>'+esc(e.respondido_por||"")+'</b> '+(e.respondido_em?dtBR(e.respondido_em):"")+'<br>'+(e.motivo?'<i>'+esc(e.motivo)+'</i><br>':"")+esc(e.justificativa||"")+'</div>':"")+
-      '<p class="note">Este evento é tratado no painel de origem (o envio dele ainda não passa por aqui).</p>'+
+      '<p class="note">A tratativa deste evento é feita na página de origem. Quem recebe o aviso dele por aqui é definido em "Quem recebe o quê".</p>'+
       (LINKS[e.tipo]?'<a class="btn" href="'+LINKS[e.tipo]+'" target="_blank" rel="noopener">Abrir o painel de origem ↗</a>':""));
     return;
   }
@@ -344,9 +344,9 @@ function telaInscricoes(){
   if(!pes.length){$("painel").innerHTML='<div class="vazio">Cadastre as pessoas primeiro na aba Destinatários.</div>';return}
   const ins=(p,t)=>D.inscricoes.find(s=>s.pessoa_id===p&&s.tipo===t)||{email:false,whatsapp:false,empresas:[]};
   $("painel").innerHTML='<div class="dica">Clique em ✉ (e-mail) ou 💬 (WhatsApp) para ligar/desligar. Grava na hora. "todas as empresas" = recebe os eventos de qualquer empresa; clique para escolher só algumas (ex.: a Caliman só recebe os carros dela).</div>'+
-    '<div class="box tb"><table class="grade"><thead><tr><th>Pessoa</th>'+tipos.map(t=>'<th>'+esc(t.nome)+(t.origem==="externo"?'<div class="note">envio pelo fluxo atual (fase 2)</div>':(!t.ativo?'<div class="note">desligado</div>':""))+'</th>').join("")+'</tr></thead><tbody>'+
+    '<div class="box tb"><table class="grade"><thead><tr><th>Pessoa</th>'+tipos.map(t=>'<th>'+esc(t.nome)+(t.origem==="externo"?'<div class="note">aviso com o link da página de origem</div>':(!t.ativo?'<div class="note">desligado</div>':""))+'</th>').join("")+'</tr></thead><tbody>'+
     pes.map(p=>'<tr><td><b>'+esc(p.nome)+'</b><div class="note">'+esc([p.funcao,p.empresa].filter(Boolean).join(" · "))+'</div><div class="note">'+(p.email?"✉ "+esc(p.email):"✉ sem e-mail")+' · '+(p.whatsapp?"💬 "+fone(p.whatsapp):"💬 sem WhatsApp")+'</div></td>'+
-      tipos.map(t=>{const s=ins(p.id,t.codigo);if(t.origem==="externo")return '<td><span class="note" title="Na fase 2 o envio deste evento passa para cá">fase 2</span></td>';return '<td><span class="cel"><span class="tg">'+
+      tipos.map(t=>{const s=ins(p.id,t.codigo);return '<td><span class="cel"><span class="tg">'+
         '<button data-p="'+p.id+'" data-t="'+t.codigo+'" data-c="email" class="'+(s.email?"on":"")+'"'+(!p.email||!QUEM.edita?" disabled":"")+' title="'+(p.email?"E-mail":"Sem e-mail no cadastro")+'">✉</button>'+
         '<button data-p="'+p.id+'" data-t="'+t.codigo+'" data-c="whatsapp" class="'+(s.whatsapp?"on":"")+'"'+(!p.whatsapp||!QUEM.edita?" disabled":"")+' title="'+(p.whatsapp?"WhatsApp":"Sem WhatsApp no cadastro")+'">💬</button></span>'+
         ((s.email||s.whatsapp)?'<button class="emp" data-emp="'+p.id+'|'+t.codigo+'">'+(s.empresas.length?esc(s.empresas.join(", ")):"todas as empresas")+'</button>':"")+'</span></td>'}).join("")+'</tr>').join("")+
@@ -401,9 +401,13 @@ function formPessoa(p){
 /* ---------------- TIPOS ---------------- */
 function telaTipos(){
   const ed=QUEM.edita?"":" disabled";
-  $("painel").innerHTML='<div class="dica">Os tipos "envio pelo fluxo atual" (roteador, fora de rota, aberturas) só aparecem na lista por enquanto; o envio deles passa para cá numa próxima etapa.</div>'+
-   D.tipos.map(t=>{const o=t.opcoes||{},nat=t.origem==="nativo";return '<div class="tipo'+(t.ativo?"":" off")+'" data-c="'+esc(t.codigo)+'"><b style="font-size:15px">'+esc(t.nome)+'</b> '+(nat?(t.ativo?'<span class="chip c-ok">ligado</span>':'<span class="chip c-gry">desligado</span>'):'<span class="chip c-gry">envio pelo fluxo atual</span>')+
-    '<div class="note">'+esc(t.descricao||"")+'</div>'+(nat?'<div class="form"><div class="g">'+
+  $("painel").innerHTML='<div class="dica">Roteador, fora de rota e aberturas: os avisos antigos continuam (e-mail do roteador, gestor da pessoa, demanda da Caliman). Aqui você escolhe quem recebe TAMBÉM, por e-mail ou WhatsApp, com o link para tratar na página de origem.</div>'+
+   D.tipos.map(t=>{const o=t.opcoes||{},nat=t.origem==="nativo";return '<div class="tipo'+(t.ativo?"":" off")+'" data-c="'+esc(t.codigo)+'"><b style="font-size:15px">'+esc(t.nome)+'</b> '+(nat?(t.ativo?'<span class="chip c-ok">ligado</span>':'<span class="chip c-gry">desligado</span>'):(t.ativo?'<span class="chip c-ok">ligado</span>':'<span class="chip c-gry">desligado</span>')+' <span class="chip c-blu">tratado na página de origem</span>')+
+    '<div class="note">'+esc(t.descricao||"")+'</div>'+(!nat?'<div class="form"><div class="g">'+
+      '<label class="chks"><input type="checkbox" class="xAtivo"'+(t.ativo?" checked":"")+ed+'> Ligado</label>'+
+      '<div><label>Quando mandar</label><select class="xEnvio"'+ed+'><option value="diario"'+(t.envio==="diario"?" selected":"")+'>Resumo 1x por dia</option><option value="na_hora"'+(t.envio==="na_hora"?" selected":"")+'>Assim que aparecer</option></select></div>'+
+      '<div><label>Hora do resumo (Belém)</label><input type="number" min="0" max="23" class="xHora" value="'+t.hora_envio+'"'+ed+'></div>'+
+      '</div>'+(QUEM.edita?'<div class="acoes"><button class="btn p xSalvar">Salvar</button><span class="msg xMsg"></span></div>':"")+'</div>':"")+(nat?'<div class="form"><div class="g">'+
       '<label class="chks"><input type="checkbox" class="xAtivo"'+(t.ativo?" checked":"")+ed+'> Ligado</label>'+
       '<label class="chks"><input type="checkbox" class="xJust"'+(t.pede_justificativa?" checked":"")+ed+'> Pede justificativa</label>'+
       '<label class="chks"><input type="checkbox" class="xEvid"'+(t.exige_evidencia?" checked":"")+ed+'> Exige evidência (anexo)</label>'+
@@ -418,7 +422,7 @@ function telaTipos(){
       (QUEM.edita?'<div class="acoes"><button class="btn p xSalvar">Salvar</button><span class="msg xMsg"></span></div>':"")+'</div>':"")+'</div>'}).join("");
   document.querySelectorAll(".tipo .xSalvar").forEach(b=>b.onclick=async()=>{
     const c=b.closest(".tipo"),q=s=>c.querySelector(s),cod=c.dataset.c;const m=q(".xMsg");m.textContent="Gravando…";m.className="msg xMsg";
-    const dados={codigo:cod,ativo:q(".xAtivo").checked,pede_justificativa:q(".xJust").checked,exige_evidencia:q(".xEvid").checked,prazo_horas:+q(".xPrazo").value,
+    const dados=!q(".xJust")?{codigo:cod,ativo:q(".xAtivo").checked,envio:q(".xEnvio").value,hora_envio:+q(".xHora").value}:{codigo:cod,ativo:q(".xAtivo").checked,pede_justificativa:q(".xJust").checked,exige_evidencia:q(".xEvid").checked,prazo_horas:+q(".xPrazo").value,
       envio:q(".xEnvio").value,hora_envio:+q(".xHora").value,motivos:q(".xMot").value.split("\n").map(s=>s.trim()).filter(Boolean)};
     if(cod==="pontualidade")dados.opcoes={tipos:[q(".xAtr").checked?"atrasado":null,q(".xAdi").checked?"adiantado":null].filter(Boolean),so_monitor:q(".xMon").checked,dias_atras:+q(".xDias").value};
     try{await rpc("ev_tipo_salvar",{p_token:TOKEN,p_dados:dados});const r=await rpc("ev_painel",{p_token:TOKEN,p_de:DE,p_ate:ATE});D=r;telaTipos()}catch(err){m.textContent=err.message;m.className="msg err xMsg"}});

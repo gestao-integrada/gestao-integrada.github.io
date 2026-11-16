@@ -20,9 +20,9 @@ function avisarEventos() {
       const html = '<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;max-width:600px">' +
         esc(e.texto).replace(/\n/g, '<br>') +
         '<p style="margin-top:18px"><a href="' + esc(e.link) + '" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;' +
-        'border-radius:8px;text-decoration:none;font-weight:bold">Justificar e anexar evidência</a></p>' +
+        'border-radius:8px;text-decoration:none;font-weight:bold">' + esc(e.botao || 'Justificar e anexar evidência') + '</a></p>' +
         '<div style="color:#888;font-size:12px">Aviso automático do painel Eventos da frota. O link vale só para você; não encaminhe.<br>' + esc(e.link) + '</div></div>';
-      MailApp.sendEmail({ to: e.para, subject: e.assunto, htmlBody: html, body: e.texto + '\n\nJustificar: ' + e.link });
+      MailApp.sendEmail({ to: e.para, subject: e.assunto, htmlBody: html, body: e.texto + '\n\n' + (e.botao || 'Justificar') + ': ' + e.link });
       rpc_('ev_email_marcar', { p_chave: CHAVE, p_id: e.id, p_ok: true, p_erro: null });
     } catch (err) {
       rpc_('ev_email_marcar', { p_chave: CHAVE, p_id: e.id, p_ok: false, p_erro: String(err && err.message || err) });

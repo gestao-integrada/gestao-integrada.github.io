@@ -17,7 +17,7 @@
 --        WhatsApp pelo n8n da TV Box + Evolution (fluxo sql/eventos-whatsapp.json).
 -- Quem entra: senha pessoal da Central (admin, ou painel "eventos" marcado em Ver/Editar) ou senha de gestores.
 --
--- Rodar inteiro no Supabase → SQL Editor → New query → Run. Pode rodar de novo.
+-- Rodar inteiro no Supabase → SQL Editor → New query → Run. Pode rodar de novo. Depois rode também eventos-fase2.sql.
 -- Depende de: central-acessos.sql, lotacao.sql (viagens), solicitacoes.sql (sol_config.chave_robo,
 -- sol_sessoes_gestor), bi.sql (cercas e _bi_horarios), schema do Monitor (samples).
 -- =====================================================================
