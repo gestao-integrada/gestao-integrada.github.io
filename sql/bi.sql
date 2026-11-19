@@ -699,7 +699,8 @@ revoke execute on function public._bi_horarios(date, date) from public, anon, au
 create or replace function public.bi_dados(p_token text, p_painel text, p_de date, p_ate date, p_filtros jsonb default '{}'::jsonb)
 returns json
 -- jit off: a compilação JIT do Postgres somava ~1–2 s em consultas que levam 0,2 s
-language plpgsql security definer set search_path = public set jit = off as $$
+-- statement_timeout 15s: margem para períodos longos (o site/anon tem 3 s; o PostgREST aplica o SET da função)
+language plpgsql security definer set search_path = public set jit = off set statement_timeout = '15s' as $$
 declare q jsonb := public._bi_exige(p_token); ed boolean := (q->>'edita')::boolean; sit text;
         fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); cfg bi_config; res json;
