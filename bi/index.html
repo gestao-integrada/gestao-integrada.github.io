@@ -655,7 +655,8 @@ function listaCercas(){
     +'<div class="note" style="margin-bottom:8px">Um conjunto de cercas de uma rota (saída, meio do caminho, descida, chegada), cada uma com o horário em que o carro deve passar na ida e na volta.</div>'
     +(Object.keys(grupos).length?Object.keys(grupos).sort().map(g=>{const L=grupos[g].slice().sort((a,b)=>((a.horarios[0]||{}).ordem||0)-((b.horarios[0]||{}).ordem||0)),h0=(L[0].horarios||[])[0]||{};
       return'<div class="cerca" style="border-left-color:'+esc(L[0].cor)+'"><b>'+esc(g)+'</b> <span class="chip c-blu">'+L.length+' cerca(s)</span>'
-        +'<div class="note">Ida: linha contém "'+esc(h0.rota_ida||h0.rota||"")+'"'+(h0.rota_volta?' · Volta: linha contém "'+esc(h0.rota_volta)+'"':'')+'</div>'
+        +'<div class="note">'+[(h0.rotas_ida||[]).length?"Ida: "+esc(h0.rotas_ida.join(" · ")):"",(h0.rotas_volta||[]).length?"Volta: "+esc(h0.rotas_volta.join(" · ")):"",
+          (h0.rota_ida||h0.rota)?'Ida: linha contém "'+esc(h0.rota_ida||h0.rota)+'"':"",h0.rota_volta?'Volta: linha contém "'+esc(h0.rota_volta)+'"':""].filter(Boolean).join(" · ")+'</div>'
         +'<ul>'+L.map(c=>{const h=(c.horarios||[])[0]||{};return'<li>'+esc((h.ordem||"")+". "+c.nome)+(h.ida?' · ida '+esc(h.ida):'')+(h.volta?' · volta '+esc(h.volta):'')+'</li>'}).join("")+'</ul>'
         +(QUEM.edita?'<div class="acts"><button class="btn sm" data-edr="'+esc(g)+'">Editar</button><button class="btn sm red" data-rmr2="'+esc(g)+'">Remover</button></div>':'')+'</div>'}).join(""):'<div class="vazio">Nenhuma roteirização ainda.</div>')+'</div>';
   ROT_GRUPOS=grupos;
@@ -720,12 +721,19 @@ let RT=null,ROT_GRUPOS={};
 function editarRot(nome){
   const L=nome?(ROT_GRUPOS[nome]||[]).slice().sort((a,b)=>((a.horarios[0]||{}).ordem||0)-((b.horarios[0]||{}).ordem||0)):[];
   const h0=L.length?(L[0].horarios||[])[0]||{}:{};
-  RT={nomeAntigo:nome,nome:nome||"",rota_ida:h0.rota_ida||h0.rota||"",rota_volta:h0.rota_volta||"",tol_antes:h0.tol_antes??10,tol_depois:h0.tol_depois??10,
+  RT={nomeAntigo:nome,nome:nome||"",rota_ida:h0.rota_ida||h0.rota||"",rota_volta:h0.rota_volta||"",rotas_ida:(h0.rotas_ida||[]).slice(),rotas_volta:(h0.rotas_volta||[]).slice(),tol_antes:h0.tol_antes??10,tol_depois:h0.tol_depois??10,
       cor:L.length?L[0].cor:"#7c3aed",itens:L.map(c=>{const h=(c.horarios||[])[0]||{};return{id:c.id,nome:c.nome,ida:h.ida||"",volta:h.volta||"",pontos:JSON.parse(JSON.stringify(c.pontos||[])),cor:c.cor}}),removidos:[]};
   if(!RT.itens.length)RT.itens=[1,2,3].map(()=>({id:null,nome:"",ida:"",volta:"",pontos:[]}));
   RT.sel=0;ED=RT.itens[0];ED.cor=RT.cor;formRot();desenharEd();
   const b=[].concat(...RT.itens.map(it=>it.pontos));if(mapa&&b.length>=3)mapa.fitBounds(b,{padding:[40,40],maxZoom:16});
 }
+// rotas da TFleet escolhidas na lista para a ida e para a volta (várias linhas = a mesma roteirização)
+function listaRotasRot(sn){const k=sn==="ida"?"rotas_ida":"rotas_volta",sel=RT[k],L=[...new Set(((OPC&&OPC.linhas_tl)||[]).map(x=>x.l))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  sel.forEach(l=>{if(!L.includes(l))L.unshift(l)});
+  const ord=L.filter(l=>sel.includes(l)).concat(L.filter(l=>!sel.includes(l)));
+  return'<div class="regra" style="margin:6px 0"><div style="display:flex;gap:6px;align-items:center"><b style="font-size:13px">Rotas da '+(sn==="ida"?"IDA":"VOLTA")+'</b><span class="note" id="rc_'+sn+'">'+sel.length+' marcada(s)</span>'
+    +'<input data-busca="'+sn+'" placeholder="Procurar rota…" style="margin-left:auto;max-width:200px"></div>'
+    +'<div class="chks" data-lst="'+sn+'" style="max-height:170px;overflow:auto;margin-top:4px">'+ord.map(l=>'<label data-nm="'+esc(l.toUpperCase())+'"><input type="checkbox" data-rot="'+sn+'" value="'+esc(l)+'"'+(sel.includes(l)?" checked":"")+'>'+esc(l)+'</label>').join("")+'</div></div>'}
 function lerRot(){if(!RT)return;RT.nome=$("rNome").value.trim();RT.rota_ida=$("rIda").value.trim();RT.rota_volta=$("rVolta").value.trim();
   RT.tol_antes=+$("rTa").value||0;RT.tol_depois=+$("rTd").value||0;RT.cor=$("rCor").value;
   $("rItens").querySelectorAll("[data-it]").forEach(div=>{const it=RT.itens[+div.dataset.it];
@@ -734,9 +742,12 @@ function formRot(){
   $("mapaDica").innerHTML='Desenhando a <b>cerca '+(RT.sel+1)+'</b>'+(RT.itens[RT.sel].nome?' ('+esc(RT.itens[RT.sel].nome)+')':'')+': clique no mapa para marcar os cantos, contornando a área. Para desenhar outra, clique em ✏ na lista ao lado.';
   $("lado").innerHTML='<div class="box form"><h3>'+(RT.nomeAntigo?"Editar roteirização":"Nova roteirização")+'</h3>'
     +'<label>Nome da roteirização</label><input id="rNome" value="'+esc(RT.nome)+'" placeholder="Ex.: PGM ⇄ Belém">'
+    +'<div class="note" style="margin-top:6px">Marque todas as linhas da TFleet que são esta rota (o carro pode abrir com nomes diferentes): todas contam como <b>'+esc(RT.nome||"esta roteirização")+'</b>. Se a mesma linha estiver na ida e na volta, o sentido vem da TFleet.</div>'
+    +listaRotasRot("ida")+listaRotasRot("volta")
+    +'<details'+(RT.rota_ida||RT.rota_volta?" open":"")+'><summary class="note" style="cursor:pointer">ou pelo trecho do nome (pega também linhas novas)</summary>'
     +'<div class="g"><label>Linha da IDA contém<input id="rIda" list="dlLinhas" value="'+esc(RT.rota_ida)+'" placeholder="Ex.: ^PGM - BELÉM"></label>'
     +'<label>Linha da VOLTA contém<input id="rVolta" list="dlLinhas" value="'+esc(RT.rota_volta)+'" placeholder="Ex.: ^BELÉM - PGM"></label></div>'
-    +'<div class="note">Use ^ para "começa com". Se a ida e a volta têm o mesmo nome de linha, deixe a volta vazia: o sentido vem da TFleet (IDA/VOLTA).</div>'
+    +'<div class="note">Use ^ para "começa com". Se a ida e a volta têm o mesmo nome de linha, deixe a volta vazia: o sentido vem da TFleet (IDA/VOLTA).</div></details>'
     +'<div class="g"><label>Tolerância antes (min)<input id="rTa" type="number" min="0" value="'+RT.tol_antes+'"></label><label>Tolerância depois (min)<input id="rTd" type="number" min="0" value="'+RT.tol_depois+'"></label><label>Cor<input id="rCor" type="color" value="'+esc(RT.cor)+'" style="padding:2px;height:36px"></label></div>'
     +'<div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px"><label style="flex:1">Quantas cercas<input id="rQtd" type="number" min="1" max="30" value="'+RT.itens.length+'"></label><button class="btn sm" id="rAplic">Aplicar</button></div>'
     +'<div class="note" style="margin-top:6px">'+RT.itens.length+' cerca(s) nesta roteirização. Em cada uma: nome, horário que o carro deve passar na ida e na volta, e o desenho no mapa.</div>'
@@ -747,6 +758,10 @@ function formRot(){
     +'<div style="display:flex;gap:6px;margin-top:6px"><span class="note" id="nPts"></span><button class="btn sm" id="bDesf">Desfazer ponto</button></div>'
     +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" id="rCanc">Cancelar</button><button class="btn p" id="rSalv">Salvar roteirização</button></div><div id="rMsg" class="msg"></div></div>';
   $("rCor").oninput=()=>{RT.cor=$("rCor").value;ED.cor=RT.cor;desenharEd()};
+  $("lado").querySelectorAll("[data-rot]").forEach(x=>x.onchange=()=>{const k=x.dataset.rot==="ida"?"rotas_ida":"rotas_volta";
+    RT[k]=RT[k].filter(l=>l!==x.value);if(x.checked)RT[k].push(x.value);$("rc_"+x.dataset.rot).textContent=RT[k].length+" marcada(s)"});
+  $("lado").querySelectorAll("[data-busca]").forEach(b=>b.oninput=()=>{const t=b.value.trim().toUpperCase();
+    $("lado").querySelectorAll('[data-lst="'+b.dataset.busca+'"] label').forEach(l=>l.style.display=!t||l.dataset.nm.includes(t)||l.querySelector("input").checked?"":"none")});
   $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd();lerRot();formRot();desenharEd()};
   $("rAplic").onclick=()=>{lerRot();const n=Math.max(1,Math.min(30,+$("rQtd").value||1));
     while(RT.itens.length<n)RT.itens.push({id:null,nome:"",ida:"",volta:"",pontos:[]});
@@ -760,13 +775,13 @@ function formRot(){
   $("rCanc").onclick=()=>{RT=null;ED=null;listaCercas()};
   $("rSalv").onclick=async()=>{lerRot();
     if(!RT.nome){msg("rMsg","Dê um nome para a roteirização.","err");return}
-    if(!RT.rota_ida){msg("rMsg","Informe o trecho do nome da linha da IDA.","err");return}
+    if(!RT.rota_ida&&!RT.rotas_ida.length&&!RT.rotas_volta.length){msg("rMsg","Marque as rotas da ida (e da volta) na lista.","err");return}
     if(RT.nomeAntigo!==RT.nome&&ROT_GRUPOS[RT.nome]){msg("rMsg","Já existe uma roteirização com esse nome.","err");return}
     const falta=RT.itens.findIndex(it=>it.pontos.length<3);if(falta>=0){msg("rMsg","Desenhe a cerca "+(falta+1)+" no mapa (mínimo 3 pontos).","err");return}
     msg("rMsg","Salvando…");
     try{for(let i=0;i<RT.itens.length;i++){const it=RT.itens[i];
         await rpc("bi_cerca_salvar",{p_token:TOKEN,p_dados:{id:it.id,nome:it.nome||(RT.nome+" - cerca "+(i+1)),turno:"",finalidade:"roteiro",cor:RT.cor,ativo:true,pontos:it.pontos,
-          horarios:[{roteiro:RT.nome,ordem:i+1,rota_ida:RT.rota_ida,rota_volta:RT.rota_volta,ida:it.ida,volta:it.volta,tol_antes:RT.tol_antes,tol_depois:RT.tol_depois}]}})}
+          horarios:[{roteiro:RT.nome,ordem:i+1,rota_ida:RT.rota_ida,rota_volta:RT.rota_volta,rotas_ida:RT.rotas_ida,rotas_volta:RT.rotas_volta,ida:it.ida,volta:it.volta,tol_antes:RT.tol_antes,tol_depois:RT.tol_depois}]}})}
       for(const id of RT.removidos)await rpc("bi_cerca_remover",{p_token:TOKEN,p_id:id});
       RT=null;ED=null;telaCercas()}catch(err){msg("rMsg",err.message,"err")}};
   const n=$("nPts");if(n)n.textContent="Cerca "+(RT.sel+1)+": "+ED.pontos.length+" ponto(s)";
