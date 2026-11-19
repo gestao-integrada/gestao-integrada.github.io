@@ -681,10 +681,17 @@ const termos=x=>String(x||"").split(",").map(t=>t.trim().toUpperCase()).filter(B
 const temT=(linha,t)=>{linha=String(linha||"").toUpperCase().trim();return t[0]==="^"?linha.startsWith(t.slice(1).trim()):linha.includes(t)};
 function linhaOk(tl,linha,f,excl){if(!f)return false;const T=(f.tipolinhas||[]).map(x=>x.toUpperCase()),inc=termos(f.contem),exc=termos(f.excluir).concat(termos(excl));
   if(!T.length&&!inc.length)return false;if(T.length&&!T.includes(String(tl||"").toUpperCase().trim()))return false;
-  if(inc.length&&!inc.some(t=>temT(linha,t)))return false;return!exc.some(t=>temT(linha,t))}
+  if(inc.length&&!inc.some(t=>temT(linha,t)))return false;
+  if((f.fora||[]).some(x=>x.toUpperCase().trim()===String(linha||"").toUpperCase().trim()))return false;return!exc.some(t=>temT(linha,t))}
 const GRUPOS=()=>((INI&&INI.config&&INI.config.grupos)||[]);
 const filtroRegra=h=>h.grupo?GRUPOS().find(g=>g.nome.toUpperCase()===h.grupo.toUpperCase()):{tipolinhas:h.tipolinhas||[],contem:h.linha_contem||"",excluir:h.linha_exclui||""};
-function previaLinhas(f,excl){const L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,f,excl));
+function previaLinhas(f,excl,sel){
+  if(sel){// grupo em Gerenciar: cada rota que o filtro pega vira caixinha; desmarcada = fica fora do grupo (g.fora)
+    const fora=(f.fora||[]).map(x=>x.toUpperCase().trim()),L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,Object.assign({},f,{fora:[]}),excl));
+    const n=L.filter(x=>!fora.includes(x.l.toUpperCase().trim())).length;
+    return'<div class="note" style="margin-top:6px"><b>'+n+' de '+L.length+' rota(s) no grupo</b>'+(L.length?' · desmarque as que não são deste turno <button class="btn sm" data-gtodas="1">Marcar todas</button> <button class="btn sm" data-gtodas="0">Desmarcar todas</button>':' — nenhuma rota dos últimos 60 dias entra.')+'</div>'
+      +(L.length?'<div class="chks" style="margin-top:4px">'+L.map(x=>'<label><input type="checkbox" data-grota="'+esc(x.l)+'"'+(fora.includes(x.l.toUpperCase().trim())?"":" checked")+'>'+esc(x.l)+'</label>').join("")+'</div>':'')}
+  const L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,f,excl));
   return'<div class="note" style="margin-top:4px"><b>'+L.length+' rota(s)</b>'+(L.length?': '+esc(L.map(x=>x.l).join(" · ")):' — nenhuma rota dos últimos 60 dias entra.')+'</div>'}
 const regraNova=()=>({rotulo:"",grupo:"",tipolinhas:[],linha_contem:"",linha_exclui:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
 // ---------------- editor de roteirização: várias cercas de uma vez, cada uma com horário da ida e da volta
@@ -835,7 +842,7 @@ async function telaGerenciar(){
     +'<div style="margin-top:10px"><button class="btn p" id="aSalv">Salvar ajustes</button></div><div id="aMsg" class="msg"></div></div>'
     +'<div class="box form" style="max-width:720px"><h3>Viagens por dia</h3><div class="note">Turnos que aparecem no painel e o ideal de viagens por dia de cada um.</div>'
     +'<div id="aVt">'+[...new Set(((OPC&&OPC.tipolinhas)||[]).concat(cf.viagens_turnos||[]))].map(t=>'<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><label style="margin:0;display:flex;gap:6px;align-items:center;color:var(--ink);flex:1"><input type="checkbox" style="width:auto" data-vt="'+esc(t)+'"'+((cf.viagens_turnos||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label><input type="number" min="0" placeholder="ideal/dia" style="width:110px" data-vi="'+esc(t)+'" value="'+esc((cf.viagens_ideal||{})[t]??"")+'"></div>').join("")+'</div></div>'
-    +'<div class="box form" style="max-width:900px"><h3>Rotas de cada turno (painel Horários)</h3><div class="note">Cada grupo diz quais rotas da TFleet são de um turno. Na cerca, cada horário escolhe um grupo. Ex.: os CTs (terceiras) ficam num grupo próprio para terem horário diferente do ADM. Embaixo de cada grupo aparecem as rotas que entram.</div>'
+    +'<div class="box form" style="max-width:900px"><h3>Rotas de cada turno (painel Horários)</h3><div class="note">Cada grupo diz quais rotas da TFleet são de um turno. Na cerca, cada horário escolhe um grupo. Ex.: os CTs (terceiras) ficam num grupo próprio para terem horário diferente do ADM. Embaixo de cada grupo aparecem as rotas que entram: desmarque as que não são daquele turno.</div>'
     +'<label>Rotas que NUNCA entram no painel Horários (nome contém, separe por vírgula)</label><input id="gExcl" value="'+esc(cf.horarios_excluir??"APRENDIZ, EXTRA")+'">'
     +'<div id="gLista"></div><div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" id="gAdd">+ Novo grupo</button><button class="btn p" id="gSalv">Salvar grupos</button></div><div id="gMsg" class="msg"></div></div>'
     +'<div class="box form" style="max-width:720px"><h3>Áreas válidas dos pontos de embarque</h3><div class="note">Pontos fora destas áreas são GPS errado e não aparecem no mapa. Uma área por linha: nome; lat mín; lat máx; lon mín; lon máx</div>'
@@ -859,13 +866,17 @@ async function telaGerenciar(){
   let GR=JSON.parse(JSON.stringify(cf.grupos||[]));
   const lerG=()=>{$("gLista").querySelectorAll(".regra").forEach(div=>{const g=GR[+div.dataset.i];
     g.nome=div.querySelector("[data-g=nome]").value.trim();g.contem=div.querySelector("[data-g=contem]").value.trim();g.excluir=div.querySelector("[data-g=excluir]").value.trim();
-    g.tipolinhas=[...div.querySelectorAll("[data-gtl]:checked")].map(x=>x.dataset.gtl)})};
+    g.tipolinhas=[...div.querySelectorAll("[data-gtl]:checked")].map(x=>x.dataset.gtl);
+    // rotas desmarcadas ficam fora; as que já estavam fora e não aparecem na lista agora (sem viagem em 60 dias) continuam fora
+    const vis=[...div.querySelectorAll("[data-grota]")];const nomes=vis.map(x=>x.dataset.grota.toUpperCase());
+    g.fora=(g.fora||[]).filter(x=>!nomes.includes(x.toUpperCase())).concat(vis.filter(x=>!x.checked).map(x=>x.dataset.grota))})};
   const pintaG=()=>{const tl=(OPC&&OPC.tipolinhas)||[];
     $("gLista").innerHTML=GR.map((g,i)=>'<div class="regra" data-i="'+i+'"><div style="display:flex;gap:6px;align-items:center"><input data-g="nome" value="'+esc(g.nome)+'" placeholder="Nome do grupo" style="font-weight:600;flex:1"><button class="btn sm red" data-grm="'+i+'">Tirar</button></div>'
       +'<label>Turno da linha na TFleet (deixe sem marcar para não filtrar por turno)</label><div class="chks">'+tl.map(t=>'<label><input type="checkbox" data-gtl="'+esc(t)+'"'+((g.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
       +'<div class="g" style="grid-template-columns:1fr 1fr"><label>Nome da linha contém<input data-g="contem" value="'+esc(g.contem||"")+'" placeholder="ex.: ^CT  (^ = começa com)"></label><label>Nome da linha NÃO contém<input data-g="excluir" value="'+esc(g.excluir||"")+'" placeholder="ex.: ^CT, MINA"></label></div>'
-      +previaLinhas(g,$("gExcl").value)+'</div>').join("")||'<div class="note">Nenhum grupo.</div>';
+      +previaLinhas(g,$("gExcl").value,1)+'</div>').join("")||'<div class="note">Nenhum grupo.</div>';
     $("gLista").querySelectorAll("input").forEach(x=>x.onchange=()=>{lerG();pintaG()});
+    $("gLista").querySelectorAll("[data-gtodas]").forEach(b=>b.onclick=()=>{b.closest(".regra").querySelectorAll("[data-grota]").forEach(x=>x.checked=b.dataset.gtodas==="1");lerG();pintaG()});
     $("gLista").querySelectorAll("[data-grm]").forEach(b=>b.onclick=()=>{lerG();GR.splice(+b.dataset.grm,1);pintaG()});};
   pintaG();$("gExcl").onchange=()=>{lerG();pintaG()};
   $("gAdd").onclick=()=>{lerG();GR.push({nome:"",tipolinhas:[],contem:"",excluir:""});pintaG()};
