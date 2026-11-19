@@ -267,6 +267,7 @@ async function carregar(){
     let aviso="";
     if(ABA==="horarios"||ABA==="roteiro")aviso=await processarCercas(de,ate);
     DADOS=await rpc("bi_dados",{p_token:TOKEN,p_painel:ABA,p_de:de,p_ate:ate,p_filtros:filtros()});
+    if(ABA==="horarios"){HM=null;try{HM=await rpc("bi_horarios_motorista",{p_token:TOKEN,p_de:de,p_ate:ate})}catch(e){HM=null}juntaMot(DADOS.linhas||[])}
     ({ocupacao:telaOcupacao,horarios:telaHorarios,roteiro:telaRoteiro,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad,mapa_rotas:telaMapaRotas}[ABA]||(()=>{}))(DADOS);
     if(aviso)$("painel").insertAdjacentHTML("afterbegin",'<div class="note" style="color:#b45309">'+esc(aviso)+'</div>');
   }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
@@ -427,6 +428,22 @@ function telaOcupacao(d){
 const ST_ROT={"no horário":"c-ok","adiantado":"c-blu","atrasado":"c-bad"};
 const ST={"no horário":"c-ok","adiantado":"c-warn","atrasado":"c-bad","sem dado":"c-gry","sem passagem na cerca":"c-gry"};
 const STCOR={"no horário":"#16a34a","adiantado":"#d97706","atrasado":"#dc2626"};
+// ---------------- hora informada pelo motorista (Forms) + justificativa do evento de pontualidade
+let HM=null;
+const difHM=(a,b)=>{const x=hm2min(a),y=hm2min(b);return x==null||y==null?null:((x-y+720+1440)%1440)-720};
+function juntaMot(L){if(!HM)return;const F={},E={},tol=HM.tol??5;
+  (HM.forms||[]).forEach(f=>{if(!F[f.k])F[f.k]=f});(HM.eventos||[]).forEach(e=>E[e.chave]=e);
+  L.forEach(x=>{const f=F[x.data+"|"+x.linha+"|"+x.tipo+"|"+(x.frota||"")];
+    x.ev=E[x.data+"|"+x.cerca+"|"+x.regra+"|"+(x.frota||"")+"|"+x.tipo]||null;x.forms=f||null;x.hora_mot=f?f.hora:null;
+    const verbo=x.tipo==="IDA"?"chegou":"saiu";
+    if(f){const dm=x.hora_real?difHM(f.hora,x.hora_real):null;x.dif_mot=dm;
+      if(dm==null){x.aviso="informou (sem hora medida)";x.aviso_c="c-gry"}
+      else if(Math.abs(dm)<=tol){x.aviso="bate com o medido";x.aviso_c="c-ok"}
+      else{x.aviso="disse que "+verbo+" "+Math.abs(dm)+" min "+(dm<0?"antes":"depois");x.aviso_c="c-warn"}}
+    else if(x.status==="atrasado"){x.aviso="atrasou e não informou";x.aviso_c="c-bad"}
+    else{x.aviso="não informou";x.aviso_c="c-gry"}})}
+const avisoF=(v,x)=>v?'<span class="chip '+(x.aviso_c||"c-gry")+'">'+esc(v)+'</span>':"—";
+const jusBtn=(x,i)=>(x.status==="atrasado"||x.ev)?'<button class="btn sm" data-jus="'+i+'" title="Justificativa do motorista/empresa (painel Eventos)">📝 '+(x.ev&&x.ev.situacao!=="aguardando"?esc(x.ev.situacao):"Ver")+'</button>':"";
 function telaHorarios(d){
   if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma cerca cadastrada ainda. Vá na aba <b>Cercas dos turnos</b>, desenhe a cerca e informe o horário de chegada, de saída e a tolerância.</div>';return}
   const L=d.linhas||[],c={};L.forEach(x=>c[x.status]=(c[x.status]||0)+1);
@@ -441,6 +458,8 @@ function telaHorarios(d){
     +kpi(nf((c["sem dado"]||0)+(c["sem passagem na cerca"]||0)),"sem hora","sem Monitor e sem hora da TFleet")
     +kpi(nf(mon),"medidas pelo Monitor",L.length?Math.round(100*mon/L.length)+"% das viagens":"")+'</div>'
     +(fk?'<div class="faixa info">Mostrando só: <b>'+esc(fk==="Monitor"?"medidas pelo Monitor":fk)+'</b> ('+Lf.length+' viagens). <a href="#" id="hrKpiX">Mostrar todas</a></div>':'')
+    +(HM?(()=>{const inf=Lf.filter(x=>x.forms).length,sem=Lf.filter(x=>x.aviso==="atrasou e não informou").length,dif=Lf.filter(x=>x.aviso_c==="c-warn").length;
+        return'<div class="faixa '+(sem?"warn":"info")+'"><b>Forms dos motoristas:</b> '+nf(inf)+' de '+nf(Lf.length)+' viagens com hora informada · <b>'+nf(dif)+'</b> com hora diferente da medida (mais de '+(HM.tol??5)+' min) · <b>'+nf(sem)+'</b> atrasaram e não informaram.'+(HM.ultimo?' <span class="note">Planilha recebida em '+dtBR(HM.ultimo)+'.</span>':' <span class="note">O robô da planilha ainda não mandou nada (⚙ Gerenciar → Forms dos motoristas).</span>')+'</div>'})():'')
     +'<div class="faixa info">A hora vem da <b>cerca</b> (GPS do Monitor, ±1 min) quando o carro tem Monitor. Sem Monitor, usa a hora da <b>TFleet</b>: chegada no ponto (IDA) ou abertura da viagem (VOLTA). Nada é estimado ou sorteado: sem hora fica "sem dado".</div>'
     +['IDA','VOLTA'].filter(s=>!$("fSent").value||$("fSent").value===s).map(s=>'<div class="box"><h3>'+(s==="IDA"?"Chegada na cerca (IDA)":"Saída da cerca (VOLTA)")+'</h3>'
        +'<div class="note" style="margin-bottom:6px">Uma linha por rota. A barra conta as viagens: <b style="color:#16a34a">verde</b> no horário (dentro da tolerância), <b style="color:#d97706">laranja</b> adiantada, <b style="color:#dc2626">vermelho</b> atrasada, <b style="color:#94a3b8">cinza</b> sem hora. Clique na rota para ver viagem por viagem.</div>'
@@ -449,7 +468,8 @@ function telaHorarios(d){
   tabela("tHor",[{k:"data",t:"Data",f:dBR},{k:"cerca",t:"Cerca"},{k:"regra",t:"Regra"},{k:"linha",t:"Linha",w:1},{k:"tipo",t:"Sentido"},{k:"frota",t:"Carro"},
     {k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"prevista",t:"Previsto"},{k:"hora_real",t:"Hora real",f:(v,r)=>esc(v||"—")+(r.monitor_gap>5?' <span class="note" title="o celular ficou '+r.monitor_gap+' min sem mandar posição antes">±'+Math.round(r.monitor_gap)+'min</span>':"")},
     {k:"origem",t:"De onde veio"},{k:"dif",t:"Diferença (min)",num:1,f:v=>v==null?"—":(v>0?"+":"")+v},{k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},
-    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"}],
+    {k:"ocupacao",t:"Passageiros",num:1},{k:"monitor",t:"Hora Monitor"},{k:"tfleet",t:"Hora TFleet"},
+    {k:"hora_mot",t:"Hora motorista",f:v=>esc(v||"—")},{k:"aviso",t:"Aviso do motorista",f:avisoF}],
     Lf.slice().sort((a,b)=>(PIOR[a.status]??9)-(PIOR[b.status]??9)||Math.abs(b.dif||0)-Math.abs(a.dif||0)),"horarios_entrada_saida");
   // indicadores clicáveis: filtram as rotas e a tabela; clicar de novo (ou no 1º) mostra todas
   [...$("hrKpis").children].forEach((el,i)=>{el.style.cursor="pointer";el.title=i?"Clique para ver só essas viagens":"Mostrar todas";
@@ -537,17 +557,51 @@ $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-hr]");
     .sort((a,b)=>String(b.data).localeCompare(String(a.data)));
   $("ovC").innerHTML='<div id="ovMapW" class="hidden" style="margin:8px 0"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><b id="ovMapT"></b>'
     +'<label class="note" style="margin-left:auto">Mostrar <select id="ovJan"><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 hora</option></select> antes e depois</label></div>'
-    +'<div id="ovMapa" style="height:380px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div><div id="ovTab"></div>';
+    +'<div id="ovMapa" style="height:380px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div><div id="ovJus" class="hidden"></div><div id="ovTab"></div>';
   tabela("ovTab",[{k:"data",t:"Data",f:dBR},{k:"frota",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"frase",t:"O que aconteceu",w:1},
     {k:"status",t:"Situação",f:v=>'<span class="chip '+(ST[v]||"c-gry")+'">'+esc(v)+'</span>'},{k:"prevista",t:"Previsto"},
     {k:"tfleet",t:"Hora TFleet",f:(v,x)=>!v?"—":x.origem&&x.origem.startsWith("TFleet")?"<b>"+esc(v)+"</b> ✔":esc(v)},
     {k:"monitor",t:"Hora Monitor",f:(v,x)=>!v?'<span class="note">sem passagem</span>':x.origem==="Monitor"?"<b>"+esc(v)+"</b> ✔":esc(v)},
+    {k:"hora_mot",t:"Hora motorista",f:(v,x)=>!v?"—":esc(v)+(x.forms&&x.forms.passageiros!=null?' <span class="note">'+x.forms.passageiros+' pax</span>':"")},
+    {k:"aviso",t:"Aviso do motorista",f:avisoF},
     {k:"origem",t:"Usou",f:v=>esc(v||"—")},{k:"ocupacao",t:"Passageiros",num:1},
-    {k:"_i",t:"Mapa",f:(v,x)=>'<button class="btn sm" data-mp="'+HR_LIN.indexOf(x)+'">🗺 Ver</button>'}],
+    {k:"_i",t:"Mapa",f:(v,x)=>'<button class="btn sm" data-mp="'+HR_LIN.indexOf(x)+'">🗺 Ver</button>'},
+    {k:"_j",t:"Justificativa",f:(v,x)=>jusBtn(x,HR_LIN.indexOf(x))}],
     HR_LIN,"horarios_"+r.linha.replace(/\W+/g,"_"));
 });
 let HR_LIN=[],MAPA_OV=null,MP_ATUAL=null;
 $("ovC").addEventListener("click",e=>{const b=e.target.closest("[data-mp]");if(!b)return;mapaViagem(HR_LIN[+b.dataset.mp])});
+$("ovC").addEventListener("click",e=>{const b=e.target.closest("[data-jus]");if(b)verJustificativa(HR_LIN[+b.dataset.jus]);
+  const v=e.target.closest("[data-evid]");if(v){e.preventDefault();baixarEvid(+v.dataset.evid)}});
+async function verJustificativa(x){
+  if(!x)return;const W=$("ovJus");W.classList.remove("hidden");W.innerHTML='<div class="box"><div class="note">Carregando a justificativa…</div></div>';
+  W.scrollIntoView({behavior:"smooth",block:"start"});
+  const ch=x.data+"|"+x.cerca+"|"+x.regra+"|"+(x.frota||"")+"|"+x.tipo,ida=x.tipo==="IDA";
+  let j=null;try{j=await rpc("bi_justificativa",{p_token:TOKEN,p_chave:ch})}catch(err){W.innerHTML='<div class="box"><div class="note">Erro: '+esc(err.message)+'</div></div>';return}
+  const SIT={aguardando:["c-warn","Aguardando justificativa"],justificado:["c-blu","Justificado, falta analisar"],aceito:["c-ok","Justificativa aceita"],refazer:["c-bad","Devolvido para refazer"],encerrado:["c-gry","Encerrado"]};
+  const lin=(r,v)=>v?'<div style="margin:3px 0"><b>'+r+':</b> '+v+'</div>':"";
+  const f=x.forms;
+  let h='<div class="box"><h3>Justificativa · carro '+esc(x.frota||"?")+' · '+esc(x.linha)+' · '+dBR(x.data)+'<span class="r"><button class="btn sm" id="jusX">Fechar</button></span></h3>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:8px">'
+    +[["Previsto",x.prevista],["Hora TFleet",x.tfleet||"—"],["Hora Monitor",x.monitor||"—"],["Hora motorista",f?f.hora:"não informou"],["Situação",x.status+(x.dif!=null?" ("+(x.dif>0?"+":"")+x.dif+" min)":"")]]
+      .map(a=>'<div style="border:1px solid var(--line);border-radius:8px;padding:6px 8px"><div class="note">'+a[0]+'</div><b>'+esc(a[1])+'</b></div>').join("")+'</div>'
+    +(f?lin("No Forms",esc(nomeCurto(f.motorista))+" informou que "+(ida?"chegou":"saiu")+" às "+esc(f.hora)+(f.passageiros!=null?" com "+f.passageiros+" passageiro(s)":"")+(f.rota?" · rota "+esc(f.rota):"")+(f.registro?' <span class="note">(preenchido '+esc(f.registro)+')</span>':"")):lin("No Forms",'<span class="chip '+(x.status==="atrasado"?"c-bad":"c-gry")+'">motorista não informou</span>'));
+  if(!j){h+='<div class="faixa info">Ainda não há evento de pontualidade para esta viagem. O painel Eventos cria o aviso cerca de 2 h depois do horário previsto, só para os tipos marcados lá (adiantado/atrasado), e então pede a justificativa para quem estiver marcado em "Quem recebe o quê".</div>'}
+  else{const s=SIT[j.situacao]||["c-gry",j.situacao];
+    h+=lin("Evento",'<span class="chip '+s[0]+'">'+esc(s[1])+'</span> <span class="note">criado '+dtBR(j.criado_em)+(j.prazo?" · prazo "+dtBR(j.prazo):"")+'</span>')
+      +lin("Motivo",esc(j.motivo||""))+lin("O que aconteceu",esc(j.justificativa||"").replace(/\n/g,"<br>"))
+      +lin("Respondido por",j.respondido_por?esc(j.respondido_por)+" em "+dtBR(j.respondido_em):"")
+      +lin("Análise",j.analise_por?esc(j.analise_por)+" em "+dtBR(j.analise_em)+(j.analise_obs?" — "+esc(j.analise_obs):""):"")
+      +((j.evid||[]).length?lin("Evidências",j.evid.map(v=>'<a href="#" data-evid="'+v.id+'">📎 '+esc(v.nome)+'</a>').join(" · ")):"")
+      +((j.envios||[]).length?lin("Avisado",j.envios.map(v=>esc(v.nome||"")+" ("+(v.canal==="whatsapp"?"WhatsApp":"e-mail")+(v.enviado_em?", "+dtBR(v.enviado_em):", na fila")+(v.aberto_em?", abriu":"")+")").join(" · ")):lin("Avisado",'<span class="note">ainda ninguém (confira "Quem recebe o quê" no painel Eventos)</span>'))
+      +((j.historico||[]).length?'<details style="margin-top:6px"><summary class="note">Histórico ('+j.historico.length+')</summary>'+j.historico.map(hh=>'<div class="note">'+dtBR(hh.ts)+' · '+esc(hh.quem||"")+' · '+esc(hh.acao)+(hh.texto?" — "+esc(hh.texto):"")+'</div>').join("")+'</details>':"");
+  }
+  h+='<div style="margin-top:8px"><a class="btn sm" href="../eventos/" target="_blank">Abrir o painel Eventos</a></div></div>';
+  W.innerHTML=h;$("jusX").onclick=()=>W.classList.add("hidden");
+}
+async function baixarEvid(id){try{const r=await rpc("ev_evidencia",{p_token:TOKEN,p_id:id});
+  const b=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0)),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([b],{type:r.tipo||"application/octet-stream"}));a.download=r.nome||"evidencia";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000)}
+  catch(err){alert(/permiss|acesso|sess/i.test(err.message)?"Para baixar a evidência é preciso ter acesso ao painel Eventos.":err.message)}}
 $("ovC").addEventListener("change",e=>{if(e.target.id==="ovJan"&&MP_ATUAL)mapaViagem(MP_ATUAL)});
 const minLocal=iso=>{const d=new Date(Date.parse(iso)-3*3600e3);return d.toISOString().slice(11,16)};
 function distKm(a,b){const R=6371,r=Math.PI/180,dl=(b[0]-a[0])*r,dn=(b[1]-a[1])*r,h=Math.sin(dl/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
@@ -1026,6 +1080,21 @@ function formEd(){
 }
 
 /* ---------------- Gerenciar ---------------- */
+async function formsSt(){const W=$("formsSt");if(!W)return;
+  let r;try{r=await rpc("bi_forms_status",{p_token:TOKEN})}catch(err){W.innerHTML=/bi_forms_status/.test(err.message)?'Ainda não instalado (rodar <b>bi-motorista.sql</b> e colar o robô <b>bi-forms-motorista.gs</b>).':'Erro: '+esc(err.message);return}
+  const LS=[...new Set(((OPC&&OPC.linhas)||[]).concat((r.rotas||[]).map(x=>x.linha).filter(Boolean)))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  const ORI={manual:["c-ok","manual"],sugerida:["c-blu","sugerida"],aprendida:["c-blu","aprendida"],ignorar:["c-gry","não entra"],"sem de-para":["c-bad","sem de-para"]};
+  W.innerHTML='Registros: <b>'+nf(r.total)+'</b> · casados com viagem da TFleet: <b>'+nf(r.casados)+'</b>'+(r.total?' ('+Math.round(100*r.casados/r.total)+'%)':'')+' · última data: <b>'+(r.ultima_data?dBR(r.ultima_data):"—")+'</b> · recebido em <b>'+(r.ultimo?dtBR(r.ultimo):"—")+'</b>'
+    +'<div class="tb scroll" style="margin-top:6px;max-height:420px"><table class="dt"><thead><tr><th>Rota no Forms</th><th>Registros (60 dias)</th><th>Sem viagem</th><th>Linha da TFleet</th><th>De onde</th><th></th></tr></thead><tbody>'
+    +(r.rotas||[]).map((x,i)=>{const o=ORI[x.origem]||["c-gry",x.origem];return'<tr data-fr="'+i+'"><td class="w">'+esc(x.exemplo||x.rota)+'</td><td class="n">'+nf(x.registros)+'</td><td class="n">'+(x.sem?'<b style="color:var(--red)">'+nf(x.sem)+'</b>':"0")+'</td>'
+      +'<td><select style="border:1px solid var(--line);border-radius:6px;padding:4px;max-width:260px"><option value="">— escolha —</option><option value="__ign"'+(x.origem==="ignorar"?" selected":"")+'>Não entra no BI (van, extra…)</option>'
+      +LS.map(l=>'<option'+(l===x.linha&&x.origem!=="ignorar"?" selected":"")+'>'+esc(l)+'</option>').join("")+'</select></td>'
+      +'<td><span class="chip '+o[0]+'">'+o[1]+'</span>'+(x.atualizado_por?' <span class="note">'+esc(x.atualizado_por)+'</span>':'')+'</td><td><button class="btn sm p">Salvar</button></td></tr>'}).join("")
+    +'</tbody></table></div><div class="note">"Sem viagem" = registro que não achou viagem da TFleet (rota errada, viagem não aberta na TFleet, ou data/hora digitada errada).</div><div id="formsMsg" class="msg"></div>';
+  W.querySelectorAll("tr[data-fr]").forEach(tr=>tr.querySelector(".btn").onclick=async()=>{const x=r.rotas[+tr.dataset.fr],v=tr.querySelector("select").value;
+    try{const k=await rpc("bi_forms_rota_salvar",{p_token:TOKEN,p_rota:x.exemplo||x.rota,p_linha:v==="__ign"?null:v,p_ignorar:v==="__ign"});
+      msg("formsMsg","Salvo: "+nf(k.casados)+" de "+nf(k.registros)+" registro(s) dessa rota casaram com viagem.","ok");setTimeout(formsSt,1500)}catch(err){msg("formsMsg",err.message,"err")}});
+}
 async function telaGerenciar(){
   try{INI=await rpc("bi_inicio",{p_token:TOKEN})}catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>';return}
   const P=INI.paineis||[],cf=INI.config||{};
@@ -1051,6 +1120,7 @@ async function telaGerenciar(){
     +'<div class="box form" style="max-width:720px"><h3>Áreas válidas dos pontos de embarque</h3><div class="note">Pontos fora destas áreas são GPS errado e não aparecem no mapa. Uma área por linha: nome; lat mín; lat máx; lon mín; lon máx</div>'
     +'<textarea id="aAreas" rows="4" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:13px monospace">'+esc((cf.areas||[]).map(a=>[a.nome,a.lat_min,a.lat_max,a.lon_min,a.lon_max].join("; ")).join("\n"))+'</textarea>'
     +'<div style="margin-top:8px"><button class="btn p" id="aSalv2">Salvar viagens e áreas</button></div><div id="aMsg2" class="msg"></div></div>'
+    +'<div class="box"><h3>Forms dos motoristas (hora informada)</h3><div class="note" style="margin-bottom:6px">Planilha "CONTROLE DE OCUPAÇÃO E PONTUALIDADE" (aba REGISTRO_VIAGENS), mandada pelo robô a cada 15 min. Cada registro é casado com a viagem da TFleet pela <b>rota</b> abaixo, a <b>data/hora</b> (até 4 h) e o <b>sentido</b> (Entrada = IDA, Saída = VOLTA). Rota sem de-para casa pelo nome do motorista e é aprendida depois de 3 vezes.</div><div id="formsSt" class="note">Carregando…</div></div>'
     +'<div class="box"><h3>Coleta da TFleet <span class="r"><button class="btn sm p" id="bColeta">Coletar agora</button></span></h3><div id="coletaSt" class="note">Carregando…</div></div>'
     +'<div class="box"><h3>Acesso</h3><div class="note">Entram no BI: administradores da Central e quem tem o painel <b>bi</b> ou <b>lotacao</b> marcado na Gestão de acessos. Editam (este menu e as cercas): administradores e quem tem <b>bi: editar</b>. A senha de gestores também edita.</div></div>';
   $("painel").querySelectorAll("tr[data-id]").forEach(tr=>tr.querySelector(".btn").onclick=async()=>{
@@ -1094,7 +1164,7 @@ async function telaGerenciar(){
         +'<table class="dt" style="margin-top:6px"><thead><tr><th>Quando</th><th>API</th><th>Resultado</th><th>Quem</th></tr></thead><tbody>'
         +(c.log||[]).map(l=>'<tr><td>'+dtBR(l.disparado_em)+'</td><td>'+esc(l.endpoint)+'</td><td>'+(!l.processado_em?'<span class="chip c-blu">aguardando</span>':l.erro?'<span class="chip c-bad">erro</span> '+esc(l.erro):'<span class="chip c-ok">ok</span> '+nf(l.linhas)+' linhas')+'</td><td>'+esc(l.por||"")+'</td></tr>').join("")+'</tbody></table>';
     }catch(err){$("coletaSt").innerHTML=/bi_coleta_status/.test(err.message)?'A coleta pelo Supabase ainda não foi instalada (rodar <b>bi-coleta.sql</b>).':'Erro: '+esc(err.message)}};
-  coleta();
+  coleta();formsSt();
   $("bColeta").onclick=async()=>{try{const r=await rpc("bi_coleta_agora",{p_token:TOKEN});alert(r==="ok"?"Coleta disparada. O resultado aparece aqui em 1 a 2 minutos.":r);setTimeout(coleta,70000);coleta()}catch(err){alert(err.message)}};
   $("aSalv").onclick=async()=>{try{await rpc("bi_config_salvar",{p_token:TOKEN,p_dados:{lugares:+$("aLug").value,valor_pessoa:+$("aVal").value,gap_min:+$("aGap").value,margem_m:+$("aMarg").value}});
       if(INI.config&&+$("aMarg").value!==+(INI.config.margem_m??30))msg("aMsg","Salvo. A margem mudou: os dias já calculados são refeitos quando você abrir o Horários (rode também: delete from bi_cerca_dias;).","ok");else msg("aMsg","Salvo.","ok");
