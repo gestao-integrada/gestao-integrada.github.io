@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hoje · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<style>
+/* mesmo visual das outras páginas do gestao-integrada (tema claro fixo) */
+:root{--bg:#f4f6fb;--card:#fff;--card2:#f8fafc;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06);
+  --red:#dc2626;--redbg:#fdecec;--ora:#c2410c;--orabg:#fff1e6;--yel:#a16207;--yelbg:#fef6d8;--grn:#15803d;--grnbg:#e7f6ec;
+  --blu:#1d4ed8;--blubg:#e8efff;--gry:#64748b;--grybg:#eef2f7;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}button{cursor:pointer}
+.hidden{display:none!important}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px 80px}
+header.top{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:16px 0 6px}
+header.top .tt{margin-right:auto;min-width:0}
+header.top h1{font-size:22px;margin:0}
+header.top .sub{color:var(--mut);font-size:13px;margin:0}
+.btn{background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;font:600 13px system-ui,sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;text-decoration:none}
+.btn:hover{border-color:#c9d1de}.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.sm{padding:4px 9px;font-size:12px}
+.who{font-size:13px;color:var(--mut)}
+.busca{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 4px}
+.busca input{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 12px;width:200px;font-size:16px}
+.faixa{border-radius:10px;padding:8px 12px;margin:8px 0;font-size:14px;border:1px solid var(--line);background:var(--card);display:flex;flex-wrap:wrap;gap:4px 18px}
+.faixa b{font-size:15px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:10px 0}
+.card{background:var(--card);border:1px solid var(--line);border-top:5px solid var(--grn);border-radius:14px;padding:10px 12px 12px;box-shadow:var(--shadow);text-align:left;min-width:0}
+.card.on{outline:2px solid var(--brand);outline-offset:-1px}
+.card.red{border-top-color:var(--red)}.card.ora{border-top-color:var(--ora)}.card.gry{border-top-color:var(--gry)}
+.card .ic{font-size:18px}
+.card b{display:block;font-size:30px;line-height:1.1;margin-top:2px}
+.card.red b{color:var(--red)}.card.ora b{color:var(--ora)}.card.grn b{color:var(--grn)}.card.gry b{color:var(--gry);font-size:20px}
+.card span{display:block;font-weight:700;font-size:14px}
+.card small{display:block;font-size:12px;color:var(--mut)}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:18px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+h2.sec .n{background:var(--grybg);border-radius:999px;padding:0 8px;font-size:12px;color:var(--ink)}
+h2.sec a{margin-left:auto}
+.lista{display:flex;flex-direction:column;gap:6px}
+.it{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--ora);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);display:flex;gap:10px;align-items:flex-start;min-width:0}
+.it.red{border-left-color:var(--red)}.it.grn{border-left-color:var(--grn)}.it.gry{border-left-color:var(--gry)}.it.blu{border-left-color:var(--blu)}
+.it .tx{flex:1;min-width:0}.it .tx .l2{color:var(--mut);font-size:13px}
+.it .dir{color:var(--mut);font-size:12px;white-space:nowrap;text-align:right}
+.carro{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:30px;padding:0 8px;border-radius:8px;background:#16324f;color:#fff;font-weight:800;border:0;flex:none}
+.carro.sem{background:var(--grybg);color:var(--gry)}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.c-red{background:var(--redbg);color:var(--red)}.c-ora{background:var(--orabg);color:var(--ora)}.c-yel{background:var(--yelbg);color:var(--yel)}
+.c-grn{background:var(--grnbg);color:var(--grn)}.c-blu{background:var(--blubg);color:var(--blu)}.c-gry{background:var(--grybg);color:var(--gry)}
+.vazio{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:12px;color:var(--mut);text-align:center}
+.note{font-size:12px;color:var(--mut)}
+.err{color:var(--red)}
+/* ficha */
+.fhead{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:10px 0}
+.fhead .big{background:#16324f;color:#fff;font-size:30px;font-weight:800;border-radius:14px;padding:4px 16px}
+.fhead .inf{min-width:0}.fhead .inf b{font-size:18px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);min-width:0}
+.tile h4{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut)}
+.tile b{display:block;font-size:20px;line-height:1.2;margin-top:2px}
+.tile small{display:block;font-size:12px;color:var(--mut)}
+.tile.red b{color:var(--red)}.tile.ora b{color:var(--ora)}.tile.grn b{color:var(--grn)}
+table.t{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+table.t th{text-align:left;font-size:11px;text-transform:uppercase;color:var(--mut);background:var(--card2);padding:6px 8px}
+table.t td{padding:5px 8px;border-top:1px solid var(--line);vertical-align:top}
+.tbl{overflow-x:auto}
+.login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.login h2{margin:0 0 6px;font-size:19px}
+.login input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin:10px 0}
+.login .btn{width:100%;justify-content:center;padding:9px}
+.msg{font-size:13px;margin-top:8px}.msg.err{color:var(--red)}
+@media (max-width:520px){.cards{grid-template-columns:1fr 1fr}.card b{font-size:26px}.busca input{width:100%}}
+</style>
+</head>
+<body>
+<div id="vLogin" class="login hidden">
+  <h2>Hoje na operação</h2>
+  <div class="note">Use a mesma senha do quadro Demandas (senha pessoal da Central).</div>
+  <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha" required>
+  <button class="btn p">Entrar</button></form>
+  <div id="lMsg" class="msg"></div>
+</div>
+
+<div id="vApp" class="wrap hidden">
+  <header class="top">
+    <div class="tt"><h1 id="titulo">Hoje</h1><p class="sub" id="sub">O que precisa de ação agora</p></div>
+    <span class="who" id="who"></span>
+    <a class="btn" href="../mapa/">🗺 Mapa ao vivo</a>
+    <button class="btn" id="bAtual">↻ Atualizar</button>
+    <button class="btn" id="bSair">Sair</button>
+  </header>
+  <form class="busca" id="fBusca">
+    <input id="qCarro" list="lCarros" inputmode="numeric" placeholder="Nº do ônibus" autocomplete="off">
+    <datalist id="lCarros"></datalist>
+    <button class="btn p">Abrir ficha</button>
+    <a class="btn hidden" id="bHoje" href="#">← Voltar para Hoje</a>
+  </form>
+
+  <!-- TELA HOJE -->
+  <div id="vHoje">
+    <div class="faixa" id="resumo"></div>
+    <div class="cards" id="cards"></div>
+    <div id="det"></div>
+    <p class="note" style="margin-top:20px">Atualiza sozinha a cada 2 minutos. Clique num quadro para ver a lista, e no número do carro para abrir a ficha dele.
+      Regras: sem sinal = celular sem mandar dados há mais de 1 h (parado há mais de 7 dias sai, é aparelho desligado);
+      lotada = mais de 40 passageiros (acima de 45 = superlotada); atrasos = pontualidade dos últimos 3 dias ainda sem justificativa.</p>
+  </div>
+
+  <!-- FICHA DO ÔNIBUS -->
+  <div id="vFicha" class="hidden"></div>
+</div>
+
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const K_SESS="tf_solicitacoes", K_CENTRAL="tf_sessao";
+const ZB="https://zael20.github.io/painel-mes-tfleet-bdv/";
+const LINK={ocorrencias:ZB+"vistoria/#ocorrencias",vistorias:ZB+"vistoria/",monitor:ZB+"index.html",lotacao:ZB+"lotacao.html",
+  aberturas:"../aberturas/",eventos:"../eventos/",visitas:"../visitas/",rota:"../rota/painel.html",bi:"../bi/"};
+const CAT={carregamento:"Carregamento",abrir_viagem:"Abrir viagem",contagem_passageiros:"Contagem de passageiros",internet_chip:"Internet / chip",
+  celular_defeito:"Celular com defeito",suporte:"Suporte",som_musica:"Som / música",outro:"Outro"};
+const STO={aberta:["Aberta","c-red"],em_andamento:["Em andamento","c-ora"],resolvida:["Resolvida","c-grn"],descartada:["Descartada","c-gry"],
+  aguardando_carro:["Aguardando nº do carro","c-gry"],aguardando_teste:["Aguardando teste","c-gry"],historico:["Histórico","c-gry"]};
+const SITV={pendente:["Esperando resposta","c-ora"],confirmada:["Confirmada","c-grn"],ciente:["Ciente","c-grn"],recusada:["Recusada","c-red"],cancelada:["Cancelada","c-gry"],feita:["Feita","c-grn"]};
+const SITE={aguardando:["Aguardando justificativa","c-ora"],refazer:["Devolvida p/ refazer","c-red"],justificado:["Justificado","c-blu"],aceito:["Aceito","c-grn"],encerrado:["Encerrado","c-gry"]};
+let TOKEN=null,QUEM=null,HOJE=null,ABERTO=null,TIMER=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const dBR=s=>s?String(s).slice(0,10).split("-").reverse().join("/"):"—";
+const dCurto=s=>s?String(s).slice(5,10).split("-").reverse().join("/"):"";
+const hBR=s=>s?new Date(s).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"";
+const dtBR=s=>s?new Date(s).toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",timeZone:"America/Belem"})+" "+hBR(s):"";
+const nome=n=>String(n||"").toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase());
+function tempo(min){min=Math.round(+min||0);if(min<60)return min+" min";if(min<1440)return Math.floor(min/60)+" h"+(min%60?" "+(min%60)+" min":"");const d=Math.floor(min/1440);return d+(d>1?" dias":" dia")}
+const desde=ts=>ts?tempo((Date.now()-Date.parse(ts))/6e4):"";
+const chip=(t,c)=>`<span class="chip ${c}">${esc(t)}</span>`;
+const carroBtn=f=>f?`<button class="carro" data-carro="${esc(f)}" title="Abrir a ficha do ônibus ${esc(f)}">${esc(f)}</button>`:`<span class="carro sem" title="Sem nº do carro">?</span>`;
+const lista=a=>Array.isArray(a)?a:[];
+const falhou=a=>a&&!Array.isArray(a)&&a.erro;
+function msg(id,t,cl){const m=$(id);if(m){m.textContent=t;m.className="msg "+(cl||"")}}
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);
+    if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}
+    if(/Could not find the function/i.test(m))throw new Error("Falta rodar o SQL hoje.sql no Supabase.");
+    throw new Error(m)}
+  return j;
+}
+
+/* ---------------- entrar (mesma sessão do quadro Demandas) ---------------- */
+async function iniciar(){
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("sol_sessao",{p_token:s.token});if(q&&!q.erro&&q.tipo==="interno"){entrar(s.token,q);return}}catch(e){}}
+  mostrarLogin();
+}
+function mostrarLogin(){$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();msg("lMsg","Entrando…");
+  try{const r=await rpc("sol_entrar",{p_senha:$("lSenha").value,p_email:null});
+    if(r.erro){msg("lMsg",r.erro,"err");return}
+    if(r.tipo&&r.tipo!=="interno"){msg("lMsg","Este painel é só da equipe.","err");return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token,r);
+  }catch(err){msg("lMsg","Erro: "+err.message,"err")}};
+function entrar(tk,q){TOKEN=tk;QUEM=q;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");
+  $("who").textContent=q.nome||"";rota()}
+$("bSair").onclick=async()=>{try{await rpc("sol_sair",{p_token:TOKEN})}catch(e){}ls.del(K_SESS);location.reload()};
+
+/* ---------------- navegação: #carro=10 abre a ficha ---------------- */
+function rota(){
+  // ?f=10 (link do mapa ao vivo) vira #carro=10
+  const qf=new URLSearchParams(location.search).get("f");
+  if(qf){history.replaceState(null,"",location.pathname+"#carro="+encodeURIComponent(qf));}
+  const m=location.hash.match(/carro=([^&]+)/);
+  clearInterval(TIMER);
+  if(m){abrirFicha(decodeURIComponent(m[1]))}
+  else{$("vFicha").classList.add("hidden");$("vHoje").classList.remove("hidden");$("bHoje").classList.add("hidden");
+    $("titulo").textContent="Hoje";carregarHoje();TIMER=setInterval(()=>{if(!document.hidden)carregarHoje()},120000)}
+}
+window.addEventListener("hashchange",()=>{if(TOKEN)rota()});
+$("fBusca").onsubmit=e=>{e.preventDefault();const v=$("qCarro").value.replace(/\D/g,"");if(v)location.hash="carro="+v};
+$("bHoje").onclick=e=>{e.preventDefault();location.hash=""};
+$("bAtual").onclick=()=>rota();
+document.addEventListener("click",e=>{const b=e.target.closest("[data-carro]");if(b){e.preventDefault();e.stopPropagation();location.hash="carro="+b.dataset.carro;scrollTo(0,0)}});
+function carrosLista(a){$("lCarros").innerHTML=lista(a).map(c=>`<option value="${esc(c)}">`).join("")}
+
+/* ---------------- TELA HOJE ---------------- */
+async function carregarHoje(){
+  if(!HOJE)$("cards").innerHTML='<div class="vazio">Carregando…</div>';
+  try{HOJE=await rpc("hoje_painel",{p_token:TOKEN});desenharHoje()}
+  catch(err){$("cards").innerHTML='<div class="vazio err">Erro: '+esc(err.message)+'</div>'}
+  if(!$("lCarros").options.length)rpc("onibus_ficha",{p_token:TOKEN,p_frota:null}).then(r=>carrosLista(r.carros)).catch(()=>{});
+}
+// definição dos quadros: n = itens, cor = quando acende, linha = como cada item aparece
+const QUADROS=[
+ {k:"ocorrencias",ic:"🛠",t:"Ocorrências abertas",link:"ocorrencias",lk:"Abrir Ocorrências (CHECK BDV)",
+  sub:a=>{const g=a.filter(o=>o.prioridade==="alta").length;return g?g+" grave"+(g>1?"s":"")+" · "+(a.length-g)+" a resolver":"a resolver"},
+  cor:a=>a.some(o=>o.prioridade==="alta")?"red":"ora",
+  item:o=>({cl:o.prioridade==="alta"?"red":"",f:o.frota,l1:`<b>${esc(o.problema)}</b>`,
+    l2:`${esc(CAT[o.categoria]||o.categoria||"")} · ${chip(...(STO[o.status]||[o.status,"c-gry"]))}${o.reincidencias?` · relatado de novo ${o.reincidencias}x`:""}`,
+    dir:"há "+desde(o.desde)})},
+ {k:"sem_sinal",ic:"📵",t:"Celular sem sinal",link:"monitor",lk:"Abrir Monitor",
+  sub:a=>"sem mandar dados há +1 h",cor:()=>"ora",
+  item:c=>({f:c.frota,cl:c.min>720?"red":"",l1:`<b>Sem dados há ${tempo(c.min)}</b>`,
+    l2:`Último envio ${dtBR(c.ts)} · bateria ${c.bateria==null?"?":c.bateria+"%"}${c.tomada?" (na tomada)":c.bateria!=null&&c.bateria<=20?" (fora da tomada, pode ter descarregado)":""}`,dir:esc(c.nome||"")})},
+ {k:"carregador",ic:"🔌",t:"Carregador ruim",link:"monitor",lk:"Abrir Monitor (Diagnóstico)",
+  sub:()=>"alertas nas últimas 24 h",cor:()=>"ora",
+  item:c=>({f:c.frota,l1:`<b>${c.tipos&&c.tipos.includes("nao_carrega")?"Não está carregando":"Carregando devagar"}</b>`,
+    l2:`${c.eventos} alerta${c.eventos>1?"s":""} em 24 h${c.mensagem?" · "+esc(c.mensagem):""}`,dir:"último "+hBR(c.ultimo)})},
+ {k:"aberturas",ic:"↔",t:"Aberturas erradas",link:"aberturas",lk:"Abrir Aberturas erradas",
+  sub:()=>"em aberto, últimos 3 dias",cor:a=>a.some(x=>x.gravidade==="alta")?"red":"ora",
+  item:a=>({f:a.frota,cl:a.gravidade==="alta"?"red":"",l1:`<b>${esc(a.linha||"")} ${esc(a.tipo||"")}</b> · ${esc(nome(a.motorista))}`,
+    l2:esc(a.problema||a.regra),dir:dCurto(a.data)+" "+esc(a.hora||"")})},
+ {k:"lotadas",ic:"👥",t:"Viagens lotadas hoje",link:"lotacao",lk:"Abrir Lotação",
+  sub:a=>{const s=a.filter(v=>v.super).length;return s?s+" com gente em pé (+45)":"acima de 40 passageiros"},
+  cor:a=>a.some(v=>v.super)?"red":"ora",
+  item:v=>({f:v.frota,cl:v.super?"red":"",l1:`<b>${v.ocupacao} passageiros</b> · ${esc(v.linha||"")} ${esc(v.tipo||"")}`,
+    l2:`${esc(v.tipolinha||"")}${v.empresa?" · "+esc(v.empresa):""}${v.aberta?" · "+chip("viagem em andamento","c-blu"):""}`,dir:"saída "+esc(v.hora||"")})},
+ {k:"atrasos",ic:"⏱",t:"Atrasos sem justificativa",link:"eventos",lk:"Abrir Eventos (pontualidade)",
+  sub:()=>"pontualidade dos últimos 3 dias",cor:a=>a.some(e=>e.situacao==="refazer")?"red":"ora",
+  item:e=>({f:e.frota,cl:e.situacao==="refazer"?"red":"",l1:`<b>${esc(e.titulo||"")}</b>`,
+    l2:`${esc(e.empresa||"")} · ${chip(...(SITE[e.situacao]||[e.situacao,"c-gry"]))}${e.prazo?" · prazo "+dtBR(e.prazo):""}`,dir:dCurto(e.data)})},
+ {k:"visitas",ic:"📅",t:"Visitas da Caliman",link:"visitas",lk:"Abrir Visitas aos carros",
+  sub:a=>{const p=a.filter(v=>v.status==="pendente").length;return p?p+" esperando sua resposta":"combinadas para hoje"},
+  cor:a=>a.some(v=>v.status==="pendente")?"ora":"grn",
+  item:v=>({f:(v.frotas||[])[0],cl:v.status==="pendente"?"":"grn",l1:`<b>${esc(v.autor||"")}</b> · ${esc(v.local||"")} ${(v.frotas||[]).length>1?"· carros "+v.frotas.map(esc).join(", "):""}`,
+    l2:`${chip(...(SITV[v.status]||[v.status,"c-gry"]))}${v.recado?" · "+esc(v.recado):""}`,
+    dir:dCurto(v.dia)+" "+esc(v.hora_combinada||v.hora_ini||"")})}
+];
+function desenharHoje(){
+  const h=HOJE;
+  $("sub").textContent="O que precisa de ação agora · atualizado às "+hBR(h.agora);
+  const vh=h.viagens_hoje||{};
+  const cel=lista(h.sem_sinal).length, tot=h.celulares_total||0;
+  $("resumo").innerHTML=`<span>📆 <b>${dBR(h.hoje)}</b></span>`+
+    (vh.total!=null?`<span>🚌 <b>${vh.total}</b> viagens hoje · <b>${vh.passageiros}</b> passageiros</span>`:"")+
+    (tot?`<span>📱 <b>${tot-cel}</b> de ${tot} celulares mandando dados</span>`:"");
+  $("cards").innerHTML=QUADROS.map(q=>{
+    const a=h[q.k];
+    if(falhou(a))return `<button class="card gry" data-q="${q.k}"><span class="ic">${q.ic}</span><b>—</b><span>${q.t}</span><small>não instalado / erro</small></button>`;
+    const n=lista(a).length;
+    return `<button class="card ${n?q.cor(lista(a)):"grn"} ${ABERTO===q.k?"on":""}" data-q="${q.k}"><span class="ic">${q.ic}</span><b>${n||"✓"}</b><span>${q.t}</span><small>${n?esc(q.sub(lista(a))):"tudo certo"}</small></button>`;
+  }).join("");
+  document.querySelectorAll("#cards .card").forEach(b=>b.onclick=()=>{ABERTO=ABERTO===b.dataset.q?null:b.dataset.q;desenharHoje()});
+  // sem quadro escolhido: mostra todos os que têm itens, na ordem
+  const mostrar=ABERTO?QUADROS.filter(q=>q.k===ABERTO):QUADROS.filter(q=>lista(h[q.k]).length||falhou(h[q.k]));
+  $("det").innerHTML=mostrar.length?mostrar.map(q=>secao(q,h[q.k])).join(""):'<div class="vazio" style="margin-top:14px">Nada pedindo ação agora. 👍</div>';
+  if(ABERTO==="atrasos"&&lista(h.atrasos_rota).length)$("det").innerHTML+=secaoRota(h.atrasos_rota);
+}
+function secao(q,a){
+  const link=`<a class="btn sm" href="${LINK[q.link]}" target="_blank" rel="noopener">${q.lk} →</a>`;
+  if(falhou(a))return `<h2 class="sec">${q.ic} ${q.t} ${link}</h2><div class="vazio err">Não deu para ler: ${esc(a.erro)}</div>`;
+  a=lista(a);
+  const itens=a.length?a.slice(0,ABERTO?200:8).map(x=>{const r=q.item(x);
+    return `<div class="it ${r.cl||""}">${carroBtn(r.f)}<div class="tx"><div>${r.l1}</div><div class="l2">${r.l2||""}</div></div><div class="dir">${r.dir||""}</div></div>`}).join("")
+    :'<div class="vazio">Nada aqui agora.</div>';
+  const mais=!ABERTO&&a.length>8?`<button class="btn sm" data-ver="${q.k}" style="align-self:flex-start">Ver todos os ${a.length}</button>`:"";
+  return `<h2 class="sec">${q.ic} ${q.t} <span class="n">${a.length}</span> ${link}</h2><div class="lista">${itens}${mais}</div>`;
+}
+function secaoRota(a){
+  return `<h2 class="sec">🚏 Pontos da rota piloto com atraso hoje <span class="n">${a.length}</span><a class="btn sm" href="${LINK.rota}" target="_blank" rel="noopener">Abrir Rota →</a></h2><div class="lista">`+
+    a.map(p=>`<div class="it">${carroBtn(p.frota)}<div class="tx"><div><b>${p.atraso_min} min de atraso</b> · ${esc(p.ponto||"")}</div><div class="l2">${esc(p.rota||"")} · previsto ${esc(p.previsto||"")}</div></div><div class="dir">${hBR(p.chegada)}</div></div>`).join("")+"</div>";
+}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-ver]");if(b){ABERTO=b.dataset.ver;desenharHoje();scrollTo(0,$("det").offsetTop-10)}});
+
+/* ---------------- FICHA DO ÔNIBUS ---------------- */
+async function abrirFicha(f){
+  $("vHoje").classList.add("hidden");$("vFicha").classList.remove("hidden");$("bHoje").classList.remove("hidden");
+  $("titulo").textContent="Ônibus "+f;$("sub").textContent="Tudo do carro num lugar só";$("qCarro").value=f;
+  $("vFicha").innerHTML='<div class="vazio">Carregando a ficha do '+esc(f)+'…</div>';
+  try{const r=await rpc("onibus_ficha",{p_token:TOKEN,p_frota:f});carrosLista(r.carros);desenharFicha(r)}
+  catch(err){$("vFicha").innerHTML='<div class="vazio err">Erro: '+esc(err.message)+'</div>'}
+}
+function bloco(t,a,link,lk,fn,vazioTx){
+  const l=link?`<a class="btn sm" href="${LINK[link]}" target="_blank" rel="noopener">${lk} →</a>`:"";
+  if(falhou(a))return `<h2 class="sec">${t} ${l}</h2><div class="vazio err">Não deu para ler: ${esc(a.erro)}</div>`;
+  a=lista(a);
+  return `<h2 class="sec">${t} <span class="n">${a.length}</span> ${l}</h2>`+(a.length?fn(a):`<div class="vazio">${vazioTx}</div>`);
+}
+function desenharFicha(r){
+  const f=r.frota, cel=lista(r.celular), oc=lista(r.ocorrencias), vi=lista(r.vistorias), vg=lista(r.viagens), lo=r.lotacao||{},
+        ev=lista(r.eventos), ab=lista(r.aberturas), vs=lista(r.visitas);
+  const ocA=oc.filter(o=>o.status==="aberta"||o.status==="em_andamento");
+  const v0=vi[0], c0=cel.filter(c=>!c.tablet)[0]||cel[0];
+  const pont=ev.filter(e=>e.tipo==="pontualidade"), pontP=pont.filter(e=>e.situacao==="aguardando"||e.situacao==="refazer");
+  const abA=ab.filter(a=>a.situacao==="aberto"), vsP=vs.filter(v=>v.status==="pendente"||(v.dia>=r.hoje&&(v.status==="confirmada"||v.status==="ciente")));
+  const conhecido=lista(r.carros).includes(f);
+  let h=`<div class="fhead"><span class="big">${esc(f)}</span><div class="inf"><b>${lo.empresa?esc(lo.empresa):"Ônibus "+esc(f)}</b>
+    <div class="note">${lo.motoristas&&lo.motoristas.length?"Motoristas nos últimos 7 dias: "+lo.motoristas.map(nome).map(esc).join(", "):"Sem viagens nos últimos 7 dias"}</div></div></div>`;
+  if(!conhecido&&!cel.length&&!vi.length&&!vg.length)h+=`<div class="vazio">Não achei o ônibus ${esc(f)} nas viagens, nos celulares nem nas vistorias. Confira o número.</div>`;
+  // quadros de situação
+  const tl=(cls,tit,val,sub)=>`<div class="tile ${cls}"><h4>${tit}</h4><b>${val}</b><small>${sub}</small></div>`;
+  h+=`<div class="tiles">`+
+    (c0?tl(c0.min>60?"ora":"grn","📱 Celular",c0.min>60?"Sem sinal há "+tempo(c0.min):"Online",
+        `Bateria ${c0.bateria==null?"?":c0.bateria+"%"}${c0.tomada?" · na tomada":" · fora da tomada"}${c0.versao?" · app "+esc(c0.versao):""}`)
+       :falhou(r.celular)?tl("","📱 Celular","—","erro ao ler"):tl("","📱 Celular","Sem Monitor","nenhum celular com esse nº nos últimos 30 dias"))+
+    tl(ocA.length?(ocA.some(o=>o.prioridade==="alta")?"red":"ora"):"grn","🛠 Ocorrências",ocA.length?ocA.length+" aberta"+(ocA.length>1?"s":""):"Nenhuma aberta",
+       `${oc.length-ocA.length} nos últimos 60 dias`)+
+    (v0?tl(v0.resultado==="NOK"?"ora":"grn","✅ Última vistoria",v0.resultado==="NOK"?"NOK":"OK",`${dBR(v0.data)} · ${esc(v0.local||"")}${v0.nok&&v0.nok.length?" · "+v0.nok.map(esc).join(", "):""}`)
+       :tl("","✅ Última vistoria","Sem vistoria","nenhuma registrada"))+
+    tl(lo.super?"red":lo.lotadas?"ora":"grn","👥 Lotação 7 dias",lo.media!=null?"média "+String(lo.media).replace(".",","):"—",
+       `${lo.viagens||0} viage${lo.viagens==1?"m":"ns"} · máx ${lo.maximo??"—"} · ${lo.lotadas||0} lotada${lo.lotadas==1?"":"s"}`)+
+    tl(pontP.length?"ora":"grn","⏱ Pontualidade 14 dias",pont.length?pont.length+" fora do horário":"No horário",pontP.length?pontP.length+" sem justificativa":"nada pendente")+
+    tl(abA.length?"ora":"grn","↔ Aberturas 7 dias",ab.length?ab.length+" errada"+(ab.length>1?"s":""):"Nenhuma",abA.length?abA.length+" em aberto":"nada pendente")+
+    tl(vsP.length?"":"grn","📅 Visitas Caliman",vsP.length?vsP.length+" marcada"+(vsP.length>1?"s":""):"Nenhuma marcada",`${vs.length} nos últimos 60 dias`)+
+  `</div>`;
+  // ocorrências
+  h+=bloco("🛠 Ocorrências",r.ocorrencias,"ocorrencias","Abrir Ocorrências",a=>'<div class="lista">'+a.map(o=>{const ab=o.status==="aberta"||o.status==="em_andamento";
+    return `<div class="it ${ab?(o.prioridade==="alta"?"red":""):"grn"}"><div class="tx"><div><b>${esc(o.problema)}</b></div>
+      <div class="l2">${esc(CAT[o.categoria]||o.categoria||"")} · ${chip(...(STO[o.status]||[o.status,"c-gry"]))}${o.solucao?" · "+esc(o.solucao):""}${o.resolvido_por?" · por "+esc(o.resolvido_por):""}</div></div>
+      <div class="dir">${dtBR(o.desde)}${o.resolvido_em?"<br>resolvida "+dCurto(o.resolvido_em.slice(0,10)):""}</div></div>`}).join("")+'</div>',"Nenhuma ocorrência nos últimos 60 dias.");
+  // celular
+  h+=bloco("📱 Celular (Monitor) · alertas 7 dias",r.eventos_celular||[],"monitor","Abrir Monitor",a=>`<div class="tbl"><table class="t"><tr><th>Quando</th><th>Alerta</th><th>Detalhe</th><th>Bateria</th></tr>`+
+    a.map(e=>`<tr><td>${dtBR(e.ts)}</td><td>${esc(String(e.tipo||"").replace(/_/g," "))}</td><td>${esc(e.mensagem||"")}</td><td>${e.bateria==null?"":e.bateria+"%"}</td></tr>`).join("")+`</table></div>`,
+    cel.length?"Nenhum alerta do celular nos últimos 7 dias.":"Sem celular do Monitor neste carro.");
+  // vistorias
+  h+=bloco("✅ Vistorias (CHECK BDV)",r.vistorias,"vistorias","Abrir CHECK BDV",a=>`<div class="tbl"><table class="t"><tr><th>Data</th><th>Local</th><th>Resultado</th><th>Itens NOK / ocorrências</th><th>Vistoriador</th></tr>`+
+    a.map(v=>`<tr><td>${dBR(v.data)}</td><td>${esc(v.local||"")}</td><td>${chip(v.resultado||"",v.resultado==="NOK"?"c-ora":"c-grn")} ${v.status&&v.status!=="OPERANTE"?chip(v.status.replace("_"," "),"c-gry"):""}</td>
+      <td>${[...(v.nok||[]),...(v.ocorrencias||[])].map(esc).join(", ")}${v.acao?`<div class="note">Ação: ${esc(v.acao)}</div>`:""}</td><td>${esc(v.vistoriador||"")}</td></tr>`).join("")+`</table></div>`,"Nenhuma vistoria registrada.");
+  // viagens
+  h+=bloco("🚌 Viagens dos últimos 7 dias",r.viagens,"lotacao","Abrir Lotação",a=>`<div class="tbl"><table class="t"><tr><th>Dia</th><th>Saída</th><th>Rota</th><th>Sentido</th><th>Motorista</th><th>Passageiros</th></tr>`+
+    a.map(v=>`<tr><td>${dCurto(v.data)}</td><td>${esc(v.hora||"")}</td><td>${esc(v.linha||"")} <span class="note">${esc(v.tipolinha||"")}</span></td><td>${esc(v.tipo||"")}</td><td>${esc(nome(v.motorista))}</td>
+      <td>${v.ocupacao>45?chip(v.ocupacao,"c-red"):v.ocupacao>40?chip(v.ocupacao,"c-ora"):(v.ocupacao||'<span class="note">sem leitura</span>')}${v.aberta?" "+chip("em andamento","c-blu"):""}</td></tr>`).join("")+`</table></div>`,"Nenhuma viagem nos últimos 7 dias.");
+  // pontualidade / eventos
+  h+=bloco("⏱ Pontualidade e outros eventos · 14 dias",r.eventos,"eventos","Abrir Eventos",a=>'<div class="lista">'+a.map(e=>
+    `<div class="it ${e.situacao==="refazer"?"red":e.situacao==="aguardando"?"":"grn"}"><div class="tx"><div><b>${esc(e.titulo||"")}</b></div>
+      <div class="l2">${chip(...(SITE[e.situacao]||[e.situacao,"c-gry"]))}${e.motivo?" · "+esc(e.motivo):""}${e.justificativa?" · "+esc(e.justificativa):""}</div></div><div class="dir">${dCurto(e.data)}</div></div>`).join("")+'</div>',"Nenhum evento nos últimos 14 dias.");
+  // aberturas
+  h+=bloco("↔ Aberturas erradas · 7 dias",r.aberturas,"aberturas","Abrir Aberturas",a=>'<div class="lista">'+a.map(x=>
+    `<div class="it ${x.situacao!=="aberto"?"grn":x.gravidade==="alta"?"red":""}"><div class="tx"><div><b>${esc(x.linha||"")} ${esc(x.tipo||"")}</b> · ${esc(nome(x.motorista))}</div>
+      <div class="l2">${esc(x.problema||x.regra)}${x.situacao!=="aberto"?" · "+chip("tratada","c-grn"):""}</div></div><div class="dir">${dCurto(x.data)} ${esc(x.hora||"")}</div></div>`).join("")+'</div>',"Nenhuma abertura errada nos últimos 7 dias.");
+  // visitas
+  h+=bloco("📅 Visitas da Caliman",r.visitas,"visitas","Abrir Visitas",a=>'<div class="lista">'+a.map(v=>
+    `<div class="it ${v.status==="pendente"?"":"gry"}"><div class="tx"><div><b>${esc(v.autor||"")}</b> · ${esc(v.local||"")}</div>
+      <div class="l2">${chip(...(SITV[v.status]||[v.status,"c-gry"]))}${v.recado?" · "+esc(v.recado):""}${v.resposta?" · resposta: "+esc(v.resposta):""}</div></div>
+      <div class="dir">${dBR(v.dia)} ${esc(v.hora_combinada||v.hora_ini||"")}</div></div>`).join("")+'</div>',"Nenhuma visita nos últimos 60 dias.");
+  $("vFicha").innerHTML=h;
+}
+
+iniciar();
+</script>
+<script src="../central-voltar.js"></script>
+</body>
+</html>
