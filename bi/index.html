@@ -44,7 +44,7 @@ header.top .sub{color:var(--mut);font-size:13px;margin:0}
 .kpi b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
 .kpi span{font-size:12px;color:var(--mut)}
 .kpi small{display:block;font-size:11px;color:var(--mut)}
-.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}.kpi.blu b{color:var(--blu)}
+.kpi.dr:hover{border-color:var(--brand)}.kpi.ok b{color:var(--grn)}.kpi.bad b{color:var(--red)}.kpi.warn b{color:var(--ora)}.kpi.blu b{color:var(--blu)}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:8px 0}
 .cols3{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:8px 0}
 @media (max-width:820px){.cols,.cols3{grid-template-columns:1fr}}
@@ -289,7 +289,7 @@ async function processarCercas(de,ate){
 }
 
 /* ---------------- peças de desenho ---------------- */
-const kpi=(v,l,s,cl)=>'<div class="kpi '+(cl||"")+'"><b>'+v+'</b><span>'+esc(l)+'</span>'+(s?'<small>'+esc(s)+'</small>':'')+'</div>';
+const kpi=(v,l,s,cl,dr)=>'<div class="kpi '+(cl||"")+(dr?' dr" title="clique para ver o detalhe"'+drA(dr.t,dr.c,dr.v):'"')+'><b>'+v+'</b><span>'+esc(l)+'</span>'+(s?'<small>'+esc(s)+'</small>':'')+'</div>';
 const drA=(t,c,v)=>' data-dt="'+esc(t)+'" data-dc="'+esc(c)+'" data-dv="'+esc(v)+'"';
 function barras(lista,rot,val,fmt,max,dr){
   lista=(lista||[]).slice(0,max||30);const mx=Math.max(1,...lista.map(x=>+x[val]||0));fmt=fmt||nf;
@@ -337,7 +337,7 @@ $("bCsv").onclick=()=>{
 };
 
 /* ---------------- detalhe (drill-down) ---------------- */
-const NOMEC={linha:"Linha",dia:"Dia",turno:"Turno",status:"Status",empresa:"Empresa",gg:"Gerência",sentido:"Sentido",carro:"Carro"};
+const NOMEC={tudo:"Filtro",fora:"Fora de rota",fora_dia:"Fora de rota no dia",fora_linha:"Fora de rota na linha",faixa:"Faixa",com_leitura:"Viagens",linha:"Linha",dia:"Dia",turno:"Turno",status:"Status",empresa:"Empresa",gg:"Gerência",sentido:"Sentido",carro:"Carro"};
 const COLS={
   viagens:[{k:"data",t:"Data",f:dBR},{k:"hora",t:"Saída"},{k:"hora_ponto",t:"Chegada no ponto"},{k:"chegada",t:"Fechou"},{k:"turno",t:"Turno"},{k:"linha",t:"Linha",w:1},
     {k:"sentido",t:"Sentido"},{k:"carro",t:"Carro"},{k:"motorista",t:"Motorista",f:v=>esc(nomeCurto(v))},{k:"ocupacao",t:"Passageiros",num:1}],
@@ -347,7 +347,7 @@ let CSV_TELA=null;
 async function drill(t,c,v,c2,v2){
   const f=filtros();if(c2==="turno")f.tipolinha=v2;if(ABA==="viagens")f.so_turnos_viagens="sim";
   let de=$("fDe").value,ate=$("fAte").value;
-  $("ovT").textContent=(t==="viagens"?"Viagens":"Embarques")+" · "+(NOMEC[c]||c)+": "+(c==="dia"?dBR(v):v)+(c2?" · "+v2:"");
+  $("ovT").textContent=(t==="viagens"?"Viagens":"Embarques")+" · "+(NOMEC[c]||c)+": "+(c==="dia"||c==="fora_dia"?dBR(v):v)+(c2?" · "+v2:"");
   $("ovS").textContent="Carregando…";$("ovC").innerHTML="";$("ov").classList.remove("hidden");
   CSV_TELA=CSV;
   try{const r=await rpc("bi_detalhe",{p_token:TOKEN,p_tipo:t,p_de:de,p_ate:ate,p_filtros:f,p_campo:c,p_valor:v});
@@ -370,8 +370,8 @@ const corPct=(v,lug,med)=>v==null?"#94a3b8":(med!=null&&lug&&med>=lug)||v>=100?"
 function barraFaixas(f){
   const tot=FX.reduce((a,x)=>a+(+f[x.k]||0),0);if(!tot)return'<div class="note">Nenhuma viagem com leitura de passageiros no período.</div>';
   return'<div style="display:flex;height:34px;border-radius:8px;overflow:hidden;margin:6px 0 10px">'+FX.map(x=>{const n=+f[x.k]||0,pc=100*n/tot;
-      return n?'<div title="'+esc(x.t+": "+n+" viagens ("+Math.round(pc)+"%)")+'" style="width:'+pc.toFixed(2)+'%;background:'+x.c+';color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">'+(pc>=6?Math.round(pc)+"%":"")+'</div>':''}).join("")+'</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">'+FX.map(x=>'<div><b style="color:'+x.c+'">● '+esc(x.t)+'</b> · '+nf(+f[x.k]||0)+' viagem(ns)<div class="note">'+esc(x.d)+'</div></div>').join("")+'</div>';
+      return n?'<div class="dr"'+drA("viagens","faixa",x.k)+' title="'+esc(x.t+": "+n+" viagens ("+Math.round(pc)+"%) · clique para ver")+'" style="width:'+pc.toFixed(2)+'%;background:'+x.c+';color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">'+(pc>=6?Math.round(pc)+"%":"")+'</div>':''}).join("")+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">'+FX.map(x=>'<div class="dr"'+drA("viagens","faixa",x.k)+' title="clique para ver as viagens"><b style="color:'+x.c+'">● '+esc(x.t)+'</b> · '+nf(+f[x.k]||0)+' viagem(ns)<div class="note">'+esc(x.d)+'</div></div>').join("")+'</div>';
 }
 // ocupação média por dia em %, cor pela faixa, linha em 100%
 function colunasPct(lista,lug){
@@ -380,10 +380,10 @@ function colunasPct(lista,lug){
   let h='<div class="colw"><div class="plot" style="min-width:'+(n*12)+'px">';
   [50,100].forEach(f=>h+='<div class="grade" style="bottom:'+(100*f/mx)+'%"><span>'+f+'%</span></div>');
   lista.forEach(x=>{const v=+x.pct||0;h+='<div class="c dr"'+drA("viagens","dia",x.dia)+' title="'+esc(dBR(x.dia)+": ocupação média "+nf(v)+"% ("+nf(x.media)+" de "+lug+" lugares) em "+x.viagens+" viagens"+(x.lotadas?", "+x.lotadas+" lotada(s)":"")+" · clique para ver")+'">'
-    +(mostraV?'<b>'+Math.round(v)+'</b>':'')+'<i style="height:'+(100*v/mx).toFixed(1)+'%;background:'+corPct(v)+'"></i></div>'});
+    +(mostraV?'<b>'+Math.round(v)+'%</b>':'')+'<i style="height:'+(100*v/mx).toFixed(1)+'%;background:'+corPct(v)+'"></i></div>'});
   h+='<div class="ideal" style="bottom:'+(100*100/mx).toFixed(1)+'%;border-color:#dc2626"></div>';
   return h+'</div><div class="eixo" style="min-width:'+(n*12)+'px">'+lista.map((x,i)=>'<span>'+(i%rot===0?dCurto(x.dia):'')+'</span>').join("")+'</div></div>'
-    +'<div class="note">Número em cima da barra = % dos lugares ocupados, em média, nas viagens do dia. Linha vermelha = ônibus cheio (100%).</div>';
+    +'<div class="note">Em cima da barra: <b>% dos lugares ocupados</b>, em média, nas viagens do dia (não é número de pessoas). Junta todas as rotas do filtro; para ver uma rota só, escolha a Linha no filtro ou clique nela em "Ocupação por linha". Linha vermelha = ônibus cheio (100%).</div>';
 }
 // ocupação por linha: barra horizontal em %, ordenada da mais cheia para a mais vazia
 function linhasPct(lista,lug){
@@ -404,17 +404,19 @@ function telaOcupacao(d){
   const st=(d.por_status||[]),stT=st.reduce((a,x)=>a+x.n,0);
   $("painel").innerHTML='<div class="faixa info"><b>Como ler:</b> ocupação = passageiros na viagem ÷ lugares do ônibus ('+lug+'). Exemplo: 33 passageiros num ônibus de '+lug+' lugares = '+(lug?Math.round(3300/lug):"—")+'%. '
       +'Só entram na conta as viagens em que a TFleet leu os crachás.</div>'
-    +'<div class="kpis">'+kpi(nf(k.embarques),"embarques","cada leitura de crachá conta 1")+kpi(nf(k.pessoas),"pessoas diferentes","a mesma pessoa conta 1 vez")+kpi(nf(k.viagens),"viagens")
-    +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","em média, de "+lug+" lugares")
-    +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média",k.pct==null?"":"de cada 10 lugares, "+nf(Math.round(k.pct/10))+" ocupados",k.pct>=89?"bad":k.pct<50?"warn":"ok")+'</div>'
+    +'<div class="kpis">'+kpi(nf(k.embarques),"embarques","cada leitura de crachá conta 1",null,{t:"embarques",c:"tudo",v:"todo o período"})
+    +kpi(nf(k.pessoas),"pessoas diferentes","a mesma pessoa conta 1 vez",null,{t:"embarques",c:"tudo",v:"todo o período"})+kpi(nf(k.viagens),"viagens","",null,{t:"viagens",c:"tudo",v:"todo o período"})
+    +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","em média, de "+lug+" lugares",null,{t:"viagens",c:"com_leitura",v:"com leitura de passageiros"})
+    +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média",k.pct==null?"":"de cada 10 lugares, "+nf(Math.round(k.pct/10))+" ocupados",k.pct>=89?"bad":k.pct<50?"warn":"ok",{t:"viagens",c:"com_leitura",v:"com leitura de passageiros"})+'</div>'
     +'<div class="box"><h3>Como estão as viagens</h3><div class="note">Cada viagem entra numa faixa pela quantidade de passageiros.</div>'+barraFaixas(d.faixas||{})+'</div>'
-    +'<div class="box"><h3>Ocupação média por dia <span class="r note">clique na barra para ver as viagens do dia</span></h3>'+colunasPct(d.ocup_dia,lug)+'</div>'
+    +'<div class="box"><h3>Ocupação média por dia, em % dos lugares <span class="r note">clique na barra para ver as viagens do dia</span></h3>'+colunasPct(d.ocup_dia,lug)+'</div>'
     +'<div class="box"><h3>Ocupação por linha <span class="r note">da mais cheia para a mais vazia · clique para ver as viagens</span></h3>'+linhasPct(d.por_linha,lug)
       +'<details style="margin-top:8px"><summary class="note">Ver tabela completa (viagens, embarques, pessoas)</summary><div id="tLinha"></div></details></div>'
     +'<div class="box"><h3>Pessoas transportadas por dia <span class="r note">clique na barra para ver quem embarcou</span></h3>'+colunasDia(d.por_dia,"embarques",null,{t:"embarques",c:"dia"})+'</div>'
     +'<div class="box"><h3>Onde os passageiros embarcam <span class="r note">cada bolinha junta os embarques num raio de ~10 m · clique para ver as linhas</span></h3>'
+    +'<div style="margin-bottom:6px"><label>Rotas do mapa gerencial <select id="ocRota"></select></label> <span class="note" id="ocRotaN"></span></div>'
     +'<div id="mOcup" style="height:460px;border-radius:8px"></div><div class="note" style="margin-top:6px"><b style="color:#38bdf8">●</b> poucos <b style="color:#facc15">●</b> <b style="color:#f97316">●</b> <b style="color:#dc2626">●</b> muitos embarques'
-    +(d.sem_gps?' · '+nf(d.sem_gps)+' embarque(s) sem GPS válido ficaram fora do mapa':'')+'. Para comparar com os pontos oficiais, use a aba <b>Mapa das rotas</b>.</div></div>'
+    +(d.sem_gps?' · '+nf(d.sem_gps)+' embarque(s) fora de Paragominas/mina e Tomé-Açu (ou sem GPS) não aparecem':'')+'. Para comparar com os pontos oficiais, use a aba <b>Mapa das rotas</b>.</div></div>'
     +'<div class="cols3"><div class="box"><h3>Quem são os passageiros</h3>'
       +st.map(x=>'<div class="dr" style="padding:6px 0;border-top:1px solid var(--line)"'+drA("embarques","status",x.status)+' title="clique para ver quem embarcou"><b>'+esc(x.status)+'</b> · '+nf(x.n)+' ('+(stT?Math.round(100*x.n/stT):0)+'%)<div class="note">'+esc(STX[x.status]||"")+'</div>'
         +'<div class="barra" style="height:6px;background:var(--blubg);border-radius:3px;margin-top:3px"><i style="display:block;height:6px;border-radius:3px;background:'+(x.status==="REGULAR"?"#16a34a":"#f59e0b")+';width:'+(stT?(100*x.n/stT).toFixed(1):0)+'%"></i></div></div>').join("")+'</div>'
@@ -679,19 +681,45 @@ function graficoFaixas(L){
 
 /* ---------------- Fora de rota ---------------- */
 let mapaFora=null;
+const CATF={"NÃO CADASTRADO":{c:"#dc2626",t:"Não cadastrados",d:"crachá lido, mas a pessoa não está cadastrada em nenhuma linha"},
+  "ITINERANTE":{c:"#d97706",t:"Itinerantes",d:"cadastrados, mas usando outra linha (fora da rota deles)"},
+  "REGULAR EM OUTRA LINHA":{c:"#2563eb",t:"Regulares em outra linha",d:"passageiro regular que embarcou numa linha diferente da de cadastro"},
+  "INATIVO":{c:"#64748b",t:"Inativos",d:"cadastro desativado na TFleet"},"SEM STATUS":{c:"#94a3b8",t:"Sem status",d:"a TFleet não informou o status"}};
 function telaFora(d){
-  const k=d.kpi||{};const gg={};(d.por_gg||[]).forEach(x=>{(gg[x.gg]=gg[x.gg]||{gg:x.gg,n:0}).n+=x.n});
-  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques no período")+kpi(nf(k.fora),"fora de rota ou não regulares",k.embarques?Math.round(100*k.fora/k.embarques)+"% dos embarques":"","warn")
-    +kpi(nf(k.pessoas),"pessoas")+'</div>'
-    +'<div class="cols"><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n",null,null,{t:"embarques",c:"status",k:"status"})+'</div>'
-    +'<div class="box"><h3>Gerência (GG)</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40,{t:"embarques",c:"gg",k:"gg"})+'</div></div></div>'
-    +'<div class="box"><h3>Onde essas pessoas embarcaram'+(d.pontos_fora_area?' <span class="r note">'+nf(d.pontos_fora_area)+' ponto(s) com GPS errado (fora de Paragominas e Tomé-Açu/Quatro Bocas) não aparecem</span>':'')+'</h3><div id="mapaFora"></div><div class="leg"><span><i style="background:#dc2626"></i>não cadastrado</span><span><i style="background:#d97706"></i>itinerante</span><span><i style="background:#2563eb"></i>regular em outra linha</span><span><i style="background:#64748b"></i>inativo</span></div></div>'
+  if(mapaFora){try{mapaFora.remove()}catch(e){}mapaFora=null}
+  const k=d.kpi||{},pc=k.embarques?Math.round(100*k.fora/k.embarques):0,gg={};(d.por_gg||[]).forEach(x=>{(gg[x.gg]=gg[x.gg]||{gg:x.gg,n:0}).n+=x.n});
+  const C=d.por_cat||[],cat=c=>C.find(x=>x.cat===c)||{n:0,pessoas:0};
+  $("painel").innerHTML='<div class="faixa info"><b>Como ler:</b> "fora de rota" é todo embarque de quem não é passageiro regular daquela linha. São 4 casos: não cadastrado, itinerante, regular em outra linha e inativo. Clique em qualquer número para ver a lista.</div>'
+    +'<div class="kpis">'+kpi(pc+"%","dos embarques foram fora de rota",nf(k.fora)+" de "+nf(k.embarques)+" embarques",pc>=30?"bad":pc>=10?"warn":"ok",{t:"embarques",c:"fora",v:"todos"})
+    +kpi(nf(k.pessoas),"pessoas fora de rota",k.pessoas_total?"de "+nf(k.pessoas_total)+" que andaram no período":"",null,{t:"embarques",c:"fora",v:"todos"})
+    +Object.keys(CATF).filter(c=>c!=="SEM STATUS"||cat(c).n).map(c=>{const x=cat(c);return kpi(nf(x.n),CATF[c].t+" (embarques)",c==="NÃO CADASTRADO"?CATF[c].d:nf(x.pessoas)+" pessoa(s)",c==="NÃO CADASTRADO"?"bad":c==="ITINERANTE"?"warn":null,{t:"embarques",c:"fora",v:c})}).join("")+'</div>'
+    +'<div class="box"><h3>Fora de rota por dia, em % dos embarques <span class="r note">clique na barra para ver quem foi</span></h3>'+colunasForaDia(d.por_dia||[])+'</div>'
+    +'<div class="cols"><div class="box"><h3>Que tipo de passageiro <span class="r note">clique para ver a lista</span></h3>'
+      +C.map(x=>{const f=CATF[x.cat]||{c:"#94a3b8",t:x.cat,d:""},p=k.fora?100*x.n/k.fora:0;return'<div class="dr" style="padding:6px 0;border-top:1px solid var(--line)"'+drA("embarques","fora",x.cat)+'><b style="color:'+f.c+'">● '+esc(f.t)+'</b> · '+nf(x.n)+' ('+Math.round(p)+'%)<div class="note">'+esc(f.d)+'</div>'
+        +'<div style="height:6px;background:var(--blubg);border-radius:3px;margin-top:3px"><i style="display:block;height:6px;border-radius:3px;background:'+f.c+';width:'+p.toFixed(1)+'%"></i></div></div>'}).join("")+'</div>'
+    +'<div class="box"><h3>Linhas que mais recebem gente de fora <span class="r note">clique para ver quem</span></h3><div class="scroll">'+barras(d.por_linha||[],"linha","n",null,15,{t:"embarques",c:"fora_linha",k:"linha"})+'</div></div></div>'
+    +'<div class="box"><h3>Gerência (GG) das pessoas fora de rota</h3><div class="scroll">'+barras(Object.values(gg).sort((a,b)=>b.n-a.n),"gg","n",null,40,{t:"embarques",c:"gg",k:"gg"})+'</div></div>'
+    +'<div class="box"><h3>Onde essas pessoas embarcaram'+(d.pontos_fora_area?' <span class="r note">'+nf(d.pontos_fora_area)+' ponto(s) fora de Paragominas/mina e Tomé-Açu (GPS errado) não aparecem</span>':'')+'</h3>'
+    +'<div style="margin-bottom:6px"><label>Rotas do mapa gerencial <select id="foRota"></select></label> <span class="note" id="foRotaN"></span></div><div id="mapaFora"></div>'
+    +'<div class="leg">'+Object.keys(CATF).map(c=>'<span><i style="background:'+CATF[c].c+'"></i>'+esc(CATF[c].t.toLowerCase())+'</span>').join("")+'</div></div>'
     +'<div class="box"><h3>Pessoas <span class="r note">linha de cadastro × linhas que usou</span></h3><div id="tFora"></div></div>';
   tabela("tFora",[{k:"status",t:"Status"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
     {k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"linhas_usadas",t:"Linhas que usou",w:1},{k:"vezes",t:"Embarques",num:1},{k:"ultimo",t:"Último",f:dBR}],d.lista||[],"fora_de_rota");
-  if(window.L){mapaFora=novoMapa("mapaFora");const cor={"NAO CADASTRADO":"#dc2626","NÃO CADASTRADO":"#dc2626","ITINERANTE":"#d97706","INATIVO":"#64748b"};
-    const b=[];(d.pontos||[]).forEach(p=>{L.circleMarker([p[0],p[1]],{radius:4,weight:1,color:"#fff",fillColor:cor[p[2]]||"#2563eb",fillOpacity:.85}).addTo(mapaFora);b.push([p[0],p[1]])});
-    if(b.length)mapaFora.fitBounds(b,{padding:[20,20],maxZoom:15});}
+  if(window.L){mapaFora=novoMapa("mapaFora");
+    const b=[];(d.pontos||[]).forEach(p=>{const f=CATF[p[2]]||{c:"#94a3b8",t:p[2]};L.circleMarker([p[0],p[1]],{radius:4,weight:1,color:"#fff",fillColor:f.c,fillOpacity:.85}).addTo(mapaFora)
+      .bindPopup('<b>'+esc(f.t)+'</b><br>'+esc(p[3]||""));b.push([p[0],p[1]])});
+    if(b.length)mapaFora.fitBounds(b,{padding:[20,20],maxZoom:15,animate:false});
+    seletorRotas(mapaFora,"foRota","foRotaN");}
+}
+function colunasForaDia(lista){
+  if(!lista.length)return'<div class="note">Sem embarques no período.</div>';
+  const mx=Math.max(20,...lista.map(x=>+x.pct||0))*1.12,n=lista.length,rot=n<=20?1:Math.ceil(n/20),mostraV=n<=45;
+  let h='<div class="colw"><div class="plot" style="min-width:'+(n*12)+'px">';
+  [10,30].filter(f=>f<mx).forEach(f=>h+='<div class="grade" style="bottom:'+(100*f/mx)+'%"><span>'+f+'%</span></div>');
+  lista.forEach(x=>{const v=+x.pct||0;h+='<div class="c dr"'+drA("embarques","fora_dia",x.dia)+' title="'+esc(dBR(x.dia)+": "+nf(x.fora)+" de "+nf(x.embarques)+" embarques fora de rota ("+nf(v)+"%) · clique para ver")+'">'
+    +(mostraV?'<b>'+Math.round(v)+'%</b>':'')+'<i style="height:'+(100*v/mx).toFixed(1)+'%;background:'+(v>=30?"#dc2626":v>=10?"#f59e0b":"#16a34a")+'"></i></div>'});
+  return h+'</div><div class="eixo" style="min-width:'+(n*12)+'px">'+lista.map((x,i)=>'<span>'+(i%rot===0?dCurto(x.dia):'')+'</span>').join("")+'</div></div>'
+    +'<div class="note">Em cima da barra: % dos embarques do dia que foram fora de rota. <b style="color:#16a34a">verde</b> menos de 10% · <b style="color:#d97706">laranja</b> 10% a 29% · <b style="color:#dc2626">vermelho</b> 30% ou mais.</div>';
 }
 
 /* ---------------- Viagens por dia ---------------- */
@@ -749,7 +777,7 @@ let MAPA_OC=null;
 // Leaflet: redesenho pendente do canvas depois que o mapa foi removido (troca de aba) dava erro; ignora
 {const r0=L.Canvas.prototype._redraw;L.Canvas.prototype._redraw=function(){if(this._ctx)return r0.apply(this,arguments)}}
 // tira os mapas do Leaflet antes de trocar o painel (senão ele tenta redesenhar num mapa que sumiu)
-function limpaMapas(){[MAPA_OC,MAPA_MR].forEach(m=>{if(m)try{m.remove()}catch(e){}});MAPA_OC=MAPA_MR=null}
+function limpaMapas(){[MAPA_OC,MAPA_MR,mapaFora].forEach(m=>{if(m)try{m.remove()}catch(e){}});MAPA_OC=MAPA_MR=mapaFora=null}
 function mapaOcupacao(d){
   const P=d.mapa||[];if(!$("mOcup"))return;
   if(!P.length){$("mOcup").outerHTML='<div class="note">Nenhum embarque com localização no período.</div>';return}
@@ -760,6 +788,29 @@ function mapaOcupacao(d){
     L.circleMarker([la,lo],{radius:Math.min(18,3+Math.sqrt(n)),color:"#fff",weight:1,fillColor:corN(n,mx),fillOpacity:.85}).addTo(m)
      .bindPopup('<b>'+nf(n)+' embarque(s)</b> · '+nf(p)+' pessoa(s)<br>'+(ls||[]).map(esc).join("<br>"))});
   m.fitBounds(L.latLngBounds(b).pad(.05),{maxZoom:15,animate:false});
+  seletorRotas(m,"ocRota","ocRotaN");
+}
+// traçado oficial das rotas (mapa gerencial TFleet → rotas_tracado), carregado uma vez
+let TRAC=null;
+async function tracado(){if(TRAC)return TRAC;try{TRAC=await rpc("bi_tracado",{p_token:TOKEN})}catch(e){TRAC=[]}return TRAC}
+async function seletorRotas(m,idSel,idN){
+  const R=await tracado(),sel=$(idSel),vivo=()=>m._mapPane&&document.body.contains(m.getContainer());if(!sel||!vivo())return;
+  if(!R.length){sel.innerHTML='<option>nenhuma rota no banco</option>';sel.disabled=true;$(idN).textContent="o traçado vem do coletor do mapa gerencial (TV Box)";return}
+  const nomes=[...new Set(R.map(r=>r.linha))].sort((a,b)=>a.localeCompare(b,"pt-BR")),fl=nmL($("fLinha").value);
+  const ini=fl&&nomes.find(n=>nmL(n)===fl)||"";
+  sel.innerHTML='<option value="*">Todas ('+nomes.length+')</option><option value="">Nenhuma</option>'+nomes.map(n=>'<option'+(n===ini?" selected":"")+'>'+esc(n)+'</option>').join("");
+  if(!ini)sel.value="*";
+  let cam=L.layerGroup().addTo(m);
+  const pinta=()=>{if(!vivo())return;cam.clearLayers();const v=sel.value,um=v&&v!=="*";if(!v)return;const b=[];
+    R.filter(r=>v==="*"||r.linha===v).forEach(r=>{const pts=r.pontos||[];
+      if(pts.length>1){L.polyline(pts,{color:r.sentido==="VOLTA"?"#a855f7":"#3b82f6",weight:um?5:2,opacity:um?.9:.5,interactive:true}).addTo(cam)
+        .bindPopup('<b>'+esc(r.linha)+'</b><br>'+esc(r.sentido)+(r.km?' · '+nf(r.km)+' km':''));if(um)pts.forEach(p=>b.push(p))}
+      if(um)(r.paradas||[]).filter(q=>q&&q.lat!=null).forEach(q=>{const mk=L.circleMarker([q.lat,q.lon],{radius:6,color:"#111",weight:2,fillColor:"#fff",fillOpacity:1}).addTo(cam)
+        .bindPopup('<b>Ponto oficial</b> · '+esc(r.linha)+' ('+esc(r.sentido)+')<br>'+esc(q.endereco||"")+(q.horario?'<br>Previsto: <b>'+esc(q.horario)+'</b>':''));
+        if(q.horario)mk.bindTooltip(esc(q.horario),{permanent:true,direction:"top",className:"tipH"})})});
+    $(idN).textContent=um?"azul = ida · roxo = volta · ■ branco = ponto oficial com horário previsto":"azul = ida · roxo = volta · escolha uma rota para ver os pontos e horários";
+    if(b.length)m.fitBounds(L.latLngBounds(b).pad(.05),{maxZoom:16,animate:false})};
+  sel.onchange=pinta;pinta();
 }
 let MR=null,MR_ROTA="",MR_RAIO=150,MR_DESV=300,MAPA_MR=null;
 function telaMapaRotas(d){
