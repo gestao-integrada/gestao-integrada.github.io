@@ -822,19 +822,28 @@ begin
              coalesce(nullif(h->>'ordem', '')::int, 1) as ordem,
              upper(coalesce(nullif(trim(h->>'rota_ida'), ''), trim(h->>'rota'), '')) as ri,
              upper(coalesce(trim(h->>'rota_volta'), '')) as rv,
+             -- rotas escolhidas na lista (nome exato): várias linhas da TFleet contam como esta roteirização
+             array(select upper(trim(x)) from jsonb_array_elements_text(case when jsonb_typeof(h->'rotas_ida') = 'array' then h->'rotas_ida' else '[]' end) x) as rli,
+             array(select upper(trim(x)) from jsonb_array_elements_text(case when jsonb_typeof(h->'rotas_volta') = 'array' then h->'rotas_volta' else '[]' end) x) as rlv,
              nullif(trim(h->>'ida'), '') as ida, nullif(trim(h->>'volta'), '') as volta,
              coalesce(nullif(h->>'tol_antes', '')::int, 10) as ta, coalesce(nullif(h->>'tol_depois', '')::int, 10) as td
       from bi_cercas c cross join jsonb_array_elements(coalesce(c.horarios, '[]'::jsonb)) h
       where c.ativo and c.finalidade = 'roteiro'),
-    rts as (select distinct on (roteiro) roteiro, ri, rv from pts where roteiro is not null and ri <> '' order by roteiro, ordem),
+    rts as (select distinct on (roteiro) roteiro, ri, rv, rli, rlv from pts
+            where roteiro is not null and (ri <> '' or cardinality(rli) > 0 or cardinality(rlv) > 0) order by roteiro, ordem),
+    vg0 as (
+      select v.*, r.roteiro, r.rv, r.rlv,
+             (r.ri <> '' and public._bi_tem(v.linha, r.ri)) or upper(trim(coalesce(v.linha, ''))) = any (r.rli) as m_ida,
+             (r.rv <> '' and public._bi_tem(v.linha, r.rv)) or upper(trim(coalesce(v.linha, ''))) = any (r.rlv) as m_volta
+      from _bi_viagens(p_de, p_ate) v cross join rts r),
     vg as (
-      select v.*, r.roteiro,
-             case when r.rv <> '' and public._bi_tem(v.linha, r.rv) and not public._bi_tem(v.linha, r.ri) then 'VOLTA'
-                  when r.rv <> '' then 'IDA' else upper(trim(v.tipo)) end as sent
-      from _bi_viagens(p_de, p_ate) v
-      join rts r on public._bi_tem(v.linha, r.ri) or (r.rv <> '' and public._bi_tem(v.linha, r.rv))
-      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft)
-        and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null))),
+      select vg0.*,
+             case when m_ida and m_volta then upper(trim(tipo))          -- mesma linha nos dois sentidos: sentido da TFleet
+                  when m_volta then 'VOLTA'
+                  when rv <> '' or cardinality(rlv) > 0 then 'IDA' else upper(trim(tipo)) end as sent
+      from vg0
+      where (m_ida or m_volta) and (fl is null or vg0.linha = fl) and (ft is null or upper(trim(vg0.tipolinha)) = ft)
+        and (fg is null or public._bi_linha_ok(vg0.tipolinha, vg0.linha, fg, null))),
     vg2 as (select * from vg where fs is null or sent = fs),
     pas as (
       select vg2.roteiro, vg2.sent, vg2.data_local, vg2.linha, vg2.frota, vg2.motorista, vg2.saida_ts, vg2.chegada_ts,
@@ -863,7 +872,7 @@ begin
     select json_build_object(
       'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'roteiro'),
       'pontos', (select coalesce(json_agg(json_build_object('roteiro', roteiro, 'ordem', ordem, 'nome', nome, 'cor', cor, 'ida', ida, 'volta', volta,
-                   'rota_ida', ri, 'rota_volta', rv) order by roteiro, ordem, nome), '[]'::json) from pts where roteiro is not null),
+                   'rota_ida', ri, 'rota_volta', rv, 'rotas_ida', rli, 'rotas_volta', rlv) order by roteiro, ordem, nome), '[]'::json) from pts where roteiro is not null),
       'linhas', (select coalesce(json_agg(x order by x.roteiro, x.sentido, x.data desc, x.saida desc), '[]'::json) from (
           select roteiro, sent as sentido, data_local as data, linha, frota, motorista,
                  to_char(saida_ts at time zone 'America/Belem', 'HH24:MI') as saida,
