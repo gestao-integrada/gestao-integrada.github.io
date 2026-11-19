@@ -20,18 +20,47 @@ h1{font-size:clamp(22px,3vw,38px);margin:0;line-height:1.15}
 .btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-weight:600;font-size:14px;text-decoration:none;color:var(--ink);white-space:nowrap}
 .btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
 input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
-.c{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px 20px;border-top:8px solid var(--gry,#94a3b8);min-width:0}
-.c .t{font-size:clamp(16px,1.6vw,22px);font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
-.c .v{font-size:clamp(48px,5.6vw,104px);font-weight:800;line-height:1;margin:8px 0 6px;font-variant-numeric:tabular-nums}
-.c .d{font-size:clamp(15px,1.5vw,20px);font-weight:700}
-.c .s{font-size:clamp(13px,1.2vw,16px);color:var(--mut);margin-top:6px}
-.c .lk{font-size:12px;color:var(--brand);background:none;border:0;padding:0;margin-top:8px;text-decoration:underline}
-.c.ok{border-top-color:var(--grn)}.c.ok .v{color:var(--grn)}
-.c.warn{border-top-color:#ea580c}.c.warn .v{color:var(--ora)}
-.c.bad{border-top-color:var(--red)}.c.bad .v{color:var(--red)}
-.c.blu{border-top-color:var(--brand)}.c.blu .v{color:#1d4ed8}
-.c.nd .v{color:#94a3b8}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:18px 18px 16px;min-width:0;
+  display:flex;flex-direction:column;align-items:center;text-align:center;cursor:pointer;transition:transform .12s,box-shadow .12s;position:relative}
+.c:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(15,23,42,.08),0 10px 28px rgba(15,23,42,.1)}
+.c.sel{outline:3px solid var(--brand);outline-offset:-1px}
+.c .t{font-size:clamp(15px,1.4vw,20px);font-weight:800;color:var(--ink);letter-spacing:.2px}
+.c .t small{display:block;font-size:.72em;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+.ring{position:relative;width:clamp(150px,15vw,230px);aspect-ratio:1;margin:10px 0 6px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .bg{stroke:#e9eef5}.ring .fg{transition:stroke-dashoffset .6s ease}
+.ring .meta{stroke:#0f172a;stroke-width:3}
+.ring .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .num b{font-size:clamp(32px,3.3vw,56px);font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.ring .num span{font-size:clamp(12px,1vw,15px);color:var(--mut);font-weight:600;margin-top:2px}
+.c.ok .num b{color:var(--grn)}.c.warn .num b{color:var(--ora)}.c.bad .num b{color:var(--red)}.c.blu .num b{color:#1d4ed8}.c.nd .num b{color:#94a3b8}
+.c .d{font-size:clamp(13px,1.1vw,16px);font-weight:700;border-radius:999px;padding:3px 12px;background:#eef2f7}
+.c .d.up{background:#e7f6ec}.c .d.dn{background:#fdecec}
+.c .s{font-size:clamp(12px,1vw,15px);color:var(--mut);margin-top:8px}
+.c .ver{font-size:12px;color:var(--brand);font-weight:700;margin-top:8px}
+.c .lk{position:absolute;top:10px;right:12px;font-size:11px;color:var(--mut);background:none;border:0;padding:0;text-decoration:underline}
+.drill{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);margin-top:16px;padding:14px 16px}
+.drill h3{margin:0;font-size:clamp(16px,1.4vw,21px);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.drill h3 .x{margin-left:auto}
+.drill .fil{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.drill .fil button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600}
+.drill .fil button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.tb{overflow-x:auto}
+.tb table{width:100%;border-collapse:collapse;font-size:clamp(13px,1vw,15px)}
+.tb th{text-align:left;font-size:11px;text-transform:uppercase;color:var(--mut);background:#f8fafc;padding:7px 8px;white-space:nowrap}
+.tb td{padding:7px 8px;border-top:1px solid var(--line);white-space:nowrap}
+.tb td.l{white-space:normal}
+.st{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:700}
+.st.ok{background:#e7f6ec;color:var(--grn)}.st.bad{background:#fdecec;color:var(--red)}.st.warn{background:#fff1e6;color:var(--ora)}.st.nd{background:#eef2f7;color:#64748b}
+.bars{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.bar{display:grid;grid-template-columns:minmax(120px,240px) 1fr 70px;gap:10px;align-items:center;font-size:clamp(13px,1vw,15px)}
+.bar .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar .n small{color:var(--mut)}
+.bar .tr{height:18px;background:#eef2f7;border-radius:6px;position:relative;overflow:hidden}
+.bar .tr i{position:absolute;inset:0 auto 0 0;background:#3b82f6;border-radius:6px}
+.bar .tr i.hi{background:var(--red)}.bar .tr em{position:absolute;top:-2px;bottom:-2px;width:2px;background:#0f172a;left:100%}
+.bar .p{text-align:right;font-weight:800;font-variant-numeric:tabular-nums}
+@media (max-width:560px){.bar{grid-template-columns:110px 1fr 54px}}
 .up{color:var(--grn)}.dn{color:var(--red)}.eq{color:var(--mut)}
 .sec{font-size:clamp(15px,1.4vw,19px);font-weight:700;color:var(--mut);margin:22px 0 8px}
 .mini{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
@@ -129,6 +158,7 @@ async function processar(de,ate){
   return "";
 }
 async function carregar(){
+  DET={};SEL=null;
   const dia=$("fDia").value||hoje();
   $("bOntem").classList.toggle("on",dia===menosDias(hoje(),1));$("bHoje").classList.toggle("on",dia===hoje());
   const dt=new Date(dia+"T12:00:00Z");
@@ -163,33 +193,92 @@ const cor=p=>p==null?"nd":p>=95?"ok":p>=85?"warn":"bad";
 function soma(L){if(!L.length)return null;const s={medidas:0,pontuais:0,atrasadas:0,adiantadas:0,sem_dado:0,pelo_monitor:0};
   L.forEach(x=>Object.keys(s).forEach(k=>s[k]+=+x[k]||0));s.pct=s.medidas?100*s.pontuais/s.medidas:null;return s}
 const nomeSent=s=>s==="IDA"?"entrada":"saída";
-function cardPont(titulo,a,b,grupo,junto){
-  const det=a?(a.medidas?a.pontuais+" de "+a.medidas+" viagens no horário":"nenhuma viagem com hora medida")
-      +(a.atrasadas?" · "+a.atrasadas+" atrasada(s)":"")+(a.sem_dado?" · "+a.sem_dado+" sem dado":""):"sem viagens desse grupo no dia";
-  return'<div class="c '+cor(a&&a.pct)+'"><div class="t">'+esc(titulo)+'</div><div class="v">'+pct(a&&a.pct)+'</div>'
-    +delta(a&&a.pct,b&&b.pct)+'<div class="s">'+esc(det)+'</div>'
-    +'<button class="lk" data-g="'+esc(grupo)+'">'+(junto?"separar entrada e saída":"juntar entrada e saída")+'</button></div>';
+function delta2(a,b){
+  if(a==null||b==null)return'<div class="d eq">sem comparação</div>';
+  const x=Math.round(a)-Math.round(b);
+  return'<div class="d '+(x>0?"up":x<0?"dn":"eq")+'" title="dia anterior: '+pct(b)+'">'+(x>0?"▲ +":x<0?"▼ ":"= ")+x+' p.p. vs. ontem</div>';
+}
+// anel: valor em %, meta (traço preto) opcional
+function anel(p,meta,corHex){
+  const r=52,c=2*Math.PI*r,v=p==null?0:Math.max(0,Math.min(100,p));
+  const mk=meta!=null?(()=>{const a=(meta/100)*2*Math.PI;const x1=60+44*Math.cos(a),y1=60+44*Math.sin(a),x2=60+60*Math.cos(a),y2=60+60*Math.sin(a);
+    return'<line class="meta" x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'"/>'})():"";
+  return'<svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="'+r+'" fill="none" stroke-width="12"/>'
+    +'<circle class="fg" cx="60" cy="60" r="'+r+'" fill="none" stroke="'+corHex+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+(c*(1-v/100))+'"/>'+mk+'</svg>';
+}
+const HEX={ok:"#16a34a",warn:"#ea580c",bad:"#dc2626",blu:"#2563eb",nd:"#cbd5e1"};
+let SEL=null,DET={};
+function cardPont(titulo,sub,a,b,chave,grupo,junto){
+  const k=cor(a&&a.pct);
+  const det=a?(a.medidas?a.pontuais+" de "+a.medidas+" no horário":"nenhuma viagem com hora medida")
+      +(a.atrasadas?" · "+a.atrasadas+" atrasada"+(a.atrasadas>1?"s":""):"")+(a.sem_dado?" · "+a.sem_dado+" sem dado":""):"sem viagens no dia";
+  return'<div class="c '+k+(SEL===chave?" sel":"")+'" data-sel="'+esc(chave)+'"><button class="lk" data-g="'+esc(grupo)+'">'+(junto?"separar":"juntar")+' entrada/saída</button>'
+    +'<div class="t"><small>'+esc(sub)+'</small>'+esc(titulo)+'</div>'
+    +'<div class="ring">'+anel(a&&a.pct,95,HEX[k])+'<div class="num"><b>'+pct(a&&a.pct)+'</b><span>meta 95%</span></div></div>'
+    +delta2(a&&a.pct,b&&b.pct)+'<div class="s">'+esc(det)+'</div><div class="ver">ver viagens ›</div></div>';
 }
 function desenhar(){
   const A=D.atual||{},B=D.anterior||{},oa=A.ocupacao||{},ob=B.ocupacao||{};
   const juntar=ls.get(K_JUNTAR)||{ADM:true};
   const PA=A.pontualidade||[],PB=B.pontualidade||[];
   const grupos=[...new Set(PA.map(x=>x.grupo).concat(PB.map(x=>x.grupo)))];
-  // ordem: ADM primeiro, depois turno, depois o resto
   const peso=g=>/ADM/i.test(g)?0:/TURNO/i.test(g)?1:2;grupos.sort((x,y)=>peso(x)-peso(y)||x.localeCompare(y));
-  let cards='<div class="c blu"><div class="t">Ocupação dos ônibus</div><div class="v">'+pct(oa.pct)+'</div>'+delta(oa.pct,ob.pct)
-    +'<div class="s">'+(oa.viagens?"média de "+String(oa.media).replace(".",",")+" passageiros em "+oa.viagens+" viagens · "+A.lugares+" lugares":"sem viagens com passageiros no dia")+'</div>'
-    +((A.ocup_grupos||[]).length>1?'<div class="mini">'+A.ocup_grupos.map(g=>'<span>'+esc(g.grupo)+": <b>"+pct(g.pct)+"</b></span>").join("")+'</div>':"")+'</div>';
+  let cards='<div class="c blu'+(SEL==="ocup"?" sel":"")+'" data-sel="ocup"><div class="t"><small>Ocupação</small>Média dos ônibus</div>'
+    +'<div class="ring">'+anel(oa.pct,null,HEX.blu)+'<div class="num"><b>'+pct(oa.pct)+'</b><span>'+(oa.viagens?String(oa.media).replace(".",",")+" de "+A.lugares+" lugares":"sem viagens")+'</span></div></div>'
+    +delta2(oa.pct,ob.pct)+'<div class="s">'+(oa.viagens?oa.viagens+" viagens · "+oa.passageiros+" passageiros":"")
+    +((A.ocup_grupos||[]).length>1?"<br>"+A.ocup_grupos.map(g=>esc(g.grupo)+" "+pct(g.pct)).join(" · "):"")+'</div><div class="ver">ver rotas ›</div></div>';
   grupos.forEach(g=>{
     const fa=s=>PA.filter(x=>x.grupo===g&&(!s||x.sentido===s)),fb=s=>PB.filter(x=>x.grupo===g&&(!s||x.sentido===s));
-    if(juntar[g])cards+=cardPont("Pontualidade "+g,soma(fa()),soma(fb()),g,true);
-    else["IDA","VOLTA"].forEach(s=>{if(fa(s).length||fb(s).length)cards+=cardPont("Pontualidade "+g+" · "+nomeSent(s),soma(fa(s)),soma(fb(s)),g,false)});
+    if(juntar[g])cards+=cardPont(g,"Pontualidade",soma(fa()),soma(fb()),"p|"+g+"|",g,true);
+    else["IDA","VOLTA"].forEach(s=>{if(fa(s).length||fb(s).length)cards+=cardPont(g+" · "+(s==="IDA"?"entrada":"saída"),"Pontualidade",soma(fa(s)),soma(fb(s)),"p|"+g+"|"+s,g,false)});
   });
   const mon=soma(PA);
-  $("painel").innerHTML='<div class="grid">'+cards+'</div>'
+  $("painel").innerHTML='<div class="grid">'+cards+'</div><div id="drill"></div>'
     +(mon&&mon.medidas?'<div class="sec">'+mon.pelo_monitor+' de '+(mon.medidas+mon.sem_dado)+' viagens com hora medida pelo GPS do Monitor; o resto pela hora da TFleet.</div>':"")
     +(!grupos.length&&D.cercas?'<div class="sec">Nenhuma viagem dos turnos das cercas nesse dia.</div>':"");
-  $("painel").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{const j=ls.get(K_JUNTAR)||{ADM:true};j[b.dataset.g]=!j[b.dataset.g];ls.set(K_JUNTAR,j);desenhar()});
+  $("painel").querySelectorAll("[data-g]").forEach(b=>b.onclick=e=>{e.stopPropagation();const j=ls.get(K_JUNTAR)||{ADM:true};j[b.dataset.g]=!j[b.dataset.g];ls.set(K_JUNTAR,j);SEL=null;desenhar()});
+  $("painel").querySelectorAll("[data-sel]").forEach(c=>c.onclick=()=>{SEL=SEL===c.dataset.sel?null:c.dataset.sel;desenhar();
+    if(SEL)setTimeout(()=>{const d=$("drill");d&&d.scrollIntoView({behavior:"smooth",block:"start"})},50)});
+  if(SEL)abrirDrill();
+}
+// ---------- drill-down: busca a lista só quando clica ----------
+let FILTRO="fora";
+async function detalhe(tipo){
+  const dia=$("fDia").value||hoje(),k=dia+"|"+tipo;
+  if(!DET[k]){const r=await rpc("bi_dds",{p_token:TOKEN,p_dia:dia,p_parte:"atual_"+tipo});DET[k]=(r.atual&&r.atual[tipo])||[]}
+  return DET[k];
+}
+async function abrirDrill(){
+  const el=$("drill");if(!el)return;
+  el.innerHTML='<div class="drill"><div class="vazio" style="padding:16px">Carregando…</div></div>';
+  try{
+    if(SEL==="ocup"){
+      const L=await detalhe("det_ocup"),lug=(D.atual&&D.atual.lugares)||45;
+      el.innerHTML='<div class="drill"><h3>Ocupação por rota <span class="sec" style="margin:0">média de passageiros ÷ '+lug+' lugares · traço = ônibus cheio</span><button class="btn x" id="dX">Fechar</button></h3>'
+        +(L.length?'<div class="bars">'+L.map(r=>'<div class="bar"><div class="n" title="'+esc(r.linha)+'"><b>'+esc(r.linha)+'</b> <small>'+esc(r.sentido==="IDA"?"ida":"volta")+' · '+esc(r.grupo)+'</small></div>'
+          +'<div class="tr" title="'+r.viagens+' viagem(ns) · média '+r.media+' · máx '+r.maximo+' · carros '+esc(r.carros||"")+'"><i class="'+(r.pct>100?"hi":"")+'" style="width:'+Math.min(100,r.pct)+'%"></i></div>'
+          +'<div class="p">'+pct(r.pct)+'</div></div>').join("")+'</div>'
+          +'<div class="tb" style="margin-top:14px"><table><tr><th>Rota</th><th>Sentido</th><th>Grupo</th><th>Viagens</th><th>Média</th><th>Máximo</th><th>Carros</th></tr>'
+          +L.map(r=>'<tr><td class="l">'+esc(r.linha)+'</td><td>'+esc(r.sentido)+'</td><td>'+esc(r.grupo)+'</td><td>'+r.viagens+'</td><td>'+String(r.media).replace(".",",")+'</td><td>'+(r.maximo>lug?'<span class="st bad">'+r.maximo+'</span>':r.maximo)+'</td><td class="l">'+esc(r.carros||"")+'</td></tr>').join("")+'</table></div>'
+          :'<div class="vazio">Sem viagens com passageiros.</div>')+'</div>';
+    }else{
+      const [,g,sen]=SEL.split("|");
+      const L=(await detalhe("det_pont")).filter(x=>x.grupo===g&&(!sen||x.sentido===sen));
+      const fora=x=>x.status==="atrasado"||(x.status==="adiantado"&&x.sentido==="VOLTA");
+      const vis=L.filter(x=>FILTRO==="todas"||(FILTRO==="fora"?fora(x):x.real==null));
+      const nF=L.filter(fora).length,nS=L.filter(x=>x.real==null).length;
+      const stc=x=>x.real==null?["sem dado","nd"]:fora(x)?[x.status==="atrasado"?"atrasado":"saiu antes","bad"]:x.status==="adiantado"?["adiantado (ok)","ok"]:["no horário","ok"];
+      el.innerHTML='<div class="drill"><h3>Pontualidade '+esc(g)+(sen?" · "+(sen==="IDA"?"entrada":"saída"):"")+'<button class="btn x" id="dX">Fechar</button></h3>'
+        +'<div class="fil"><button data-f="fora" class="'+(FILTRO==="fora"?"on":"")+'">Fora do horário ('+nF+')</button><button data-f="sem" class="'+(FILTRO==="sem"?"on":"")+'">Sem dado ('+nS+')</button><button data-f="todas" class="'+(FILTRO==="todas"?"on":"")+'">Todas ('+L.length+')</button></div>'
+        +(vis.length?'<div class="tb"><table><tr><th>Rota</th><th>Sentido</th><th>Carro</th><th>Motorista</th><th>Previsto</th><th>Real</th><th>Diferença</th><th>Situação</th><th>Fonte</th><th>Cerca</th></tr>'
+          +vis.map(x=>{const st=stc(x);return'<tr><td class="l"><b>'+esc(x.linha)+'</b></td><td>'+(x.sentido==="IDA"?"entrada":"saída")+'</td><td>'+esc(x.frota||"")+'</td><td class="l">'+esc(String(x.motorista||"").toLowerCase().replace(/(^|\s)\S/g,c=>c.toUpperCase()))+'</td>'
+            +'<td>'+esc(x.prevista||"")+'</td><td>'+esc(x.real||"—")+'</td><td>'+(x.dif==null?"":(x.dif>0?"+":"")+x.dif+" min")+'</td><td><span class="st '+st[1]+'">'+st[0]+'</span></td><td>'+esc(x.origem||"")+'</td><td class="l">'+esc(x.cerca||"")+'</td></tr>'}).join("")+'</table></div>'
+          :'<div class="vazio" style="padding:16px">Nenhuma viagem neste filtro.</div>')
+        +'<div class="sec" style="font-size:13px">Tolerância: '+(L[0]?L[0].tol_antes+" min antes / "+L[0].tol_depois+" min depois":"—")+'. Entrada adiantada conta como pontual.</div></div>';
+      el.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{FILTRO=b.dataset.f;abrirDrill()});
+    }
+    const x=$("dX");if(x)x.onclick=()=>{SEL=null;desenhar()};
+  }catch(err){el.innerHTML='<div class="drill"><div class="vazio err">Erro: '+esc(err.message)+'</div></div>'}
 }
 iniciar();
 </script>

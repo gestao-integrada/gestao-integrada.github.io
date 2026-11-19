@@ -22,7 +22,7 @@ language sql stable security definer set search_path = public as $$
 with cfg as (select * from bi_config where id = 1),
 g as (select t.g, t.o from cfg, jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) with ordinality as t(g, o)),
 vg as (
-  select v.ocupacao, upper(trim(v.tipo)) as sent,
+  select v.ocupacao, upper(trim(v.tipo)) as sent, v.linha, v.tipolinha, v.frota, v.motorista, to_char(v.hora_saida, 'HH24:MI') as hora,
          (select g.g->>'nome' from g where public._bi_linha_ok(v.tipolinha, v.linha, g.g, cfg.dds_excluir) order by g.o limit 1) as grupo
   from _bi_viagens(p_dia, p_dia) v cross join cfg
   where coalesce(v.ocupacao, 0) > 0
@@ -59,13 +59,28 @@ select jsonb_build_object(
   'pontualidade', case when p_parte is null or p_parte = 'pontualidade' then (select coalesce(jsonb_agg(jsonb_build_object('grupo', grupo, 'sentido', sentido, 'medidas', medidas, 'pontuais', pontuais,
                      'atrasadas', atrasadas, 'adiantadas', adiantadas, 'sem_dado', sem_dado, 'pelo_monitor', pelo_monitor,
                      'pct', case when medidas > 0 then round(100.0 * pontuais / medidas, 1) end)
-                     order by grupo, sentido), '[]'::jsonb) from pt) end
+                     order by grupo, sentido), '[]'::jsonb) from pt) end,
+  -- drill-down (a página só pede quando clica num quadro)
+  'det_pont', case when p_parte = 'det_pont' then (select coalesce(jsonb_agg(jsonb_build_object(
+                     'grupo', h.regra, 'sentido', h.tipo, 'cerca', h.cerca, 'linha', h.linha, 'frota', h.frota, 'motorista', h.motorista,
+                     'prevista', h.prevista, 'real', h.hora_real, 'dif', h.dif, 'status', h.status, 'origem', h.origem,
+                     'tol_antes', h.tol_antes, 'tol_depois', h.tol_depois)
+                     order by (h.status = 'atrasado') desc, (h.status = 'adiantado' and h.tipo = 'VOLTA') desc,
+                              (h.hora_real is null) desc, h.regra, h.tipo, h.prevista, h.linha), '[]'::jsonb) from h) end,
+  'det_ocup', case when p_parte = 'det_ocup' then (select coalesce(jsonb_agg(jsonb_build_object(
+                     'grupo', grupo, 'linha', linha, 'sentido', sent, 'viagens', n, 'media', media, 'maximo', maximo,
+                     'pct', pct, 'carros', carros) order by pct desc, linha), '[]'::jsonb) from (
+                 select grupo, linha, sent, count(*) as n, round(avg(ocupacao)::numeric, 1) as media, max(ocupacao) as maximo,
+                        round(100 * avg(ocupacao)::numeric / (select lugares from cfg), 1) as pct,
+                        string_agg(distinct public.normaliza_tag(frota), ', ') as carros
+                 from vg1 group by grupo, linha, sent) z) end
 );
 $$;
 revoke execute on function public._bi_dds_dia(date, text) from public, anon, authenticated;
 
 -- a página chama esta (login do BI). Devolve o dia escolhido e o dia anterior, para comparar.
--- p_parte: info | atual_ocupacao | atual_pontualidade | anterior_ocupacao | anterior_pontualidade | null (tudo)
+-- p_parte: info | atual_ocupacao | atual_pontualidade | anterior_ocupacao | anterior_pontualidade
+--          | atual_det_pont | atual_det_ocup (drill-down) | null (tudo)
 drop function if exists public.bi_dds(text, date);
 create or replace function public.bi_dds(p_token text, p_dia date, p_parte text default null) returns json
 language plpgsql security definer set search_path = public as $$
