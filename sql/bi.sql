@@ -220,6 +220,9 @@ do $$ begin
   end if;
 end $$;
 create index if not exists viagens_hist_data on public.viagens_hist (data_local);
+-- os painéis de embarques filtram por data: sem este índice o banco lia a tabela inteira (timeout na Ocupação)
+create index if not exists embarques_data on public.embarques (data_local);
+create index if not exists viagens_data on public.viagens (data_local desc);
 alter table public.viagens_hist enable row level security;
 revoke all on public.viagens_hist from anon, authenticated;
 
@@ -698,9 +701,14 @@ begin
   end if;
 
   if p_painel in ('ocupacao', 'fora_rota', 'custo', 'nao_cad') then
+    -- cópia enxuta: o "bruto" (JSON grande da TFleet) não é copiado inteiro, só a empresa (era o que fazia a Ocupação estourar o tempo)
     create temp table if not exists _bi_e on commit drop as select * from embarques limit 0;
     truncate _bi_e;
-    insert into _bi_e select * from embarques e
+    insert into _bi_e (id, data_local, hora, nome, matricula, tipopassageiro, placa, frota, tipolinha, turno, linha, sentido, lat, lon,
+                       linhapassageiro, ga, gg, centrocusto, bruto)
+    select e.id, e.data_local, e.hora, e.nome, e.matricula, e.tipopassageiro, e.placa, e.frota, e.tipolinha, e.turno, e.linha, e.sentido, e.lat, e.lon,
+           e.linhapassageiro, e.ga, e.gg, e.centrocusto, jsonb_build_object('empresa', e.bruto->>'empresa')
+    from embarques e
      where e.data_local between p_de and p_ate
        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs);
   end if;
