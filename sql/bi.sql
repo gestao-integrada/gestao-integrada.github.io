@@ -463,28 +463,41 @@ language plpgsql security definer set search_path = public as $$
 declare n int; ini timestamptz := (p_dia::timestamp at time zone 'America/Belem');
 begin
   delete from bi_cerca_eventos where dia = p_dia and cerca_id = any (p_cercas);
+  -- origem do GPS: samples (leitura completa, últimos 7 dias); se o dia já saiu de samples (arquivo-amostras.sql),
+  -- usa samples_gps (GPS enxuto: andando todo ponto, parado 1 a cada 5 min → entrada/saída menos precisa)
+  create temp table if not exists _bi_raw (device_id text, frota text, ts timestamptz, lat float8, lon float8) on commit drop;
+  truncate _bi_raw;
+  insert into _bi_raw
+    select device_id, null, ts, lat, lon from samples
+    where ts >= ini - interval '1 hour' and ts < ini + interval '1 day'
+      and lat is not null and lon is not null and not (lat = 0 and lon = 0);
+  if not exists (select 1 from _bi_raw where ts >= ini) and to_regclass('public.samples_gps') is not null then
+    truncate _bi_raw;
+    insert into _bi_raw
+      select device_id, frota, ts, lat, lon from samples_gps
+      where ts >= ini - interval '1 hour' and ts < ini + interval '1 day' and not (lat = 0 and lon = 0);
+  else
+    -- frota (número do ônibus) uma vez por celular
+    update _bi_raw r set frota = d.frota
+      from (select device_id, public.normaliza_tag(max(device_name)) as frota from samples
+            where ts >= ini - interval '1 hour' and ts < ini + interval '1 day' and device_name is not null
+            group by device_id) d
+     where d.device_id = r.device_id;
+  end if;
   create temp table if not exists _bi_s (device_id text, frota text, ts timestamptz, lat float8, lon float8,
                                          ts0 timestamptz, lat0 float8, lon0 float8) on commit drop;
   truncate _bi_s;
   insert into _bi_s
-    select device_id, null, ts, lat, lon, lag(ts) over w, lag(lat) over w, lag(lon) over w
+    select device_id, frota, ts, lat, lon, lag(ts) over w, lag(lat) over w, lag(lon) over w
     from (select * from (
-            select device_id, ts, lat, lon,
+            select device_id, frota, ts, lat, lon,
                    public._bi_pulo(lag(lat) over v, lag(lon) over v, lag(ts) over v, lat, lon, ts,
                                    lead(lat) over v, lead(lon) over v, lead(ts) over v) as pulo
-            from samples
-            where ts >= ini - interval '1 hour' and ts < ini + interval '1 day'
-              and lat is not null and lon is not null and not (lat = 0 and lon = 0)
+            from _bi_raw
             window v as (partition by device_id order by ts)) a
           where not a.pulo) b
     window w as (partition by device_id order by ts);
   delete from _bi_s where ts < ini;
-  -- frota (número do ônibus) uma vez por celular
-  update _bi_s s set frota = d.frota
-    from (select device_id, public.normaliza_tag(max(device_name)) as frota from samples
-          where ts >= ini - interval '1 hour' and ts < ini + interval '1 day' and device_name is not null
-          group by device_id) d
-   where d.device_id = s.device_id;
   -- caixa da cerca alargada pela margem (metros → graus)
   with mg as (select coalesce((select margem_m from bi_config where id = 1), 30)::float8 as m),
   c as (select id, poly, mg.m,
@@ -888,6 +901,21 @@ begin
   raise exception 'Detalhe desconhecido.';
 end $$;
 
+-- GPS de um carro numa janela: samples; se não tiver nada (dia já arquivado), samples_gps (enxuto)
+create or replace function public._bi_gps_frota(f text, p_de timestamptz, p_ate timestamptz)
+returns table (ts timestamptz, lat float8, lon float8)
+language plpgsql security definer set search_path = public as $$
+begin
+  return query select s.ts, s.lat::float8, s.lon::float8 from samples s
+    where s.ts between p_de and p_ate and s.lat is not null and s.lon is not null and not (s.lat = 0 and s.lon = 0)
+      and public.normaliza_tag(s.device_name) = f;
+  if not found and to_regclass('public.samples_gps') is not null then
+    return query select g.ts, g.lat, g.lon from samples_gps g
+      where g.frota = f and g.ts between p_de and p_ate and not (g.lat = 0 and g.lon = 0);
+  end if;
+end $$;
+revoke all on function public._bi_gps_frota(text, timestamptz, timestamptz) from public, anon, authenticated;
+
 -- trajeto do GPS (Monitor) de um carro numa janela de tempo + o desenho da cerca, para o mapa do detalhe do Horários
 create or replace function public.bi_trilha(p_token text, p_frota text, p_de timestamptz, p_ate timestamptz, p_cerca text default null)
 returns json language plpgsql security definer set search_path = public as $$
@@ -899,8 +927,7 @@ begin
                from (select ts, lat, lon,
                             public._bi_pulo(lag(lat) over v, lag(lon) over v, lag(ts) over v, lat, lon, ts,
                                             lead(lat) over v, lead(lon) over v, lead(ts) over v) as pulo
-                     from samples where ts between p_de and p_ate and lat is not null and lon is not null and not (lat = 0 and lon = 0)
-                       and public.normaliza_tag(device_name) = f
+                     from public._bi_gps_frota(f, p_de, p_ate)
                      window v as (order by ts)) x
                where not x.pulo),
     'eventos', (select coalesce(json_agg(json_build_object('ts', e.ts, 'tipo', e.tipo, 'gap_min', e.gap_min) order by e.ts), '[]'::json)
