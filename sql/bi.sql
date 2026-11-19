@@ -62,6 +62,8 @@ language sql immutable as $$
      and (jsonb_array_length(t.tl) = 0 or upper(trim(coalesce(p_tl, ''))) in (select upper(trim(x)) from jsonb_array_elements_text(t.tl) x))
      and (cardinality(t.inc) = 0 or exists (select 1 from unnest(t.inc) i where public._bi_tem(p_linha, i)))
      and not exists (select 1 from unnest(t.exc) e where public._bi_tem(p_linha, e))
+     -- rotas desmarcadas no grupo (Gerenciar → Rotas de cada turno), nome exato
+     and not exists (select 1 from jsonb_array_elements_text(coalesce(f->'fora', '[]'::jsonb)) x where upper(trim(x)) = upper(trim(coalesce(p_linha, ''))))
   from t;
 $$;
 
