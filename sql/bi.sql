@@ -58,9 +58,12 @@ language sql immutable as $$
                     array(select upper(trim(x)) from unnest(string_to_array(coalesce(f->>'contem', ''), ',')) x where trim(x) <> '') as inc,
                     array(select upper(trim(x)) from unnest(string_to_array(coalesce(f->>'excluir', '') || ',' || coalesce(p_excl_global, ''), ',')) x where trim(x) <> '') as exc)
   select f is not null
-     and (jsonb_array_length(t.tl) > 0 or cardinality(t.inc) > 0)
-     and (jsonb_array_length(t.tl) = 0 or upper(trim(coalesce(p_tl, ''))) in (select upper(trim(x)) from jsonb_array_elements_text(t.tl) x))
-     and (cardinality(t.inc) = 0 or exists (select 1 from unnest(t.inc) i where public._bi_tem(p_linha, i)))
+     and case when jsonb_array_length(coalesce(f->'rotas', '[]'::jsonb)) > 0
+          -- lista de rotas escolhidas (nome exato): horário por rota na cerca
+          then exists (select 1 from jsonb_array_elements_text(f->'rotas') x where upper(trim(x)) = upper(trim(coalesce(p_linha, ''))))
+          else (jsonb_array_length(t.tl) > 0 or cardinality(t.inc) > 0)
+           and (jsonb_array_length(t.tl) = 0 or upper(trim(coalesce(p_tl, ''))) in (select upper(trim(x)) from jsonb_array_elements_text(t.tl) x))
+           and (cardinality(t.inc) = 0 or exists (select 1 from unnest(t.inc) i where public._bi_tem(p_linha, i))) end
      and not exists (select 1 from unnest(t.exc) e where public._bi_tem(p_linha, e))
      -- rotas desmarcadas no grupo (Gerenciar → Rotas de cada turno), nome exato
      and not exists (select 1 from jsonb_array_elements_text(coalesce(f->'fora', '[]'::jsonb)) x where upper(trim(x)) = upper(trim(coalesce(p_linha, ''))))
@@ -573,17 +576,25 @@ returns table (data date, cerca text, regra text, cor text, linha text, tipolinh
 language sql stable security definer set search_path = public as $$
 with v as (select * from _bi_viagens(p_de, p_ate) where linha is not null and tipo is not null),
 cfg as (select grupos, horarios_excluir from bi_config where id = 1),
+-- horário com "rotas" (horário diferente por rota): vira um horário por rota, com chegada/saída/tolerâncias/dias da rota,
+-- mas com o mesmo nome (rótulo/grupo), para ser medido junto
 reg as (
-  select c.id as cid, c.nome, c.cor, r.o, r.h,
-         case when coalesce(trim(r.h->>'grupo'), '') <> ''
-              then (select g from cfg, jsonb_array_elements(cfg.grupos) g where upper(trim(g->>'nome')) = upper(trim(r.h->>'grupo')) limit 1)
-              else jsonb_build_object('tipolinhas', coalesce(r.h->'tipolinhas', '[]'), 'contem', coalesce(r.h->>'linha_contem', ''),
-                                      'excluir', coalesce(r.h->>'linha_exclui', '')) end as f
-  from bi_cercas c, jsonb_array_elements(c.horarios) with ordinality as r(h, o)
+  select c.id as cid, c.nome, c.cor, r.o, (r.h0 - 'rotas') || coalesce(x.it, '{}'::jsonb) as h, (x.it is not null) as por_rota,
+         case when x.it is not null then jsonb_build_object('rotas', jsonb_build_array(x.it->>'linha'))
+              when coalesce(trim(r.h0->>'grupo'), '') <> ''
+              then (select g from cfg, jsonb_array_elements(cfg.grupos) g where upper(trim(g->>'nome')) = upper(trim(r.h0->>'grupo')) limit 1)
+              else jsonb_build_object('tipolinhas', coalesce(r.h0->'tipolinhas', '[]'), 'contem', coalesce(r.h0->>'linha_contem', ''),
+                                      'excluir', coalesce(r.h0->>'linha_exclui', '')) end as f
+  from bi_cercas c
+  cross join lateral jsonb_array_elements(c.horarios) with ordinality as r(h0, o)
+  cross join lateral (select it from jsonb_array_elements(case when jsonb_typeof(r.h0->'rotas') = 'array' and jsonb_array_length(r.h0->'rotas') > 0
+                                                               then r.h0->'rotas' else '[null]'::jsonb end) e(it0),
+                      lateral (select nullif(e.it0, 'null'::jsonb) as it) z
+                      where z.it is null or coalesce(z.it->>'linha', '') <> '') x
   where c.ativo and c.finalidade = 'turno'
 ),
 alvo as (
-  select v.*, reg.cid, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), nullif(reg.h->>'grupo', ''), reg.nome) as rnome,
+  select v.*, reg.cid, reg.por_rota, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), nullif(reg.h->>'grupo', ''), reg.nome) as rnome,
          upper(trim(v.tipo)) as sent,
          case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end as prev,
          case when upper(trim(v.tipo)) = 'IDA' then coalesce((reg.h->>'cheg_antes')::int, 10) else coalesce((reg.h->>'sai_antes')::int, 10) end as ta,
@@ -596,7 +607,7 @@ alvo as (
     and (case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end) ~ '^\d{1,2}:\d{2}'
 ),
 -- a mesma cerca pode ter vários horários (ex.: troca da manhã 06:15 e da tarde 17:05):
--- cada viagem fica com o horário em que o GPS do Monitor mostra a passagem (entrada na IDA, saída na VOLTA,
+-- a rota que tem horário próprio (horário por rota) fica com ele; senão, cada viagem fica com o horário em que o GPS do Monitor mostra a passagem (entrada na IDA, saída na VOLTA,
 -- até 3 h do previsto); sem GPS, o mais perto da hora em que a viagem foi aberta na TFleet.
 -- (antes era só pela abertura: viagem aberta cedo/errada pegava o horário da manhã mesmo saindo 17:05)
 alvo1 as (
@@ -609,7 +620,7 @@ alvo1 as (
       and e.tipo = case when a.sent = 'IDA' then 'entrada' else 'saida' end
       and e.ts between ((a.data_local + a.prev::time) at time zone 'America/Belem') - interval '3 hours'
                    and ((a.data_local + a.prev::time) at time zone 'America/Belem') + interval '3 hours') g on true
-  order by a.id, a.cid, (g.seg is null), g.seg,
+  order by a.id, a.cid, a.por_rota desc, (g.seg is null), g.seg,
     abs(((coalesce(_bi_min(to_char(a.hora_saida, 'HH24:MI')), _bi_min(a.prev)) - _bi_min(a.prev) + 720 + 1440) % 1440) - 720)
 ),
 com as (

@@ -83,6 +83,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
 .cerca ul{margin:4px 0 0;padding-left:18px;font-size:13px}
 .form label{display:block;font-size:12px;color:var(--mut);margin:8px 0 2px}
 .form input,.form select{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.rdias{display:flex;gap:3px}.rdias label{display:flex!important;flex-direction:column;align-items:center;font-size:10px!important;margin:0!important;padding:0!important}.rdias input{width:auto!important;margin:0!important}
 .regra{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0;background:var(--card2)}
 .regra .g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .regra .g label{margin:0}
@@ -645,7 +646,7 @@ function listaCercas(){
   $("mapaDica").textContent="";
   if(camada){camada.clearLayers();const b=[];CERCAS.forEach(c=>{if((c.pontos||[]).length>=3){L.polygon(c.pontos,{color:c.cor,weight:2,fillOpacity:c.ativo?.25:.08,dashArray:c.ativo?null:"4 4"}).bindTooltip(c.nome).addTo(camada);b.push(...c.pontos)}});
     if(b.length)mapa.fitBounds(b,{padding:[30,30],maxZoom:17})}
-  const resumo=h=>'<li><b>'+esc(h.rotulo||h.grupo||"Horário")+'</b>: '+(h.grupo?'rotas do grupo <b>'+esc(h.grupo)+'</b>':(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")+(h.linha_exclui?' · sem "'+esc(h.linha_exclui)+'"':""))
+  const resumo=h=>h.rotas&&h.rotas.length?'<li><b>'+esc(h.rotulo||h.grupo||"Horário")+'</b>: horário por rota · '+h.rotas.map(x=>esc(x.linha)+" "+[x.chegada&&"chega "+x.chegada,x.saida&&"sai "+x.saida].filter(Boolean).join("/")).join(" · ")+'</li>':'<li><b>'+esc(h.rotulo||h.grupo||"Horário")+'</b>: '+(h.grupo?'rotas do grupo <b>'+esc(h.grupo)+'</b>':(h.tipolinhas&&h.tipolinhas.length?esc(h.tipolinhas.join(", ")):"")+(h.linha_contem?' · linha contém "'+esc(h.linha_contem)+'"':"")+(h.linha_exclui?' · sem "'+esc(h.linha_exclui)+'"':""))
     +'<br>chegada '+esc(h.chegada||"—")+' (−'+(h.cheg_antes??10)+'/+'+(h.cheg_depois??10)+' min) · saída '+esc(h.saida||"—")+' (−'+(h.sai_antes??10)+'/+'+(h.sai_depois??10)+' min)'
     +(h.dias&&h.dias.length&&h.dias.length<7?' · '+h.dias.map(d=>DIAS[d]).join(" "):"")+'</li>';
   const CR=CERCAS.filter(c=>c.finalidade==="roteiro"),CN=CERCAS.filter(c=>c.finalidade!=="roteiro");
@@ -693,6 +694,19 @@ function previaLinhas(f,excl,sel){
       +(L.length?'<div class="chks" style="margin-top:4px">'+L.map(x=>'<label><input type="checkbox" data-grota="'+esc(x.l)+'"'+(fora.includes(x.l.toUpperCase().trim())?"":" checked")+'>'+esc(x.l)+'</label>').join("")+'</div>':'')}
   const L=((OPC&&OPC.linhas_tl)||[]).filter(x=>linhaOk(x.t,x.l,f,excl));
   return'<div class="note" style="margin-top:4px"><b>'+L.length+' rota(s)</b>'+(L.length?': '+esc(L.map(x=>x.l).join(" · ")):' — nenhuma rota dos últimos 60 dias entra.')+'</div>'}
+// horário diferente por rota: lista de rotas escolhidas (sem digitar), cada uma com chegada/saída, tolerâncias e dias
+function rotasDoFiltro(h){const f=filtroRegra(h),ex=INI&&INI.config&&INI.config.horarios_excluir,L=(OPC&&OPC.linhas_tl)||[];
+  const ok=(h.grupo||(h.tipolinhas||[]).length||h.linha_contem)?L.filter(x=>linhaOk(x.t,x.l,f,ex)):L;return[...new Set(ok.map(x=>x.l))].sort((a,b)=>a.localeCompare(b,"pt-BR"))}
+const rotaNova=(l,h)=>({linha:l,chegada:h.chegada||"",cheg_antes:h.cheg_antes??10,cheg_depois:h.cheg_depois??10,saida:h.saida||"",sai_antes:h.sai_antes??10,sai_depois:h.sai_depois??10,dias:(h.dias&&h.dias.length?h.dias:[1,2,3,4,5,6,7]).slice()});
+function tabRotas(h){const R=h.rotas||[],disp=rotasDoFiltro(h).filter(l=>!R.some(x=>x.linha===l));
+  const n=(k,v)=>'<input type="number" min="0" data-rf="'+k+'" value="'+(v??10)+'" style="width:52px">',t=(k,v)=>'<input type="time" data-rf="'+k+'" value="'+esc(v||"")+'" style="width:96px">';
+  return'<div class="note" style="margin-top:6px">Escolha as rotas na lista'+(h.grupo?' (rotas do grupo <b>'+esc(h.grupo)+'</b>)':'')+'. Cada uma tem o seu horário, tolerância (min antes / depois) e dias; no painel elas aparecem juntas como <b>'+esc(h.rotulo||h.grupo||"este horário")+'</b>.</div>'
+    +'<select class="addRota" style="margin:6px 0"><option value="">+ Adicionar rota…</option>'+(disp.length>1?'<option value="*">+ Todas as '+disp.length+' rotas da lista</option>':'')+disp.map(l=>'<option>'+esc(l)+'</option>').join("")+'</select>'
+    +(R.length?'<div class="tb"><table class="dt" style="font-size:12px"><thead><tr><th>Rota</th><th>Chegada</th><th>Tol.</th><th>Saída</th><th>Tol.</th><th>Dias</th><th></th></tr></thead><tbody>'
+      +R.map((x,j)=>'<tr data-rr="'+esc(x.linha)+'"><td class="w"><b>'+esc(x.linha)+'</b></td><td>'+t("chegada",x.chegada)+'</td><td style="white-space:nowrap">'+n("cheg_antes",x.cheg_antes)+' / '+n("cheg_depois",x.cheg_depois)+'</td>'
+        +'<td>'+t("saida",x.saida)+'</td><td style="white-space:nowrap">'+n("sai_antes",x.sai_antes)+' / '+n("sai_depois",x.sai_depois)+'</td>'
+        +'<td><div class="rdias">'+[1,2,3,4,5,6,7].map(d=>'<label title="'+DIAS[d]+'"><input type="checkbox" data-rdia="'+d+'"'+((x.dias||[]).includes(d)?" checked":"")+'>'+DIAS[d]+'</label>').join("")+'</div></td>'
+        +'<td><button class="btn sm red" data-rrm="'+j+'">Tirar</button></td></tr>').join("")+'</tbody></table></div>':'<div class="note">Nenhuma rota ainda.</div>')}
 const regraNova=()=>({rotulo:"",grupo:"",tipolinhas:[],linha_contem:"",linha_exclui:"",chegada:"",cheg_antes:10,cheg_depois:10,saida:"",sai_antes:10,sai_depois:10,dias:[1,2,3,4,5,6,7]});
 // ---------------- editor de roteirização: várias cercas de uma vez, cada uma com horário da ida e da volta
 let RT=null,ROT_GRUPOS={};
@@ -778,10 +792,11 @@ function formEd(){
     +(h.grupo?'':'<div class="chks" style="margin-top:6px">'+tl.map(t=>'<label><input type="checkbox" data-tl="'+esc(t)+'"'+((h.tipolinhas||[]).includes(t)?" checked":"")+'>'+esc(t)+'</label>').join("")+'</div>'
       +'<label>Nome da linha contém (separe por vírgula; ^CT = começa com CT)</label><input data-f="linha_contem" value="'+esc(h.linha_contem||"")+'">'
       +'<label>Nome da linha NÃO contém</label><input data-f="linha_exclui" value="'+esc(h.linha_exclui||"")+'">')
-    +previaLinhas(filtroRegra(h),INI&&INI.config&&INI.config.horarios_excluir)
-    +'<div class="g"><label>Chegada prevista<input type="time" data-f="chegada" value="'+esc(h.chegada||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="cheg_antes" value="'+(h.cheg_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="cheg_depois" value="'+(h.cheg_depois??10)+'"></label>'
+    +(h.rotas&&h.rotas.length?'':previaLinhas(filtroRegra(h),INI&&INI.config&&INI.config.horarios_excluir))
+    +'<label>Horário</label><select class="selModo"><option value="1"'+(h.rotas&&h.rotas.length||h._porRota?'':" selected")+'>O mesmo horário para todas as rotas</option><option value="2"'+(h.rotas&&h.rotas.length||h._porRota?" selected":"")+'>Horário diferente para cada rota (medidas juntas)</option></select>'
+    +(h.rotas&&h.rotas.length||h._porRota?tabRotas(h):'<div class="g"><label>Chegada prevista<input type="time" data-f="chegada" value="'+esc(h.chegada||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="cheg_antes" value="'+(h.cheg_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="cheg_depois" value="'+(h.cheg_depois??10)+'"></label>'
     +'<label>Saída prevista<input type="time" data-f="saida" value="'+esc(h.saida||"")+'"></label><label>Tolerância antes (min)<input type="number" min="0" data-f="sai_antes" value="'+(h.sai_antes??10)+'"></label><label>Tolerância depois (min)<input type="number" min="0" data-f="sai_depois" value="'+(h.sai_depois??10)+'"></label></div>'
-    +'<label>Dias</label><div class="chks">'+[1,2,3,4,5,6,7].map(d=>'<label><input type="checkbox" data-dia="'+d+'"'+((h.dias||[]).includes(d)?" checked":"")+'>'+DIAS[d]+'</label>').join("")+'</div></div>';
+    +'<label>Dias</label><div class="chks">'+[1,2,3,4,5,6,7].map(d=>'<label><input type="checkbox" data-dia="'+d+'"'+((h.dias||[]).includes(d)?" checked":"")+'>'+DIAS[d]+'</label>').join("")+'</div>')+'</div>';
   $("lado").innerHTML='<div class="box form"><h3>'+(ED.id?"Editar cerca":"Nova cerca")+'</h3>'
     +'<label>Nome da cerca</label><input id="eNome" value="'+esc(ED.nome)+'" placeholder="Ex.: Cerca turno ADM">'
     +'<div style="display:grid;grid-template-columns:2fr 1fr;gap:6px"><div><label>Turno</label><input id="eTurno" value="'+esc(ED.turno||"")+'" placeholder="ADM, Turno, Gemin" list="dlTurnos"><datalist id="dlTurnos"><option>ADM</option><option>Turno</option><option>Gemin</option><option>Manutenção</option></datalist></div><div><label>Cor</label><input id="eCor" type="color" value="'+esc(ED.cor)+'" style="padding:2px;height:36px"></div></div>'
@@ -799,7 +814,13 @@ function formEd(){
       div.querySelectorAll("[data-f]").forEach(inp=>{const f=inp.dataset.f;h[f]=inp.type==="number"?(inp.value===""?0:+inp.value):inp.value.trim()});
       h.tipolinhas=[...div.querySelectorAll("[data-tl]:checked")].map(x=>x.dataset.tl);
       if(h.grupo){h.tipolinhas=[];h.linha_contem="";h.linha_exclui=""}
-      h.dias=[...div.querySelectorAll("[data-dia]:checked")].map(x=>+x.dataset.dia);});};
+      h.dias=[...div.querySelectorAll("[data-dia]:checked")].map(x=>+x.dataset.dia);
+      const md=div.querySelector(".selModo");h._porRota=md&&md.value==="2";
+      if(h._porRota){h.rotas=[...div.querySelectorAll("tr[data-rr]")].map(tr=>{const o={linha:tr.dataset.rr};
+          tr.querySelectorAll("[data-rf]").forEach(x=>o[x.dataset.rf]=x.type==="number"?(x.value===""?0:+x.value):x.value);
+          o.dias=[...tr.querySelectorAll("[data-rdia]:checked")].map(x=>+x.dataset.rdia);return o});
+        if(!h.dias.length)h.dias=[1,2,3,4,5,6,7]}
+      else h.rotas=[];});};
   $("eCor").oninput=()=>{ED.cor=$("eCor").value;desenharEd()};
   $("bDesf").onclick=()=>{ED.pontos.pop();desenharEd()};
   $("bLimp").onclick=()=>{if(confirm("Apagar todos os pontos desta cerca?")){ED.pontos=[];desenharEd()}};
@@ -809,13 +830,21 @@ function formEd(){
     formEd();desenharEd()};
   if($("bAddR"))$("bAddR").onclick=()=>{ler();ED.horarios.push(ED.finalidade==="roteiro"?{rota:"",ordem:ED.horarios.length+1}:regraNova());formEd();desenharEd()};
   $("regras").querySelectorAll("[data-rmr]").forEach(b=>b.onclick=()=>{ler();ED.horarios.splice(+b.dataset.rmr,1);formEd();desenharEd()});
-  $("regras").querySelectorAll(".selGrupo,[data-tl],[data-f=linha_contem],[data-f=linha_exclui]").forEach(x=>x.onchange=()=>{ler();formEd();desenharEd()});
+  $("regras").querySelectorAll(".selGrupo,[data-tl],[data-f=linha_contem],[data-f=linha_exclui],.selModo").forEach(x=>x.onchange=()=>{ler();formEd();desenharEd()});
+  $("regras").querySelectorAll(".addRota").forEach(sel=>sel.onchange=()=>{if(!sel.value)return;ler();const h=ED.horarios[+sel.closest(".regra").dataset.i];
+    const add=sel.value==="*"?rotasDoFiltro(h):[sel.value];
+    add.forEach(l=>{if(!h.rotas.some(x=>x.linha===l))h.rotas.push(rotaNova(l,h))});formEd();desenharEd()});
+  $("regras").querySelectorAll("[data-rrm]").forEach(b=>b.onclick=()=>{ler();const h=ED.horarios[+b.closest(".regra").dataset.i];h.rotas.splice(+b.dataset.rrm,1);if(!h.rotas.length)h._porRota=true;formEd();desenharEd()});
   $("bCanc").onclick=()=>{ED=null;listaCercas()};
   $("bSalv").onclick=async()=>{ler();
     if(!ED.nome.trim()){msg("eMsg","Dê um nome para a cerca.","err");return}
     if(ED.pontos.length<3){msg("eMsg","Marque pelo menos 3 pontos no mapa.","err");return}
-    if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h.grupo&&!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, escolha o grupo de rotas (ou, no personalizado, marque o turno ou o nome da linha).","err");return}
-      if(!h.chegada&&!h.saida){msg("eMsg","Em cada horário, informe a chegada e/ou a saída prevista.","err");return}}
+    if(ED.finalidade==="turno")for(const h of ED.horarios){if(!h._porRota&&!h.grupo&&!h.tipolinhas.length&&!h.linha_contem){msg("eMsg","Em cada horário, escolha o grupo de rotas (ou, no personalizado, marque o turno ou o nome da linha).","err");return}
+      if(h._porRota){if(!h.rotas.length){msg("eMsg","No horário por rota, escolha pelo menos uma rota na lista.","err");return}
+        const sem=h.rotas.find(x=>!x.chegada&&!x.saida);if(sem){msg("eMsg","Informe a chegada e/ou a saída da rota "+sem.linha+".","err");return}
+        const sd=h.rotas.find(x=>!x.dias.length);if(sd){msg("eMsg","Marque os dias da rota "+sd.linha+".","err");return}}
+      else if(!h.chegada&&!h.saida){msg("eMsg","Em cada horário, informe a chegada e/ou a saída prevista.","err");return}}
+    if(ED.finalidade==="turno")ED.horarios.forEach(h=>delete h._porRota);
     if(ED.finalidade==="roteiro"){ED.horarios=ED.horarios.filter(h=>h.rota).map(h=>({rota:h.rota,ordem:+h.ordem||1}));
       if(!ED.horarios.length){msg("eMsg","Informe a rota (trecho do nome da linha) deste ponto.","err");return}}
     msg("eMsg","Salvando…");
