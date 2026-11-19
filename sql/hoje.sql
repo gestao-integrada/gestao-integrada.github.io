@@ -46,18 +46,28 @@ language sql stable security definer set search_path = public as $$
            'bateria', s.battery_pct, 'tomada', s.plugged, 'corrente', s.current_ma,
            'hotspot', s.hotspot_on, 'versao', s.app_version,
            'tablet', coalesce(c.config->>'device_type', '') = 'tablet') order by normaliza_tag(s.device_name)), '[]'::jsonb)
-  from (select distinct on (device_id) * from samples where ts > now() - interval '30 days' order by device_id, ts desc) s
+  from (with recursive d as (
+          select min(device_id) as id from samples
+          union all
+          select (select min(device_id) from samples where device_id > d.id) from d where d.id is not null)
+        select x.* from d cross join lateral (select * from samples where device_id = d.id order by ts desc limit 1) x
+        where d.id is not null and x.ts > now() - interval '30 days') s
   left join device_config c on c.device_id = s.device_id
 $$;
 revoke execute on function public._hj_celulares() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------- tela HOJE
-create or replace function public.hoje_painel(p_token text) returns json
+-- p_bloco: a página pede um bloco por vez, em paralelo (o Supabase corta cada chamada em ~3 s).
+--   ocorrencias | celulares | aberturas | lotadas | atrasos | visitas   (null = tudo)
+drop function if exists public.hoje_painel(text);
+drop function if exists public.onibus_ficha(text, text);
+create or replace function public.hoje_painel(p_token text, p_bloco text default null) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._hj_exige(p_token); cfg jsonb := _hj_cfg(); d date := _hj_hoje();
         r jsonb := jsonb_build_object('quem', q, 'hoje', d, 'agora', now(), 'cfg', cfg); x jsonb; cel jsonb;
 begin
   -- 1. ocorrências abertas (mesmo filtro da Central: aberta + em andamento)
+  if p_bloco is null or p_bloco = 'ocorrencias' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'frota', normaliza_tag(o.tag), 'categoria', o.categoria,
              'problema', o.problema, 'status', o.status, 'prioridade', o.prioridade, 'reincidencias', o.reincidencias,
@@ -74,8 +84,10 @@ begin
     exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   end;
   r := r || jsonb_build_object('ocorrencias', x);
+  end if;
 
   -- 2. celulares sem sinal (> 60 min, até 7 dias) e 3. carregador ruim nas últimas 24 h (tablet não entra)
+  if p_bloco is null or p_bloco = 'celulares' then
   begin
     cel := _hj_celulares();
     select coalesce(jsonb_agg(e order by (e->>'min')::numeric desc), '[]'::jsonb) into x
@@ -98,8 +110,10 @@ begin
   exception when others then
     r := r || jsonb_build_object('sem_sinal', jsonb_build_object('erro', sqlerrm), 'carregador', jsonb_build_object('erro', sqlerrm));
   end;
+  end if;
 
   -- 4. aberturas erradas ainda em aberto (últimos 3 dias)
+  if p_bloco is null or p_bloco = 'aberturas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('viagem_id', a.viagem_id, 'regra', a.regra, 'gravidade', a.gravidade,
              'data', a.data_local, 'hora', to_char(a.hora, 'HH24:MI'), 'frota', normaliza_tag(a.frota), 'motorista', a.motorista,
@@ -109,8 +123,10 @@ begin
      where coalesce(c.situacao, 'aberto') = 'aberto';
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('aberturas', x);
+  end if;
 
   -- 5. viagens lotadas hoje (acima da lotação ideal)
+  if p_bloco is null or p_bloco = 'lotadas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('frota', normaliza_tag(v.frota), 'linha', v.linha, 'tipo', v.tipo,
              'tipolinha', v.tipolinha, 'empresa', v.empresa, 'hora', to_char(v.hora_saida, 'HH24:MI'), 'ocupacao', v.ocupacao,
@@ -121,8 +137,10 @@ begin
       'viagens_hoje', (select jsonb_build_object('total', count(*), 'com_leitura', count(*) filter (where ocupacao > 0),
                          'passageiros', coalesce(sum(ocupacao), 0)) from viagens where data_local = d));
   exception when others then r := r || jsonb_build_object('lotadas', jsonb_build_object('erro', sqlerrm)); end;
+  end if;
 
   -- 6. atrasos: pontualidade (painel Eventos) ainda sem justificativa + passagens atrasadas do piloto de rota hoje
+  if p_bloco is null or p_bloco = 'atrasos' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'data', e.data, 'frota', normaliza_tag(e.frota), 'linha', e.linha,
              'empresa', e.empresa, 'titulo', e.titulo, 'situacao', e.situacao, 'prazo', e.prazo,
@@ -138,8 +156,10 @@ begin
       from rota_passagens p where p.data = d and p.atraso_min > 10 and not coalesce(p.simulacao, false);
   exception when others then x := '[]'::jsonb; end;
   r := r || jsonb_build_object('atrasos_rota', x);
+  end if;
 
   -- 7. visitas da Caliman: pedidos esperando resposta + combinadas para hoje
+  if p_bloco is null or p_bloco = 'visitas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', v.id, 'autor', v.autor, 'tipo', v.tipo,
              'frotas', (select array_agg(normaliza_tag(t)) from unnest(v.tags) t), 'local', v.local, 'dia', v.dia,
@@ -150,29 +170,34 @@ begin
      where v.status = 'pendente' or (v.dia = d and v.status in ('confirmada', 'ciente'));
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('visitas', x);
+  end if;
 
   return r::json;
 end $$;
-grant execute on function public.hoje_painel(text) to anon, authenticated;
+grant execute on function public.hoje_painel(text, text) to anon, authenticated;
 
 -- ---------------------------------------------------------------- FICHA DO ÔNIBUS
 -- p_frota null/vazio → só a lista de carros (para a busca)
-create or replace function public.onibus_ficha(p_token text, p_frota text default null) returns json
+-- p_bloco: celular | vistorias | ocorrencias | viagens | eventos | aberturas | visitas (null = tudo)
+create or replace function public.onibus_ficha(p_token text, p_frota text default null, p_bloco text default null) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._hj_exige(p_token); cfg jsonb := _hj_cfg(); d date := _hj_hoje();
-        f text := normaliza_tag(p_frota); r jsonb; x jsonb; devs text[];
+        f text := normaliza_tag(p_frota); r jsonb; x jsonb := '[]'::jsonb; devs text[];
 begin
   -- lista de carros conhecidos (viagens 30 dias + celulares + vistorias 60 dias)
+  if p_bloco is null or p_bloco = 'carros' then
   begin
     select coalesce(jsonb_agg(t order by length(t), t), '[]'::jsonb) into x from (
       select normaliza_tag(frota) t from viagens where data_local >= d - 30
-      union select normaliza_tag(device_name) from (select distinct device_name from samples where ts > now() - interval '7 days') s
+      union select e->>'frota' from jsonb_array_elements(_hj_celulares()) e where (e->>'min')::numeric < 7 * 1440
       union select normaliza_tag(tag) from vistorias where data_vistoria >= d - 60) z where t is not null;
   exception when others then x := '[]'::jsonb; end;
+  end if;
   r := jsonb_build_object('quem', q, 'hoje', d, 'agora', now(), 'cfg', cfg, 'carros', x, 'frota', f);
   if f is null then return r::json; end if;
 
   -- celular: última amostra + eventos dos últimos 7 dias (sem os de ruído)
+  if p_bloco is null or p_bloco = 'celular' then
   begin
     select coalesce(jsonb_agg(e), '[]'::jsonb) into x from jsonb_array_elements(_hj_celulares()) e where e->>'frota' = f;
     select array_agg(e->>'device_id') into devs from jsonb_array_elements(x) e;
@@ -184,8 +209,10 @@ begin
                                   and ev.type not in ('carregador_conectado', 'carregador_desconectado', 'leitura_carregador', 'resumo_dados')
                                 order by ev.ts desc limit 40) ev));
   exception when others then r := r || jsonb_build_object('celular', jsonb_build_object('erro', sqlerrm)); end;
+  end if;
 
   -- vistorias (CHECK BDV): últimas 10
+  if p_bloco is null or p_bloco = 'vistorias' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('data', v.data_vistoria, 'ts', v.ts, 'local', v.local, 'status', v.status,
              'resultado', v.resultado, 'vistoriador', v.vistoriador, 'ocorrencias', v.ocorrencias, 'observacao', v.observacao,
@@ -197,8 +224,10 @@ begin
       from (select * from vistorias where normaliza_tag(tag) = f order by ts desc limit 10) v;
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('vistorias', x);
+  end if;
 
   -- ocorrências: abertas + as dos últimos 60 dias
+  if p_bloco is null or p_bloco = 'ocorrencias' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', o.id, 'categoria', o.categoria, 'problema', o.problema, 'status', o.status,
              'prioridade', o.urgencia, 'reincidencias', o.reincidencias, 'desde', coalesce(o.primeira_msg_em, o.criado_em),
@@ -209,8 +238,10 @@ begin
             order by o.criado_em desc limit 30) o;
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('ocorrencias', x);
+  end if;
 
   -- viagens e lotação: últimos 7 dias
+  if p_bloco is null or p_bloco = 'viagens' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('data', v.data_local, 'hora', to_char(v.hora_saida, 'HH24:MI'), 'linha', v.linha,
              'tipo', v.tipo, 'tipolinha', v.tipolinha, 'empresa', v.empresa, 'motorista', v.motorista, 'ocupacao', v.ocupacao,
@@ -225,16 +256,20 @@ begin
                     'motoristas', array_agg(distinct motorista) filter (where motorista is not null))
                   from viagens where normaliza_tag(frota) = f and data_local >= d - 6));
   exception when others then r := r || jsonb_build_object('viagens', jsonb_build_object('erro', sqlerrm)); end;
+  end if;
 
   -- pontualidade e outros eventos (painel Eventos): últimos 14 dias
+  if p_bloco is null or p_bloco = 'eventos' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', e.id, 'tipo', e.tipo, 'data', e.data, 'linha', e.linha, 'titulo', e.titulo,
              'situacao', e.situacao, 'justificativa', e.justificativa, 'motivo', e.motivo) order by e.data desc, e.id desc), '[]'::jsonb) into x
       from (select * from ev_eventos where normaliza_tag(frota) = f and data >= d - 13 order by data desc limit 30) e;
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('eventos', x);
+  end if;
 
   -- aberturas erradas: últimos 7 dias
+  if p_bloco is null or p_bloco = 'aberturas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('regra', a.regra, 'gravidade', a.gravidade, 'data', a.data_local,
              'hora', to_char(a.hora, 'HH24:MI'), 'motorista', a.motorista, 'linha', a.linha, 'tipo', a.tipo, 'problema', a.problema,
@@ -244,8 +279,10 @@ begin
      where normaliza_tag(a.frota) = f;
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('aberturas', x);
+  end if;
 
   -- visitas da Caliman: últimos 60 dias + pendentes
+  if p_bloco is null or p_bloco = 'visitas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('id', v.id, 'autor', v.autor, 'tipo', v.tipo, 'local', v.local, 'dia', v.dia,
              'hora_ini', to_char(v.hora_ini, 'HH24:MI'), 'hora_combinada', v.hora_combinada, 'status', v.status,
@@ -255,7 +292,8 @@ begin
        and (v.dia >= d - 60 or v.status = 'pendente');
   exception when others then x := jsonb_build_object('erro', sqlerrm); end;
   r := r || jsonb_build_object('visitas', x);
+  end if;
 
   return r::json;
 end $$;
-grant execute on function public.onibus_ficha(text, text) to anon, authenticated;
+grant execute on function public.onibus_ficha(text, text, text) to anon, authenticated;

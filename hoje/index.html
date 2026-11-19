@@ -190,11 +190,23 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-carro]");i
 function carrosLista(a){$("lCarros").innerHTML=lista(a).map(c=>`<option value="${esc(c)}">`).join("")}
 
 /* ---------------- TELA HOJE ---------------- */
+// um bloco por chamada, em paralelo: o Supabase corta cada chamada em ~3 s
+const BLOCOS_HOJE={ocorrencias:["ocorrencias"],celulares:["sem_sinal","carregador"],aberturas:["aberturas"],lotadas:["lotadas"],atrasos:["atrasos"],visitas:["visitas"]};
 async function carregarHoje(){
-  if(!HOJE)$("cards").innerHTML='<div class="vazio">Carregando…</div>';
-  try{HOJE=await rpc("hoje_painel",{p_token:TOKEN});desenharHoje()}
-  catch(err){$("cards").innerHTML='<div class="vazio err">Erro: '+esc(err.message)+'</div>'}
-  if(!$("lCarros").options.length)rpc("onibus_ficha",{p_token:TOKEN,p_frota:null}).then(r=>carrosLista(r.carros)).catch(()=>{});
+  if(!HOJE){$("cards").innerHTML='<div class="vazio">Carregando…</div>';}
+  const novo=HOJE?Object.assign({},HOJE):{};
+  let primeiro=!HOJE, erroGeral=null;
+  await Promise.all(Object.keys(BLOCOS_HOJE).map(b=>rpc("hoje_painel",{p_token:TOKEN,p_bloco:b}).then(r=>{
+      Object.assign(novo,r);if(primeiro||HOJE){HOJE=novo;desenharHoje()}
+    }).catch(err=>{
+      if(/sessao|Falta rodar/.test(err.message))erroGeral=err;
+      const e={erro:/timeout/i.test(err.message)?"demorou demais para responder (tente Atualizar)":err.message};
+      BLOCOS_HOJE[b].forEach(k=>novo[k]=e);if(novo.hoje){HOJE=novo;desenharHoje()}
+    })));
+  if(erroGeral&&!HOJE){$("cards").innerHTML='<div class="vazio err">Erro: '+esc(erroGeral.message)+'</div>';return}
+  if(!novo.hoje){$("cards").innerHTML='<div class="vazio err">Não deu para carregar. Tente Atualizar.</div>';return}
+  HOJE=novo;desenharHoje();
+  if(!$("lCarros").options.length)rpc("onibus_ficha",{p_token:TOKEN,p_frota:null,p_bloco:"carros"}).then(r=>carrosLista(r.carros)).catch(()=>{});
 }
 // definição dos quadros: n = itens, cor = quando acende, linha = como cada item aparece
 const QUADROS=[
@@ -242,14 +254,16 @@ function desenharHoje(){
     (tot?`<span>📱 <b>${tot-cel}</b> de ${tot} celulares mandando dados</span>`:"");
   $("cards").innerHTML=QUADROS.map(q=>{
     const a=h[q.k];
+    if(a===undefined)return `<button class="card gry" data-q="${q.k}"><span class="ic">${q.ic}</span><b>…</b><span>${q.t}</span><small>carregando</small></button>`;
     if(falhou(a))return `<button class="card gry" data-q="${q.k}"><span class="ic">${q.ic}</span><b>—</b><span>${q.t}</span><small>não instalado / erro</small></button>`;
     const n=lista(a).length;
     return `<button class="card ${n?q.cor(lista(a)):"grn"} ${ABERTO===q.k?"on":""}" data-q="${q.k}"><span class="ic">${q.ic}</span><b>${n||"✓"}</b><span>${q.t}</span><small>${n?esc(q.sub(lista(a))):"tudo certo"}</small></button>`;
   }).join("");
   document.querySelectorAll("#cards .card").forEach(b=>b.onclick=()=>{ABERTO=ABERTO===b.dataset.q?null:b.dataset.q;desenharHoje()});
   // sem quadro escolhido: mostra todos os que têm itens, na ordem
-  const mostrar=ABERTO?QUADROS.filter(q=>q.k===ABERTO):QUADROS.filter(q=>lista(h[q.k]).length||falhou(h[q.k]));
-  $("det").innerHTML=mostrar.length?mostrar.map(q=>secao(q,h[q.k])).join(""):'<div class="vazio" style="margin-top:14px">Nada pedindo ação agora. 👍</div>';
+  const mostrar=ABERTO?QUADROS.filter(q=>q.k===ABERTO&&h[q.k]!==undefined):QUADROS.filter(q=>lista(h[q.k]).length||falhou(h[q.k]));
+  const carregando=QUADROS.some(q=>h[q.k]===undefined);
+  $("det").innerHTML=mostrar.length?mostrar.map(q=>secao(q,h[q.k])).join(""):(carregando?'':'<div class="vazio" style="margin-top:14px">Nada pedindo ação agora. 👍</div>');
   if(ABERTO==="atrasos"&&lista(h.atrasos_rota).length)$("det").innerHTML+=secaoRota(h.atrasos_rota);
 }
 function secao(q,a){
@@ -273,8 +287,13 @@ async function abrirFicha(f){
   $("vHoje").classList.add("hidden");$("vFicha").classList.remove("hidden");$("bHoje").classList.remove("hidden");
   $("titulo").textContent="Ônibus "+f;$("sub").textContent="Tudo do carro num lugar só";$("qCarro").value=f;
   $("vFicha").innerHTML='<div class="vazio">Carregando a ficha do '+esc(f)+'…</div>';
-  try{const r=await rpc("onibus_ficha",{p_token:TOKEN,p_frota:f});carrosLista(r.carros);desenharFicha(r)}
-  catch(err){$("vFicha").innerHTML='<div class="vazio err">Erro: '+esc(err.message)+'</div>'}
+  const BL={celular:["celular","eventos_celular"],vistorias:["vistorias"],ocorrencias:["ocorrencias"],viagens:["viagens","lotacao"],
+    eventos:["eventos"],aberturas:["aberturas"],visitas:["visitas"],carros:["carros"]};
+  const r={frota:null};let fim=false;
+  await Promise.all(Object.keys(BL).map(b=>rpc("onibus_ficha",{p_token:TOKEN,p_frota:f,p_bloco:b}).then(x=>{if(b!=="carros")delete x.carros;Object.assign(r,x);if(b==="carros")carrosLista(x.carros)})
+    .catch(err=>{const e={erro:/timeout/i.test(err.message)?"demorou demais para responder (tente Atualizar)":err.message};BL[b].forEach(k=>{if(k!=="lotacao"&&k!=="carros"&&k!=="eventos_celular")r[k]=e})})));
+  if(!r.frota){$("vFicha").innerHTML='<div class="vazio err">Não deu para abrir a ficha. Tente Atualizar.</div>';return}
+  desenharFicha(r);
 }
 function bloco(t,a,link,lk,fn,vazioTx){
   const l=link?`<a class="btn sm" href="${LINK[link]}" target="_blank" rel="noopener">${lk} →</a>`:"";
