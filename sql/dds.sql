@@ -15,7 +15,9 @@
 
 alter table public.bi_config add column if not exists dds_excluir text not null default 'VAN, MICRO';
 
-create or replace function public._bi_dds_dia(p_dia date) returns jsonb
+-- p_parte: 'ocupacao' | 'pontualidade' | null (tudo). A página pede cada parte numa chamada (limite de ~3 s do Supabase).
+drop function if exists public._bi_dds_dia(date);
+create or replace function public._bi_dds_dia(p_dia date, p_parte text default null) returns jsonb
 language sql stable security definer set search_path = public as $$
 with cfg as (select * from bi_config where id = 1),
 g as (select t.g, t.o from cfg, jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) with ordinality as t(g, o)),
@@ -47,32 +49,42 @@ pt as (
 select jsonb_build_object(
   'dia', p_dia,
   'lugares', (select lugares from cfg),
-  'ocupacao', (select jsonb_build_object('viagens', count(*), 'passageiros', coalesce(sum(ocupacao), 0),
+  'ocupacao', case when p_parte is null or p_parte = 'ocupacao' then (select jsonb_build_object('viagens', count(*), 'passageiros', coalesce(sum(ocupacao), 0),
                  'media', round(avg(ocupacao)::numeric, 1),
-                 'pct', round(100 * avg(ocupacao)::numeric / (select lugares from cfg), 1)) from vg1),
-  'ocup_grupos', (select coalesce(jsonb_agg(jsonb_build_object('grupo', grupo, 'viagens', n, 'media', media, 'pct', pct) order by o), '[]'::jsonb) from (
+                 'pct', round(100 * avg(ocupacao)::numeric / (select lugares from cfg), 1)) from vg1) end,
+  'ocup_grupos', case when p_parte is null or p_parte = 'ocupacao' then (select coalesce(jsonb_agg(jsonb_build_object('grupo', grupo, 'viagens', n, 'media', media, 'pct', pct) order by o), '[]'::jsonb) from (
       select vg1.grupo, min(g.o) as o, count(*) as n, round(avg(ocupacao)::numeric, 1) as media,
              round(100 * avg(ocupacao)::numeric / (select lugares from cfg), 1) as pct
-      from vg1 join g on g.g->>'nome' = vg1.grupo group by vg1.grupo) z),
-  'pontualidade', (select coalesce(jsonb_agg(jsonb_build_object('grupo', grupo, 'sentido', sentido, 'medidas', medidas, 'pontuais', pontuais,
+      from vg1 join g on g.g->>'nome' = vg1.grupo group by vg1.grupo) z) end,
+  'pontualidade', case when p_parte is null or p_parte = 'pontualidade' then (select coalesce(jsonb_agg(jsonb_build_object('grupo', grupo, 'sentido', sentido, 'medidas', medidas, 'pontuais', pontuais,
                      'atrasadas', atrasadas, 'adiantadas', adiantadas, 'sem_dado', sem_dado, 'pelo_monitor', pelo_monitor,
                      'pct', case when medidas > 0 then round(100.0 * pontuais / medidas, 1) end)
-                     order by grupo, sentido), '[]'::jsonb) from pt)
+                     order by grupo, sentido), '[]'::jsonb) from pt) end
 );
 $$;
-revoke execute on function public._bi_dds_dia(date) from public, anon, authenticated;
+revoke execute on function public._bi_dds_dia(date, text) from public, anon, authenticated;
 
 -- a página chama esta (login do BI). Devolve o dia escolhido e o dia anterior, para comparar.
-create or replace function public.bi_dds(p_token text, p_dia date) returns json
+-- p_parte: info | atual_ocupacao | atual_pontualidade | anterior_ocupacao | anterior_pontualidade | null (tudo)
+drop function if exists public.bi_dds(text, date);
+create or replace function public.bi_dds(p_token text, p_dia date, p_parte text default null) returns json
 language plpgsql security definer set search_path = public as $$
-declare q jsonb := public._bi_exige(p_token);
+declare q jsonb := public._bi_exige(p_token); r jsonb := '{}'::jsonb;
 begin
   if p_dia is null then p_dia := _bi_hoje(); end if;
-  return json_build_object(
-    'atual', public._bi_dds_dia(p_dia),
-    'anterior', public._bi_dds_dia(p_dia - 1),
-    'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'turno'),
-    'coleta', (select max(coletado_em) from viagens),
-    'excluir', (select dds_excluir from bi_config where id = 1));
+  if p_parte is null or p_parte = 'info' then
+    r := r || jsonb_build_object(
+      'cercas', (select count(*) from bi_cercas where ativo and finalidade = 'turno'),
+      'coleta', (select max(coletado_em) from viagens),
+      'excluir', (select dds_excluir from bi_config where id = 1));
+  end if;
+  if p_parte is null then
+    r := r || jsonb_build_object('atual', public._bi_dds_dia(p_dia), 'anterior', public._bi_dds_dia(p_dia - 1));
+  elsif p_parte like 'atual\_%' then
+    r := r || jsonb_build_object('atual', public._bi_dds_dia(p_dia, substr(p_parte, 7)));
+  elsif p_parte like 'anterior\_%' then
+    r := r || jsonb_build_object('anterior', public._bi_dds_dia(p_dia - 1, substr(p_parte, 10)));
+  end if;
+  return r::json;
 end $$;
-grant execute on function public.bi_dds(text, date) to anon, authenticated;
+grant execute on function public.bi_dds(text, date, text) to anon, authenticated;
