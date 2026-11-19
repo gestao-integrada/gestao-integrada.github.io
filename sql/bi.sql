@@ -70,6 +70,18 @@ language sql immutable as $$
   from t;
 $$;
 
+-- linhas (tipolinha|linha) do período que entram num grupo de Gerenciar: calcula uma vez por linha
+-- em vez de testar embarque por embarque (era o que estourava o tempo com Turno = grupo em períodos longos)
+create or replace function public._bi_grupo_chaves(fg jsonb, p_de date, p_ate date) returns text[]
+language sql stable as $$
+  select coalesce(array_agg(coalesce(u.tipolinha, '') || '|' || coalesce(u.linha, '')), '{}')
+  from (select tipolinha, linha from public.embarques where data_local between p_de and p_ate
+        union select tipolinha, linha from public.viagens where data_local between p_de - 1 and p_ate + 1
+        union select tipolinha, linha from public.viagens_hist where data_local between p_de - 1 and p_ate + 1
+        offset 0) u   -- offset 0: testa o grupo depois de juntar as linhas repetidas (senão o Postgres testa linha a linha)
+  where public._bi_linha_ok(u.tipolinha, u.linha, fg, null);
+$$;
+
 -- distância em metros entre dois pontos (aproximação plana, boa para poucos km)
 create or replace function public._bi_m(la1 float8, lo1 float8, la2 float8, lo2 float8) returns float8
 language sql immutable as $$
@@ -699,9 +711,10 @@ revoke execute on function public._bi_horarios(date, date) from public, anon, au
 create or replace function public.bi_dados(p_token text, p_painel text, p_de date, p_ate date, p_filtros jsonb default '{}'::jsonb)
 returns json
 -- jit off: a compilação JIT do Postgres somava ~1–2 s em consultas que levam 0,2 s
-language plpgsql security definer set search_path = public set jit = off as $$
+-- statement_timeout aqui vale só quando roda direto no SQL Editor; pelo site quem manda é o limite do papel anon (ver fim do arquivo)
+language plpgsql security definer set search_path = public set jit = off set statement_timeout = '15s' as $$
 declare q jsonb := public._bi_exige(p_token); ed boolean := (q->>'edita')::boolean; sit text;
-        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
+        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb; lk text[];
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); cfg bi_config; res json;
 begin
   if p_de is null or p_ate is null or p_ate < p_de then raise exception 'Período inválido.'; end if;
@@ -714,6 +727,7 @@ begin
   if ft like 'G:%' then
     select g into fg from jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) g where upper(trim(g->>'nome')) = trim(substr(ft, 3)) limit 1;
     fg := coalesce(fg, '{"tipolinhas":["-sem grupo-"]}'::jsonb); ft := null;
+    lk := public._bi_grupo_chaves(fg, p_de, p_ate);
   end if;
 
   if p_painel in ('ocupacao', 'fora_rota', 'custo', 'nao_cad') then
@@ -726,12 +740,12 @@ begin
            e.linhapassageiro, e.ga, e.gg, e.centrocusto, jsonb_build_object('empresa', e.empresa_bi)
     from embarques e
      where e.data_local between p_de and p_ate
-       and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs);
+       and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (lk is null or coalesce(e.tipolinha, '') || '|' || coalesce(e.linha, '') = any(lk)) and (fs is null or upper(trim(e.sentido)) = fs);
   end if;
 
   if p_painel = 'ocupacao' then
     with vg as (select * from _bi_viagens(p_de, p_ate) v where (fl is null or v.linha = fl)
-                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs))
+                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (lk is null or coalesce(v.tipolinha, '') || '|' || coalesce(v.linha, '') = any(lk)) and (fs is null or upper(trim(v.tipo)) = fs))
     select json_build_object(
       'kpi', json_build_object(
          'embarques', (select count(*) from _bi_e),
@@ -813,7 +827,7 @@ begin
   elsif p_painel = 'viagens' then
     with vg as (select * from _bi_viagens(p_de, p_ate) v where upper(trim(coalesce(v.tipolinha, ''))) = any (cfg.viagens_turnos)
                   and (fl is null or v.linha = fl)
-                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs))
+                  and (ft is null or upper(trim(v.tipolinha)) = ft) and (lk is null or coalesce(v.tipolinha, '') || '|' || coalesce(v.linha, '') = any(lk)) and (fs is null or upper(trim(v.tipo)) = fs))
     select json_build_object(
       'kpi', json_build_object('viagens', (select count(*) from vg), 'dias', (select count(distinct data_local) from vg),
              'media_dia', (select round(count(*)::numeric / nullif(count(distinct data_local), 0), 1) from vg)),
@@ -867,7 +881,7 @@ begin
                   when rv <> '' or cardinality(rlv) > 0 then 'IDA' else upper(trim(tipo)) end as sent
       from vg0
       where (m_ida or m_volta) and (fl is null or vg0.linha = fl) and (ft is null or upper(trim(vg0.tipolinha)) = ft)
-        and (fg is null or public._bi_linha_ok(vg0.tipolinha, vg0.linha, fg, null))),
+        and (lk is null or coalesce(vg0.tipolinha, '') || '|' || coalesce(vg0.linha, '') = any(lk))),
     vg2 as (select * from vg where fs is null or sent = fs),
     pas as (
       select vg2.roteiro, vg2.sent, vg2.data_local, vg2.linha, vg2.frota, vg2.motorista, vg2.saida_ts, vg2.chegada_ts,
@@ -920,7 +934,7 @@ create or replace function public.bi_detalhe(p_token text, p_tipo text, p_de dat
   p_campo text default null, p_valor text default null) returns json
 language plpgsql security definer set search_path = public as $$
 declare q jsonb := public._bi_exige(p_token);
-        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
+        fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb; lk text[];
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); vv text := nullif(trim(p_valor), ''); cfg bi_config;
 begin
   if p_ate - p_de > 92 then raise exception 'Escolha um período de até 3 meses.'; end if;
@@ -929,6 +943,7 @@ begin
   if ft like 'G:%' then
     select g into fg from jsonb_array_elements(coalesce(cfg.grupos, '[]'::jsonb)) g where upper(trim(g->>'nome')) = trim(substr(ft, 3)) limit 1;
     fg := coalesce(fg, '{"tipolinhas":["-sem grupo-"]}'::jsonb); ft := null;
+    lk := public._bi_grupo_chaves(fg, p_de, p_ate);
   end if;
   if p_tipo = 'viagens' then
     return (select coalesce(json_agg(x order by x.data desc, x.hora desc), '[]'::json) from (
@@ -936,7 +951,7 @@ begin
              upper(trim(v.tipolinha)) as turno, v.linha, upper(trim(v.tipo)) as sentido, v.frota as carro, v.motorista, v.ocupacao,
              nullif(left(trim(v.bruto->>'hrsla'), 5), '') as hora_ponto
       from _bi_viagens(p_de, p_ate) v
-      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(v.tipolinha, v.linha, fg, null)) and (fs is null or upper(trim(v.tipo)) = fs)
+      where (fl is null or v.linha = fl) and (ft is null or upper(trim(v.tipolinha)) = ft) and (lk is null or coalesce(v.tipolinha, '') || '|' || coalesce(v.linha, '') = any(lk)) and (fs is null or upper(trim(v.tipo)) = fs)
         and (coalesce(p_filtros->>'so_turnos_viagens', '') <> 'sim' or upper(trim(coalesce(v.tipolinha, ''))) = any (cfg.viagens_turnos))
         and (vv is null or case p_campo when 'linha' then v.linha = vv when 'dia' then v.data_local = vv::date
                when 'turno' then upper(trim(coalesce(v.tipolinha, ''))) = upper(vv) when 'sentido' then upper(trim(v.tipo)) = upper(vv)
@@ -949,7 +964,7 @@ begin
              upper(trim(e.tipolinha)) as turno, e.frota as carro, e.gg, e.ga
       from embarques e
       where e.data_local between p_de and p_ate
-        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs)
+        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (lk is null or coalesce(e.tipolinha, '') || '|' || coalesce(e.linha, '') = any(lk)) and (fs is null or upper(trim(e.sentido)) = fs)
         and (vv is null or case p_campo when 'linha' then e.linha = vv when 'dia' then e.data_local = vv::date
                when 'turno' then upper(trim(coalesce(e.tipolinha, ''))) = upper(vv)
                when 'status' then coalesce(nullif(upper(trim(e.tipopassageiro)), ''), 'SEM STATUS') = upper(vv)
@@ -1006,3 +1021,8 @@ grant execute on function public.bi_entrar(text), public.bi_sessao(text), public
 
 -- se o PostgREST não enxergar as funções novas na hora:
 notify pgrst, 'reload schema';
+
+-- Limite de tempo das consultas do site (papel anon). O padrão do Supabase é 3 s, curto para 60–90 dias.
+-- O SET dentro da função não muda o limite de uma chamada que já começou, por isso é ajustado no papel.
+alter role anon set statement_timeout = '10s';
+notify pgrst, 'reload config';
