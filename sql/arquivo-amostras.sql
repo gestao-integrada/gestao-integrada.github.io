@@ -7,7 +7,7 @@
 --      Apps Script (sql/arquivo-amostras.gs). samples_arquivo registra o dia, as linhas e o link;
 --   3) fica para consultar no Supabase:
 --        samples_dia  = resumo por celular por dia (já existia; para sempre);
---        samples_gps  = GPS enxuto (cada minuto andando, a cada 5 min parado) por 90 dias (arq_config.dias_gps);
+--        samples_gps  = GPS enxuto (1 ponto a cada 5 min por celular) por 30 dias (arq_config.dias_gps);
 --   4) a limpeza diária (03:30) só apaga do Supabase o dia que JÁ está no Drive.
 --      Proteção: se o robô parar, depois de arq_config.teto_dias (14) apaga mesmo assim para o banco não travar
 --      (o resumo e o GPS enxuto desses dias ficam).
@@ -23,7 +23,7 @@ create extension if not exists pg_cron;
 create table if not exists public.arq_config (
   id             int primary key default 1 check (id = 1),
   dias_supabase  int not null default 7,     -- leitura completa no Supabase
-  dias_gps       int not null default 90,    -- GPS enxuto no Supabase
+  dias_gps       int not null default 30,    -- GPS enxuto no Supabase
   teto_dias      int not null default 14,    -- apaga mesmo sem arquivo depois disso (proteção do banco)
   pasta_drive    text not null default 'Monitor Frota - amostras'
 );
@@ -48,7 +48,6 @@ create table if not exists public.samples_gps (
   primary key (device_id, ts)
 );
 create index if not exists samples_gps_frota_ts on public.samples_gps (frota, ts);
-create index if not exists samples_gps_ts on public.samples_gps (ts);
 
 create table if not exists public.arq_log (
   id  bigserial primary key,
@@ -74,7 +73,7 @@ begin
         from samples s
         where s.ts >= a and s.ts < a + interval '1 day'
           and s.lat is not null and s.lon is not null and not (s.lat = 0 and s.lon = 0)) x
-  where coalesce(speed_kmh, 0) >= 3 or rn = 1
+  where rn = 1
   on conflict do nothing;
   get diagnostics n = row_count;
   return n;
