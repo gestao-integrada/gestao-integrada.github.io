@@ -582,9 +582,11 @@ reg as (
   select c.id as cid, c.nome, c.cor, r.o, (r.h0 - 'rotas') || coalesce(x.it, '{}'::jsonb) as h, (x.it is not null) as por_rota,
          case when x.it is not null then jsonb_build_object('rotas', jsonb_build_array(x.it->>'linha'))
               when coalesce(trim(r.h0->>'grupo'), '') <> ''
-              then (select g from cfg, jsonb_array_elements(cfg.grupos) g where upper(trim(g->>'nome')) = upper(trim(r.h0->>'grupo')) limit 1)
+              -- fora = rotas desmarcadas no grupo (Gerenciar) + desmarcadas neste horário da cerca
+              then (select g || jsonb_build_object('fora', coalesce(g->'fora', '[]'::jsonb) || coalesce(r.h0->'fora', '[]'::jsonb))
+                    from cfg, jsonb_array_elements(cfg.grupos) g where upper(trim(g->>'nome')) = upper(trim(r.h0->>'grupo')) limit 1)
               else jsonb_build_object('tipolinhas', coalesce(r.h0->'tipolinhas', '[]'), 'contem', coalesce(r.h0->>'linha_contem', ''),
-                                      'excluir', coalesce(r.h0->>'linha_exclui', '')) end as f
+                                      'excluir', coalesce(r.h0->>'linha_exclui', ''), 'fora', coalesce(r.h0->'fora', '[]'::jsonb)) end as f
   from bi_cercas c
   cross join lateral jsonb_array_elements(c.horarios) with ordinality as r(h0, o)
   cross join lateral (select it from jsonb_array_elements(case when jsonb_typeof(r.h0->'rotas') = 'array' and jsonb_array_length(r.h0->'rotas') > 0
