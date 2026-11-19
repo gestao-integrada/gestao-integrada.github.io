@@ -84,7 +84,31 @@ $$;
 
 -- posição de embarque aproveitável: dentro da região da operação (Pará e arredores). Fora disso é leitura errada (0,0 ou outro estado).
 create or replace function public._bi_gps_ok(la float8, lo float8) returns boolean
-language sql immutable as $$ select la between -7 and 0 and lo between -52 and -45 $$;
+language sql immutable as $$ select coalesce(la between -7 and 0 and lo between -52 and -45, false) $$;
+
+-- categoria do passageiro fora de rota (null = embarque normal: REGULAR na própria linha)
+create or replace function public._bi_cat_fora(p_tipo text, p_cad text, p_linha text) returns text
+language sql immutable as $$
+  select case when upper(trim(coalesce(p_tipo, ''))) in ('NAO CADASTRADO', 'NÃO CADASTRADO') then 'NÃO CADASTRADO'
+              when upper(trim(coalesce(p_tipo, ''))) = 'ITINERANTE' then 'ITINERANTE'
+              when upper(trim(coalesce(p_tipo, ''))) = 'INATIVO' then 'INATIVO'
+              when upper(trim(coalesce(p_tipo, ''))) not in ('REGULAR', '') then upper(trim(p_tipo))
+              when regexp_replace(coalesce(p_cad, ''), '\s*-\s*PASSAGEIRO\s*$', '', 'i') <> ''
+               and upper(trim(regexp_replace(coalesce(p_cad, ''), '\s*-\s*PASSAGEIRO\s*$', '', 'i'))) <> upper(trim(coalesce(p_linha, ''))) then 'REGULAR EM OUTRA LINHA'
+              when upper(trim(coalesce(p_tipo, ''))) = '' then 'SEM STATUS' end
+$$;
+
+-- traçado das rotas do mapa gerencial (rotas_tracado, coletado pela TV Box) para desenhar no mapa do BI
+create or replace function public.bi_tracado(p_token text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare q jsonb := public._bi_exige(p_token); r json;
+begin
+  if to_regclass('public.rotas_tracado') is null then return '[]'::json; end if;
+  execute $q$select coalesce(json_agg(json_build_object('linha', linha, 'sentido', upper(sentido), 'turno', tipolinha, 'pontos', pontos,
+                     'paradas', paradas, 'km', km) order by linha, sentido), '[]'::json) from public.rotas_tracado$q$ into r;
+  return r;
+end $$;
+grant execute on function public.bi_tracado(text) to anon, authenticated;
 
 -- distância em metros entre dois pontos (aproximação plana, boa para poucos km)
 create or replace function public._bi_m(la1 float8, lo1 float8, la2 float8, lo2 float8) returns float8
@@ -791,8 +815,8 @@ begin
       'mapa', (select coalesce(json_agg(json_build_array(la, lo, n, p, ls) order by n desc), '[]'::json) from (
           select round(lat::numeric, 4) as la, round(lon::numeric, 4) as lo, count(*) as n, count(distinct coalesce(matricula, nome)) as p,
                  (array_agg(distinct linha))[1:3] as ls
-          from _bi_e where public._bi_gps_ok(lat, lon) group by 1, 2) x),
-      'sem_gps', (select count(*) from _bi_e where not public._bi_gps_ok(lat, lon))
+          from _bi_e where coalesce(public._bi_na_area(lat, lon, cfg.areas), false) group by 1, 2) x),
+      'sem_gps', (select count(*) from _bi_e where not coalesce(public._bi_na_area(lat, lon, cfg.areas), false))
     ) into res;
 
   elsif p_painel = 'mapa_rotas' then
@@ -813,18 +837,26 @@ begin
             select linha, upper(trim(sentido)) as sentido, round(lat::numeric, 4) as la, round(lon::numeric, 4) as lo, count(*) as n,
                    count(distinct coalesce(matricula, nome)) as p, count(distinct data_local) as d,
                    to_char(min(hora), 'HH24:MI') as h1, to_char(max(hora), 'HH24:MI') as h2
-            from _bi_e where public._bi_gps_ok(lat, lon) group by 1, 2, 3, 4) x),
-        'total', (select count(*) from _bi_e), 'sem_gps', (select count(*) from _bi_e where not public._bi_gps_ok(lat, lon))
+            from _bi_e where coalesce(public._bi_na_area(lat, lon, cfg.areas), false) group by 1, 2, 3, 4) x),
+        'total', (select count(*) from _bi_e), 'sem_gps', (select count(*) from _bi_e where not coalesce(public._bi_na_area(lat, lon, cfg.areas), false))
       ) into res;
     end;
 
   elsif p_painel = 'fora_rota' then
     with b as (
       select e.*, regexp_replace(coalesce(e.linhapassageiro, ''), '\s*-\s*PASSAGEIRO\s*$', '', 'i') as cad from _bi_e e),
-    f as (select * from b where upper(coalesce(tipopassageiro, '')) <> 'REGULAR' or (cad <> '' and upper(trim(cad)) <> upper(trim(linha))))
+    f as (select *, public._bi_cat_fora(tipopassageiro, linhapassageiro, linha) as cat from b where public._bi_cat_fora(tipopassageiro, linhapassageiro, linha) is not null)
     select json_build_object(
       'kpi', json_build_object('embarques', (select count(*) from b), 'fora', (select count(*) from f),
-             'pessoas', (select count(distinct coalesce(matricula, nome)) from f)),
+             'pessoas', (select count(distinct coalesce(matricula, nome)) from f),
+             'pessoas_total', (select count(distinct coalesce(matricula, nome)) from b)),
+      'por_cat', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
+          select cat, count(*) as n, count(distinct coalesce(matricula, nome)) as pessoas from f group by 1) x),
+      'por_dia', (select coalesce(json_agg(x order by x.dia), '[]'::json) from (
+          select b.data_local as dia, count(f.id) as fora, count(*) as embarques, round(100.0 * count(f.id) / count(*), 1) as pct
+          from b left join f on f.id = b.id group by 1) x),
+      'por_linha', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
+          select linha, count(*) as n, count(distinct coalesce(matricula, nome)) as pessoas from f group by 1 order by 2 desc limit 40) x),
       'por_status', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
           select coalesce(nullif(upper(trim(tipopassageiro)), ''), 'SEM STATUS') as status, count(*) as n from b group by 1) x),
       'por_gg', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
@@ -834,8 +866,8 @@ begin
                  max(upper(tipopassageiro)) as status, max(nullif(cad, '')) as linha_cadastro,
                  string_agg(distinct linha, ' · ') as linhas_usadas, count(*) as vezes, max(data_local) as ultimo
           from f group by coalesce(matricula, nome) limit 3000) x),
-      'pontos', (select coalesce(json_agg(json_build_array(round(lat::numeric, 5), round(lon::numeric, 5), upper(coalesce(tipopassageiro, '')))), '[]'::json)
-                 from (select lat, lon, tipopassageiro from f where _bi_na_area(lat, lon, cfg.areas) limit 4000) p),
+      'pontos', (select coalesce(json_agg(json_build_array(round(lat::numeric, 5), round(lon::numeric, 5), cat, linha)), '[]'::json)
+                 from (select lat, lon, cat, linha from f where _bi_na_area(lat, lon, cfg.areas) limit 4000) p),
       'pontos_fora_area', (select count(*) from f where lat is not null and not _bi_na_area(lat, lon, cfg.areas))
     ) into res;
 
@@ -1002,7 +1034,11 @@ begin
         and (coalesce(p_filtros->>'so_turnos_viagens', '') <> 'sim' or upper(trim(coalesce(v.tipolinha, ''))) = any (cfg.viagens_turnos))
         and (vv is null or case p_campo when 'linha' then v.linha = vv when 'dia' then v.data_local = vv::date
                when 'turno' then upper(trim(coalesce(v.tipolinha, ''))) = upper(vv) when 'sentido' then upper(trim(v.tipo)) = upper(vv)
-               when 'carro' then v.frota = vv else true end)
+               when 'carro' then v.frota = vv
+               when 'com_leitura' then v.ocupacao > 0
+               when 'faixa' then v.ocupacao > 0 and (case when v.ocupacao >= cfg.lugares then 'lotadas' when 100.0 * v.ocupacao / cfg.lugares >= 89 then 'cheias'
+                                                          when 100.0 * v.ocupacao / cfg.lugares >= 50 then 'boas' else 'vazias' end) = vv
+               else true end)
       limit 3000) x);
   elsif p_tipo = 'embarques' then
     return (select coalesce(json_agg(x order by x.data desc, x.hora desc), '[]'::json) from (
@@ -1016,7 +1052,12 @@ begin
                when 'turno' then upper(trim(coalesce(e.tipolinha, ''))) = upper(vv)
                when 'status' then coalesce(nullif(upper(trim(e.tipopassageiro)), ''), 'SEM STATUS') = upper(vv)
                when 'empresa' then coalesce(_bi_empresa(e.bruto->>'empresa'), '—') = vv
-               when 'gg' then coalesce(nullif(trim(e.gg), ''), 'SEM GG') = vv else true end)
+               when 'gg' then coalesce(nullif(trim(e.gg), ''), 'SEM GG') = vv
+               when 'fora' then public._bi_cat_fora(e.tipopassageiro, e.linhapassageiro, e.linha) is not null
+                            and (vv = 'todos' or public._bi_cat_fora(e.tipopassageiro, e.linhapassageiro, e.linha) = vv)
+               when 'fora_dia' then e.data_local = vv::date and public._bi_cat_fora(e.tipopassageiro, e.linhapassageiro, e.linha) is not null
+               when 'fora_linha' then e.linha = vv and public._bi_cat_fora(e.tipopassageiro, e.linhapassageiro, e.linha) is not null
+               else true end)
       limit 3000) x);
   end if;
   raise exception 'Detalhe desconhecido.';
