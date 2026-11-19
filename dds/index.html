@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDS do Transporte · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --red:#dc2626;--ora:#c2410c;--grn:#15803d;--shadow:0 1px 2px rgba(15,23,42,.06),0 4px 16px rgba(15,23,42,.06);color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input{font:inherit;color:inherit}button{cursor:pointer}
+.hidden{display:none!important}
+.wrap{max-width:1400px;margin:0 auto;padding:12px 16px 60px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+header .tt{margin-right:auto;min-width:0}
+h1{font-size:clamp(22px,3vw,38px);margin:0;line-height:1.15}
+.sub{color:var(--mut);font-size:clamp(14px,1.4vw,18px);margin:2px 0 0}
+.btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-weight:600;font-size:14px;text-decoration:none;color:var(--ink);white-space:nowrap}
+.btn.on{background:var(--brand);border-color:var(--brand);color:#fff}
+input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px 20px;border-top:8px solid var(--gry,#94a3b8);min-width:0}
+.c .t{font-size:clamp(16px,1.6vw,22px);font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+.c .v{font-size:clamp(48px,5.6vw,104px);font-weight:800;line-height:1;margin:8px 0 6px;font-variant-numeric:tabular-nums}
+.c .d{font-size:clamp(15px,1.5vw,20px);font-weight:700}
+.c .s{font-size:clamp(13px,1.2vw,16px);color:var(--mut);margin-top:6px}
+.c .lk{font-size:12px;color:var(--brand);background:none;border:0;padding:0;margin-top:8px;text-decoration:underline}
+.c.ok{border-top-color:var(--grn)}.c.ok .v{color:var(--grn)}
+.c.warn{border-top-color:#ea580c}.c.warn .v{color:var(--ora)}
+.c.bad{border-top-color:var(--red)}.c.bad .v{color:var(--red)}
+.c.blu{border-top-color:var(--brand)}.c.blu .v{color:#1d4ed8}
+.c.nd .v{color:#94a3b8}
+.up{color:var(--grn)}.dn{color:var(--red)}.eq{color:var(--mut)}
+.sec{font-size:clamp(15px,1.4vw,19px);font-weight:700;color:var(--mut);margin:22px 0 8px}
+.mini{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mini span{background:#eef2f7;border-radius:999px;padding:3px 10px;font-size:13px;color:var(--ink)}
+.faixa{border-radius:10px;padding:9px 12px;margin:10px 0;font-size:14px;border:1px solid #f6c9a8;background:#fff1e6;color:var(--ora);font-weight:600}
+details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:22px;font-size:14px}
+details summary{font-weight:700;cursor:pointer}
+details li{margin:4px 0}
+.vazio{padding:40px 10px;text-align:center;color:var(--mut);font-size:18px}
+.login{max-width:360px;margin:12vh auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:var(--shadow)}
+.login input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;margin:10px 0}
+.err{color:var(--red)}
+@media print{header .ctl,details{display:none}}
+</style>
+</head>
+<body>
+<div id="vLogin" class="login hidden">
+  <h2 style="margin:0 0 4px">DDS do Transporte</h2>
+  <div class="sub">Use a mesma senha do BI / Central.</div>
+  <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha">
+  <button class="btn on" style="width:100%">Entrar</button></form>
+  <div id="lMsg" class="sub"></div>
+</div>
+
+<div id="vApp" class="wrap hidden">
+  <header>
+    <div class="tt"><h1>DDS · Transporte</h1><p class="sub" id="sub"></p></div>
+    <div class="ctl" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      <button class="btn" id="bOntem">Ontem</button>
+      <button class="btn" id="bHoje">Hoje</button>
+      <input type="date" id="fDia">
+      <button class="btn" id="bTela" title="Tela cheia (projetor)">⛶ Tela cheia</button>
+      <a class="btn" href="../bi/">BI</a>
+      <a class="btn" href="../">Início</a>
+    </div>
+  </header>
+  <div id="aviso" class="faixa hidden"></div>
+  <div id="painel"><div class="vazio">Carregando…</div></div>
+  <details>
+    <summary>Como é calculado</summary>
+    <ul>
+      <li><b>Ocupação</b> = média de passageiros por viagem ÷ <span id="xLug">45</span> lugares. Entram as viagens do dia (ida e volta) com pelo menos 1 passageiro, das rotas dos grupos do BI (ADM, Turno 12x12, CT). Ficam de fora as viagens INTERNO e as linhas com <span id="xExc">VAN, MICRO</span> no nome.</li>
+      <li><b>Pontualidade</b> = viagens no horário ÷ viagens com hora medida, pelas cercas dos turnos (mesma regra e tolerância do painel Horários do BI).</li>
+      <li><b>Entrada</b> (ida): chegar na cerca antes do horário também conta como pontual. <b>Saída</b> (volta): sair antes da tolerância conta como fora do horário.</li>
+      <li>A hora vem do GPS do Monitor quando o carro tem Monitor; sem Monitor, da TFleet (chegada no ponto na ida, abertura da viagem na volta). Viagem sem hora não entra na porcentagem e aparece como "sem dado".</li>
+      <li>A seta compara com o dia anterior, em pontos percentuais (p.p.).</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const K_SESS="tf_bi",K_CENTRAL="tf_sessao",K_SOL="tf_solicitacoes",K_JUNTAR="tf_dds_juntar";
+let TOKEN=null,D=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const hoje=()=>new Date(Date.now()-3*3600e3).toISOString().slice(0,10);
+const menosDias=(d,n)=>new Date(Date.parse(d+"T12:00:00Z")-n*864e5).toISOString().slice(0,10);
+const pct=v=>v==null?"—":Math.round(v)+"%";
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}throw new Error(m)}
+  return j;
+}
+function mostrarLogin(){$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();$("lMsg").textContent="Entrando…";
+  try{const r=await rpc("bi_entrar",{p_senha:$("lSenha").value});
+    if(r.erro){$("lMsg").innerHTML='<span class="err">'+esc(r.erro)+'</span>';return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token)}
+  catch(err){$("lMsg").innerHTML='<span class="err">Erro: '+esc(err.message)+'</span>'}};
+async function iniciar(){
+  // o DDS da manhã mostra o dia anterior (dia completo); depois do meio-dia abre no dia de hoje
+  const h=new Date(Date.now()-3*3600e3).getUTCHours();
+  $("fDia").value=h<12?menosDias(hoje(),1):hoje();
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL),ls.get(K_SOL)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("bi_sessao",{p_token:s.token});if(q&&!q.erro){entrar(s.token);return}}catch(e){}}
+  mostrarLogin();
+}
+function entrar(tk){TOKEN=tk;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");carregar()}
+$("bOntem").onclick=()=>{$("fDia").value=menosDias(hoje(),1);carregar()};
+$("bHoje").onclick=()=>{$("fDia").value=hoje();carregar()};
+$("fDia").onchange=()=>carregar();
+$("bTela").onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen()};
+
+// as horas pelas cercas são calculadas sob demanda (igual ao BI): processa o dia e o anterior antes de ler
+async function processar(de,ate){
+  for(let i=0;i<60;i++){let r;
+    try{r=await rpc("bi_processar",{p_token:TOKEN,p_de:de,p_ate:ate,p_max:1})}catch(e){return "Parte das horas pelas cercas ainda não foi calculada ("+e.message+"). Atualize a página para continuar."}
+    if(!r||!r.falta)return "";
+    $("painel").innerHTML='<div class="vazio">Calculando horários pelas cercas… faltam '+r.falta+' dia(s).</div>'}
+  return "";
+}
+async function carregar(){
+  const dia=$("fDia").value||hoje();
+  $("bOntem").classList.toggle("on",dia===menosDias(hoje(),1));$("bHoje").classList.toggle("on",dia===hoje());
+  const dt=new Date(dia+"T12:00:00Z");
+  $("sub").textContent=dt.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric",timeZone:"UTC"})+(dia===hoje()?" · parcial (o dia ainda não acabou)":"");
+  $("painel").innerHTML='<div class="vazio">Carregando…</div>';
+  try{
+    const av=await processar(menosDias(dia,1),dia);
+    D=await rpc("bi_dds",{p_token:TOKEN,p_dia:dia});
+    const col=D.coleta?new Date(D.coleta):null,atraso=col?(Date.now()-col)/36e5:99;
+    const avs=[];if(av)avs.push(av);
+    if(atraso>=2)avs.push(col?"⚠ A coleta da TFleet está parada desde "+col.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+".":"⚠ Ainda não há viagens coletadas da TFleet.");
+    if(!D.cercas)avs.push("Nenhuma cerca de turno cadastrada no BI: a pontualidade só aparece depois de desenhar as cercas (BI → Cercas dos turnos).");
+    $("aviso").textContent=avs.join(" ");$("aviso").classList.toggle("hidden",!avs.length);
+    if(D.atual&&D.atual.lugares)$("xLug").textContent=D.atual.lugares;if(D.excluir)$("xExc").textContent=D.excluir;
+    desenhar();
+  }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
+}
+function delta(a,b){
+  if(a==null||b==null)return'<div class="d eq">sem comparação com o dia anterior</div>';
+  const x=Math.round(a)-Math.round(b);
+  return'<div class="d '+(x>0?"up":x<0?"dn":"eq")+'">'+(x>0?"▲ +":x<0?"▼ ":"= ")+x+" p.p. <span style='font-weight:400;color:var(--mut)'>vs. dia anterior ("+pct(b)+")</span></div>";
+}
+const cor=p=>p==null?"nd":p>=95?"ok":p>=85?"warn":"bad";
+// soma a pontualidade de vários sentidos/grupos
+function soma(L){if(!L.length)return null;const s={medidas:0,pontuais:0,atrasadas:0,adiantadas:0,sem_dado:0,pelo_monitor:0};
+  L.forEach(x=>Object.keys(s).forEach(k=>s[k]+=+x[k]||0));s.pct=s.medidas?100*s.pontuais/s.medidas:null;return s}
+const nomeSent=s=>s==="IDA"?"entrada":"saída";
+function cardPont(titulo,a,b,grupo,junto){
+  const det=a?(a.medidas?a.pontuais+" de "+a.medidas+" viagens no horário":"nenhuma viagem com hora medida")
+      +(a.atrasadas?" · "+a.atrasadas+" atrasada(s)":"")+(a.sem_dado?" · "+a.sem_dado+" sem dado":""):"sem viagens desse grupo no dia";
+  return'<div class="c '+cor(a&&a.pct)+'"><div class="t">'+esc(titulo)+'</div><div class="v">'+pct(a&&a.pct)+'</div>'
+    +delta(a&&a.pct,b&&b.pct)+'<div class="s">'+esc(det)+'</div>'
+    +'<button class="lk" data-g="'+esc(grupo)+'">'+(junto?"separar entrada e saída":"juntar entrada e saída")+'</button></div>';
+}
+function desenhar(){
+  const A=D.atual||{},B=D.anterior||{},oa=A.ocupacao||{},ob=B.ocupacao||{};
+  const juntar=ls.get(K_JUNTAR)||{ADM:true};
+  const PA=A.pontualidade||[],PB=B.pontualidade||[];
+  const grupos=[...new Set(PA.map(x=>x.grupo).concat(PB.map(x=>x.grupo)))];
+  // ordem: ADM primeiro, depois turno, depois o resto
+  const peso=g=>/ADM/i.test(g)?0:/TURNO/i.test(g)?1:2;grupos.sort((x,y)=>peso(x)-peso(y)||x.localeCompare(y));
+  let cards='<div class="c blu"><div class="t">Ocupação dos ônibus</div><div class="v">'+pct(oa.pct)+'</div>'+delta(oa.pct,ob.pct)
+    +'<div class="s">'+(oa.viagens?"média de "+String(oa.media).replace(".",",")+" passageiros em "+oa.viagens+" viagens · "+A.lugares+" lugares":"sem viagens com passageiros no dia")+'</div>'
+    +((A.ocup_grupos||[]).length>1?'<div class="mini">'+A.ocup_grupos.map(g=>'<span>'+esc(g.grupo)+": <b>"+pct(g.pct)+"</b></span>").join("")+'</div>':"")+'</div>';
+  grupos.forEach(g=>{
+    const fa=s=>PA.filter(x=>x.grupo===g&&(!s||x.sentido===s)),fb=s=>PB.filter(x=>x.grupo===g&&(!s||x.sentido===s));
+    if(juntar[g])cards+=cardPont("Pontualidade "+g,soma(fa()),soma(fb()),g,true);
+    else["IDA","VOLTA"].forEach(s=>{if(fa(s).length||fb(s).length)cards+=cardPont("Pontualidade "+g+" · "+nomeSent(s),soma(fa(s)),soma(fb(s)),g,false)});
+  });
+  const mon=soma(PA);
+  $("painel").innerHTML='<div class="grid">'+cards+'</div>'
+    +(mon&&mon.medidas?'<div class="sec">'+mon.pelo_monitor+' de '+(mon.medidas+mon.sem_dado)+' viagens com hora medida pelo GPS do Monitor; o resto pela hora da TFleet.</div>':"")
+    +(!grupos.length&&D.cercas?'<div class="sec">Nenhuma viagem dos turnos das cercas nesse dia.</div>':"");
+  $("painel").querySelectorAll("[data-g]").forEach(b=>b.onclick=()=>{const j=ls.get(K_JUNTAR)||{ADM:true};j[b.dataset.g]=!j[b.dataset.g];ls.set(K_JUNTAR,j);desenhar()});
+}
+iniciar();
+</script>
+</body>
+</html>
