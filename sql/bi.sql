@@ -593,12 +593,21 @@ alvo as (
   where upper(trim(v.tipo)) in ('IDA', 'VOLTA')
     and (case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end) ~ '^\d{1,2}:\d{2}'
 ),
--- a mesma cerca pode ter vários horários (ex.: troca da manhã 07:00/07:30 e da noite 19:00/19:30):
--- cada viagem fica só com o horário mais perto da hora em que ela saiu
+-- a mesma cerca pode ter vários horários (ex.: troca da manhã 06:15 e da tarde 17:05):
+-- cada viagem fica com o horário em que o GPS do Monitor mostra a passagem (entrada na IDA, saída na VOLTA,
+-- até 3 h do previsto); sem GPS, o mais perto da hora em que a viagem foi aberta na TFleet.
+-- (antes era só pela abertura: viagem aberta cedo/errada pegava o horário da manhã mesmo saindo 17:05)
 alvo1 as (
   select distinct on (a.id, a.cid) a.*
   from alvo a
-  order by a.id, a.cid,
+  left join lateral (
+    select min(abs(extract(epoch from e.ts - ((a.data_local + a.prev::time) at time zone 'America/Belem')))) as seg
+    from bi_cerca_eventos e
+    where e.cerca_id = a.cid and e.frota = public.normaliza_tag(a.frota)
+      and e.tipo = case when a.sent = 'IDA' then 'entrada' else 'saida' end
+      and e.ts between ((a.data_local + a.prev::time) at time zone 'America/Belem') - interval '3 hours'
+                   and ((a.data_local + a.prev::time) at time zone 'America/Belem') + interval '3 hours') g on true
+  order by a.id, a.cid, (g.seg is null), g.seg,
     abs(((coalesce(_bi_min(to_char(a.hora_saida, 'HH24:MI')), _bi_min(a.prev)) - _bi_min(a.prev) + 720 + 1440) % 1440) - 720)
 ),
 com as (
@@ -626,7 +635,9 @@ ev as (
 -- Monitor e TFleet são redundantes: vale a hora (das duas) mais perto do previsto
 fim0 as (
   select e.*, to_char(e.ev_ts at time zone 'America/Belem', 'HH24:MI') as mon,
-         case when e.tf ~ '^\d{1,2}:\d{2}' and e.tf not in ('00:00') then e.tf end as tfv
+         -- hora da TFleet só vale até 3 h do previsto (abertura 06:15 numa viagem das 17:05 não é a saída dela)
+         case when e.tf ~ '^\d{1,2}:\d{2}' and e.tf not in ('00:00')
+               and abs(((_bi_min(e.tf) - _bi_min(e.prev) + 720 + 1440) % 1440) - 720) <= 180 then e.tf end as tfv
   from ev e
 ),
 fim as (
