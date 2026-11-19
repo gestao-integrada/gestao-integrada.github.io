@@ -420,13 +420,19 @@ $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-rmp]")
     +'<label class="note" style="margin-left:auto">Mostrar <select id="ovJan"><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 hora</option></select> antes e depois</label></div>'
     +'<div id="ovMapa" style="height:420px;border-radius:10px;border:1px solid var(--line)"></div><div class="note" id="ovMapN" style="margin-top:4px"></div></div>';
   mapaViagem(x)});
-function telaRoteiro(d){ROT_MP=[];
+let ROT_SEL="",ROT_D=null;
+function telaRoteiro(d){ROT_MP=[];ROT_D=d;
   if(!d.cercas){$("painel").innerHTML='<div class="vazio">Nenhuma roteirização ainda. Em <b>Cercas dos turnos</b>, clique em <b>+ Nova roteirização</b>.</div>';return}
-  const P=d.pontos||[],L=d.linhas||[];
-  if(!L.length){$("painel").innerHTML='<div class="vazio">Nenhuma viagem das linhas das roteirizações nesse período e filtro. Confira em Cercas dos turnos o texto da linha da ida e da volta.</div>';return}
+  // filtro Roteirização (só nesta aba): escolhe uma ou todas
+  const NOMES=[...new Set((d.pontos||[]).map(p=>p.roteiro))].sort((a,b)=>a.localeCompare(b,"pt-BR"));if(ROT_SEL&&!NOMES.includes(ROT_SEL))ROT_SEL="";
+  const P=(d.pontos||[]).filter(p=>!ROT_SEL||p.roteiro===ROT_SEL),L=(d.linhas||[]).filter(x=>!ROT_SEL||x.roteiro===ROT_SEL);
+  const selR='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="font-weight:600;font-size:13px">Roteirização</label><select id="fRot" style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;min-width:220px"><option value="">Todas</option>'
+    +NOMES.map(n=>'<option'+(n===ROT_SEL?" selected":"")+'>'+esc(n)+'</option>').join("")+'</select></div>';
+  const ligaR=()=>{const s=$("fRot");if(s)s.onchange=()=>{ROT_SEL=s.value;telaRoteiro(ROT_D)}};
+  if(!L.length){$("painel").innerHTML=selR+'<div class="vazio">Nenhuma viagem '+(ROT_SEL?'da roteirização <b>'+esc(ROT_SEL)+'</b>':'das linhas das roteirizações')+' nesse período e filtro. Confira em Cercas dos turnos as rotas da ida e da volta.</div>';ligaR();return}
   const blocos=[];[...new Set(P.map(p=>p.roteiro))].forEach(r=>["IDA","VOLTA"].forEach(sn=>{const V=L.filter(x=>x.roteiro===r&&x.sentido===sn);if(V.length)blocos.push({r,sn,V,pts:P.filter(p=>p.roteiro===r)})}));
   const c={};L.forEach(v=>v.p.forEach(q=>c[q.status]=(c[q.status]||0)+1));const tot=Object.values(c).reduce((a,b)=>a+b,0),com=tot-(c["sem passagem"]||0);
-  $("painel").innerHTML='<div class="kpis">'+kpi(nf(L.length),"viagens")+kpi(com?Math.round(100*(c["no horário"]||0)/com)+"%":"—","passagens no horário","de "+com+" com hora","ok")
+  $("painel").innerHTML=selR+'<div class="kpis">'+kpi(nf(L.length),"viagens")+kpi(com?Math.round(100*(c["no horário"]||0)/com)+"%":"—","passagens no horário","de "+com+" com hora","ok")
     +kpi(nf(c["adiantado"]||0),"adiantadas","rodando bem","blu")+kpi(nf(c["atrasado"]||0),"atrasadas","","bad")+kpi(nf(c["sem passagem"]||0),"sem passagem","não passou ou sem Monitor")+'</div>'
     +'<div class="faixa info">Cada coluna é uma cerca da roteirização, na ordem do horário previsto daquele sentido (na volta, a primeira parada da volta vem primeiro). Mostra a hora em que o carro <b>entrou</b> na cerca (GPS do Monitor) e a diferença para o horário previsto daquele sentido. <b style="color:var(--blu)">Azul</b> = chegou antes (rodando bem), <b style="color:var(--grn)">verde</b> = dentro da tolerância, <b style="color:var(--red)">vermelho</b> = atrasado. Passe o mouse para ver o previsto e a hora em que saiu.</div>'
     +blocos.map((b,i)=>'<div class="box"><h3>'+esc(b.r)+' · '+(b.sn==="IDA"?"Ida":"Volta")+' <span class="r note">'+b.V.length+' viagem(ns)</span></h3><div id="tRot'+i+'"></div></div>').join("");
@@ -437,6 +443,7 @@ function telaRoteiro(d){ROT_MP=[];
       .concat(b.pts.map((p,j)=>({k:"p"+j,t:(j+1)+". "+p.nome+((b.sn==="IDA"?p.ida:p.volta)?" ("+(b.sn==="IDA"?p.ida:p.volta)+")":""),
         f:(q,v)=>!q||!q.ent?'<span class="note">—</span>':'<span class="chip rot '+(ST_ROT[q.status]||"c-gry")+'" style="cursor:pointer" data-rmp="'+(ROT_MP.push({data:v.data,frota:v.frota,cerca:q.nome,prevista:q.prev||q.ent,hora_real:q.ent,dif:q.prev?q.dif:0,linha:v.linha,sentido:b.sn})-1)+'" title="'+esc("previsto "+(q.prev||"—")+(q.sai?" · saiu "+q.sai:"")+" · clique para ver no mapa")+'">'+esc(q.ent)+(q.dif!=null?" ("+(q.dif>0?"+":"")+q.dif+")":"")+' 🗺</span>'})))
       ,V,"roteirizacao_"+(b.r+"_"+b.sn).replace(/\W+/g,"_"))});
+  ligaR();
 }
 // resumo por rota: barra empilhada no horário/adiantado/atrasado/sem hora + média e pior diferença
 let HR_GRUPOS={};
