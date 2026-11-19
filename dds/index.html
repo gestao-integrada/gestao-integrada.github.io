@@ -135,8 +135,15 @@ async function carregar(){
   $("sub").textContent=dt.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric",timeZone:"UTC"})+(dia===hoje()?" · parcial (o dia ainda não acabou)":"");
   $("painel").innerHTML='<div class="vazio">Carregando…</div>';
   try{
-    const av=await processar(menosDias(dia,1),dia);
-    D=await rpc("bi_dds",{p_token:TOKEN,p_dia:dia});
+    let av=await processar(menosDias(dia,1),dia);
+    // uma parte por chamada, em paralelo (o Supabase corta cada chamada em ~3 s)
+    const partes=["info","atual_ocupacao","atual_pontualidade","anterior_ocupacao","anterior_pontualidade"];
+    const rs=await Promise.all(partes.map(p=>rpc("bi_dds",{p_token:TOKEN,p_dia:dia,p_parte:p}).catch(e=>({erro:e.message,parte:p}))));
+    const falhas=rs.filter(x=>x&&x.erro);
+    if(falhas.length===rs.length)throw new Error(falhas[0].erro);
+    D={atual:{},anterior:{}};
+    rs.forEach(x=>{if(!x||x.erro)return;for(const k in x){if(k==="atual"||k==="anterior"){for(const c in x[k])if(x[k][c]!=null)D[k][c]=x[k][c]}else D[k]=x[k]}});
+    if(falhas.length&&!av)av="Parte dos números não carregou ("+falhas.map(f=>f.parte.replace("_"," ")).join(", ")+": "+falhas[0].erro+"). Clique de novo no dia para tentar.";
     const col=D.coleta?new Date(D.coleta):null,atraso=col?(Date.now()-col)/36e5:99;
     const avs=[];if(av)avs.push(av);
     if(atraso>=2)avs.push(col?"⚠ A coleta da TFleet está parada desde "+col.toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+".":"⚠ Ainda não há viagens coletadas da TFleet.");
@@ -186,5 +193,6 @@ function desenhar(){
 }
 iniciar();
 </script>
+<script src="../central-voltar.js"></script>
 </body>
 </html>

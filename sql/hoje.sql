@@ -30,9 +30,9 @@ revoke execute on function public._hj_exige(text) from public, anon, authenticat
 create or replace function public._hj_cfg() returns jsonb
 language sql immutable as $$
   select jsonb_build_object(
-    'sem_sinal_min', 60,        -- celular sem mandar nada há mais que isso (min) = sem sinal
+    'sem_sinal_min', 2160,      -- celular sem mandar nada há mais que isso (min) = sem sinal (1 dia e meio)
     'sem_sinal_max_dias', 7,    -- parado há mais dias que isso = aparelho desativado, sai da lista
-    'lotacao_ideal', 40,        -- passageiros acima disso = viagem lotada
+    'lotacao_ideal', 45,        -- passageiros acima disso = viagem lotada (o ônibus tem 45 lugares)
     'lugares', 45,              -- acima disso = superlotada (gente em pé)
     'atraso_dias', 3)           -- pontualidade: eventos dos últimos N dias ainda sem justificativa
 $$;
@@ -86,7 +86,7 @@ begin
   r := r || jsonb_build_object('ocorrencias', x);
   end if;
 
-  -- 2. celulares sem sinal (> 60 min, até 7 dias) e 3. carregador ruim nas últimas 24 h (tablet não entra)
+  -- 2. celulares sem sinal (> 1,5 dia, até 7 dias) e 3. carregador ruim nas últimas 24 h (tablet não entra)
   if p_bloco is null or p_bloco = 'celulares' then
   begin
     cel := _hj_celulares();
@@ -125,7 +125,7 @@ begin
   r := r || jsonb_build_object('aberturas', x);
   end if;
 
-  -- 5. viagens lotadas hoje (acima da lotação ideal)
+  -- 5. viagens lotadas hoje (mais passageiros que lugares)
   if p_bloco is null or p_bloco = 'lotadas' then
   begin
     select coalesce(jsonb_agg(jsonb_build_object('frota', normaliza_tag(v.frota), 'linha', v.linha, 'tipo', v.tipo,

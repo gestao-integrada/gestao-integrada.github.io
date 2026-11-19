@@ -10,6 +10,8 @@ alter table public.bi_config add column if not exists mapa_sem_sinal_min int not
 alter table public.bi_config add column if not exists mapa_tol_atraso_min int not null default 5;  -- passou do previsto + isso = ATRASADO
 alter table public.bi_config add column if not exists mapa_ideal int not null default 40;          -- acima disso = CHEIO; >= lugares = LOTADO
 
+create index if not exists viagens_saida_ts on public.viagens (saida_ts);
+
 -- Situação de cada ônibus agora: última posição do Monitor + viagem aberta na TFleet.
 -- estado: sem_sinal (só quem tem Monitor) > atrasado > lotado > cheio > ok (> sem_viagem quando não tem viagem aberta)
 create or replace function public.mapa_frota(p_token text)
@@ -24,12 +26,19 @@ begin
     'config', json_build_object('sem_sinal_min', c.mapa_sem_sinal_min, 'tol_atraso_min', c.mapa_tol_atraso_min,
                                 'ideal', c.mapa_ideal, 'lugares', c.lugares),
     'onibus', (
-      with pos as (   -- última posição de cada celular nas últimas 24 h
-        select distinct on (s.device_id) public.normaliza_tag(s.device_name) as frota, s.device_name, s.ts,
+      with recursive dev as (   -- lista de celulares pulando no índice (device_id, ts desc): rápido mesmo com muitas amostras
+        select min(device_id) as id from samples
+        union all
+        select (select min(device_id) from samples where device_id > dev.id) from dev where dev.id is not null),
+      pos as (   -- última posição de cada celular nas últimas 24 h
+        select public.normaliza_tag(s.device_name) as frota, s.device_name, s.ts,
                s.lat::float8 as lat, s.lon::float8 as lon, s.speed_kmh, s.battery_pct, s.plugged
-        from samples s
-        where s.ts > now() - interval '24 hours' and s.lat is not null and s.lon is not null and not (s.lat = 0 and s.lon = 0)
-        order by s.device_id, s.ts desc),
+        from dev cross join lateral (
+          select * from samples x
+          where x.device_id = dev.id and x.ts > now() - interval '24 hours'
+            and x.lat is not null and x.lon is not null and not (x.lat = 0 and x.lon = 0)
+          order by x.ts desc limit 1) s
+        where dev.id is not null),
       pos1 as (select distinct on (frota) * from pos where frota is not null order by frota, ts desc),
       via as (        -- viagem aberta (ou fechada há menos de 20 min) de cada ônibus
         select distinct on (public.normaliza_tag(v.frota)) public.normaliza_tag(v.frota) as frota,
