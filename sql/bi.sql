@@ -592,7 +592,7 @@ cfg as (select grupos, horarios_excluir from bi_config where id = 1),
 -- horário com "rotas" (horário diferente por rota): vira um horário por rota, com chegada/saída/tolerâncias/dias da rota,
 -- mas com o mesmo nome (rótulo/grupo), para ser medido junto
 reg as (
-  select c.id as cid, c.nome, c.cor, r.o, (r.h0 - 'rotas') || coalesce(x.it, '{}'::jsonb) as h, (x.it is not null) as por_rota,
+  select c.id as cid, c.nome, c.cor, r.o, x.k, (r.h0 - 'rotas') || coalesce(x.it, '{}'::jsonb) as h, (x.it is not null) as por_rota,
          case when x.it is not null then jsonb_build_object('rotas', jsonb_build_array(x.it->>'linha'))
               when coalesce(trim(r.h0->>'grupo'), '') <> ''
               -- fora = rotas desmarcadas no grupo (Gerenciar) + desmarcadas neste horário da cerca
@@ -602,11 +602,16 @@ reg as (
                                       'excluir', coalesce(r.h0->>'linha_exclui', ''), 'fora', coalesce(r.h0->'fora', '[]'::jsonb)) end as f
   from bi_cercas c
   cross join lateral jsonb_array_elements(c.horarios) with ordinality as r(h0, o)
-  cross join lateral (select it from jsonb_array_elements(case when jsonb_typeof(r.h0->'rotas') = 'array' and jsonb_array_length(r.h0->'rotas') > 0
-                                                               then r.h0->'rotas' else '[null]'::jsonb end) e(it0),
+  cross join lateral (select it, e.k from jsonb_array_elements(case when jsonb_typeof(r.h0->'rotas') = 'array' and jsonb_array_length(r.h0->'rotas') > 0
+                                                               then r.h0->'rotas' else '[null]'::jsonb end) with ordinality e(it0, k),
                       lateral (select nullif(e.it0, 'null'::jsonb) as it) z
                       where z.it is null or coalesce(z.it->>'linha', '') <> '') x
   where c.ativo and c.finalidade = 'turno'
+),
+-- qual horário serve para cada linha: testado 1 vez por linha (e não 1 vez por viagem) — era o que deixava 30 dias lento
+lm as (
+  select l.tipolinha, l.linha, reg.cid, reg.o, reg.k
+  from (select distinct tipolinha, linha from v) l cross join cfg join reg on public._bi_linha_ok(l.tipolinha, l.linha, reg.f, cfg.horarios_excluir)
 ),
 alvo as (
   select v.*, reg.cid, reg.por_rota, reg.nome as cnome, reg.cor as ccor, coalesce(nullif(reg.h->>'rotulo', ''), nullif(reg.h->>'grupo', ''), reg.nome) as rnome,
@@ -614,8 +619,8 @@ alvo as (
          case when upper(trim(v.tipo)) = 'IDA' then reg.h->>'chegada' else reg.h->>'saida' end as prev,
          case when upper(trim(v.tipo)) = 'IDA' then coalesce((reg.h->>'cheg_antes')::int, 10) else coalesce((reg.h->>'sai_antes')::int, 10) end as ta,
          case when upper(trim(v.tipo)) = 'IDA' then coalesce((reg.h->>'cheg_depois')::int, 10) else coalesce((reg.h->>'sai_depois')::int, 10) end as td
-  from v cross join cfg join reg on
-        public._bi_linha_ok(v.tipolinha, v.linha, reg.f, cfg.horarios_excluir)
+  from v join lm on lm.linha = v.linha and lm.tipolinha is not distinct from v.tipolinha
+         join reg on reg.cid = lm.cid and reg.o = lm.o and reg.k = lm.k
     and (jsonb_array_length(coalesce(reg.h->'dias', '[]')) = 0
           or extract(isodow from v.data_local)::text in (select jsonb_array_elements_text(reg.h->'dias')))
   where upper(trim(v.tipo)) in ('IDA', 'VOLTA')
