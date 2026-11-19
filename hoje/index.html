@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hoje · Gestão Integrada</title>
+<title>Ficha do ônibus · Gestão Integrada</title>
 <meta name="theme-color" content="#16324f">
 <style>
 /* mesmo visual das outras páginas do gestao-integrada (tema claro fixo) */
@@ -46,6 +46,7 @@ h2.sec a{margin-left:auto}
 .it .tx{flex:1;min-width:0}.it .tx .l2{color:var(--mut);font-size:13px}
 .it .dir{color:var(--mut);font-size:12px;white-space:nowrap;text-align:right}
 .carro{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:30px;padding:0 8px;border-radius:8px;background:#16324f;color:#fff;font-weight:800;border:0;flex:none}
+.grade{display:flex;flex-wrap:wrap;gap:8px}.grade .carro{min-width:58px;height:42px;font-size:17px;cursor:pointer}.grade .carro:hover{background:var(--brand)}
 .carro.sem{background:var(--grybg);color:var(--gry)}
 .chip{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
 .c-red{background:var(--redbg);color:var(--red)}.c-ora{background:var(--orabg);color:var(--ora)}.c-yel{background:var(--yelbg);color:var(--yel)}
@@ -77,7 +78,7 @@ table.t td{padding:5px 8px;border-top:1px solid var(--line);vertical-align:top}
 </head>
 <body>
 <div id="vLogin" class="login hidden">
-  <h2>Hoje na operação</h2>
+  <h2>Ficha do ônibus</h2>
   <div class="note">Use a mesma senha do quadro Demandas (senha pessoal da Central).</div>
   <form id="fLogin"><input id="lSenha" type="password" autocomplete="current-password" placeholder="Senha" required>
   <button class="btn p">Entrar</button></form>
@@ -86,7 +87,7 @@ table.t td{padding:5px 8px;border-top:1px solid var(--line);vertical-align:top}
 
 <div id="vApp" class="wrap hidden">
   <header class="top">
-    <div class="tt"><h1 id="titulo">Hoje</h1><p class="sub" id="sub">O que precisa de ação agora</p></div>
+    <div class="tt"><h1 id="titulo">Ficha do ônibus</h1><p class="sub" id="sub">Tudo de um carro num lugar só</p></div>
     <span class="who" id="who"></span>
     <a class="btn" href="../mapa/">🗺 Mapa ao vivo</a>
     <button class="btn" id="bAtual">↻ Atualizar</button>
@@ -96,17 +97,14 @@ table.t td{padding:5px 8px;border-top:1px solid var(--line);vertical-align:top}
     <input id="qCarro" list="lCarros" inputmode="numeric" placeholder="Nº do ônibus" autocomplete="off">
     <datalist id="lCarros"></datalist>
     <button class="btn p">Abrir ficha</button>
-    <a class="btn hidden" id="bHoje" href="#">← Voltar para Hoje</a>
+    <a class="btn hidden" id="bHoje" href="#">← Todos os ônibus</a>
   </form>
 
   <!-- TELA HOJE -->
   <div id="vHoje">
-    <div class="faixa" id="resumo"></div>
-    <div class="cards" id="cards"></div>
-    <div id="det"></div>
-    <p class="note" style="margin-top:20px">Atualiza sozinha a cada 2 minutos. Clique num quadro para ver a lista, e no número do carro para abrir a ficha dele.
-      Regras: sem sinal = celular sem mandar dados há mais de 1 dia e meio (parado há mais de 7 dias sai, é aparelho desligado);
-      lotada = mais de 45 passageiros (lugares do ônibus); atrasos = pontualidade dos últimos 3 dias ainda sem justificativa.</p>
+    <h2 class="sec">Escolha o ônibus <span class="n" id="nCarros">…</span></h2>
+    <div class="grade" id="grade"><div class="vazio">Carregando…</div></div>
+    <p class="note" style="margin-top:20px">A ficha junta tudo do carro num lugar só: celular (Monitor), ocorrências, vistorias do CHECK BDV, viagens e lotação, pontualidade, aberturas erradas e visitas da Caliman. Também abre pelo mapa ao vivo.</p>
   </div>
 
   <!-- FICHA DO ÔNIBUS -->
@@ -180,7 +178,7 @@ function rota(){
   clearInterval(TIMER);
   if(m){abrirFicha(decodeURIComponent(m[1]))}
   else{$("vFicha").classList.add("hidden");$("vHoje").classList.remove("hidden");$("bHoje").classList.add("hidden");
-    $("titulo").textContent="Hoje";carregarHoje();TIMER=setInterval(()=>{if(!document.hidden)carregarHoje()},120000)}
+    $("titulo").textContent="Ficha do ônibus";$("sub").textContent="Tudo de um carro num lugar só";$("qCarro").value="";carregarCarros()}
 }
 window.addEventListener("hashchange",()=>{if(TOKEN)rota()});
 $("fBusca").onsubmit=e=>{e.preventDefault();const v=$("qCarro").value.replace(/\D/g,"");if(v)location.hash="carro="+v};
@@ -189,99 +187,13 @@ $("bAtual").onclick=()=>rota();
 document.addEventListener("click",e=>{const b=e.target.closest("[data-carro]");if(b){e.preventDefault();e.stopPropagation();location.hash="carro="+b.dataset.carro;scrollTo(0,0)}});
 function carrosLista(a){$("lCarros").innerHTML=lista(a).map(c=>`<option value="${esc(c)}">`).join("")}
 
-/* ---------------- TELA HOJE ---------------- */
-// um bloco por chamada, em paralelo: o Supabase corta cada chamada em ~3 s
-const BLOCOS_HOJE={ocorrencias:["ocorrencias"],celulares:["sem_sinal","carregador"],aberturas:["aberturas"],lotadas:["lotadas"],atrasos:["atrasos"],visitas:["visitas"]};
-async function carregarHoje(){
-  if(!HOJE){$("cards").innerHTML='<div class="vazio">Carregando…</div>';}
-  const novo=HOJE?Object.assign({},HOJE):{};
-  let primeiro=!HOJE, erroGeral=null;
-  await Promise.all(Object.keys(BLOCOS_HOJE).map(b=>rpc("hoje_painel",{p_token:TOKEN,p_bloco:b}).then(r=>{
-      Object.assign(novo,r);if(primeiro||HOJE){HOJE=novo;desenharHoje()}
-    }).catch(err=>{
-      if(/sessao|Falta rodar/.test(err.message))erroGeral=err;
-      const e={erro:/timeout/i.test(err.message)?"demorou demais para responder (tente Atualizar)":err.message};
-      BLOCOS_HOJE[b].forEach(k=>novo[k]=e);if(novo.hoje){HOJE=novo;desenharHoje()}
-    })));
-  if(erroGeral&&!HOJE){$("cards").innerHTML='<div class="vazio err">Erro: '+esc(erroGeral.message)+'</div>';return}
-  if(!novo.hoje){$("cards").innerHTML='<div class="vazio err">Não deu para carregar. Tente Atualizar.</div>';return}
-  HOJE=novo;desenharHoje();
-  if(!$("lCarros").options.length)rpc("onibus_ficha",{p_token:TOKEN,p_frota:null,p_bloco:"carros"}).then(r=>carrosLista(r.carros)).catch(()=>{});
+/* ---------------- lista de carros ---------------- */
+async function carregarCarros(){
+  try{const r=await rpc("onibus_ficha",{p_token:TOKEN,p_frota:null,p_bloco:"carros"});const L=lista(r.carros);carrosLista(L);
+    $("nCarros").textContent=L.length;
+    $("grade").innerHTML=L.length?L.map(c=>`<button class="carro" data-carro="${esc(c)}">${esc(c)}</button>`).join(""):'<div class="vazio">Nenhum ônibus encontrado.</div>';
+  }catch(err){$("grade").innerHTML='<div class="vazio err">Erro: '+esc(err.message)+'</div>'}
 }
-// definição dos quadros: n = itens, cor = quando acende, linha = como cada item aparece
-const QUADROS=[
- {k:"ocorrencias",ic:"🛠",t:"Ocorrências abertas",link:"ocorrencias",lk:"Abrir Ocorrências (CHECK BDV)",
-  sub:a=>{const g=a.filter(o=>o.prioridade==="alta").length;return g?g+" grave"+(g>1?"s":"")+" · "+(a.length-g)+" a resolver":"a resolver"},
-  cor:a=>a.some(o=>o.prioridade==="alta")?"red":"ora",
-  item:o=>({cl:o.prioridade==="alta"?"red":"",f:o.frota,l1:`<b>${esc(o.problema)}</b>`,
-    l2:`${esc(CAT[o.categoria]||o.categoria||"")} · ${chip(...(STO[o.status]||[o.status,"c-gry"]))}${o.reincidencias?` · relatado de novo ${o.reincidencias}x`:""}`,
-    dir:"há "+desde(o.desde)})},
- {k:"sem_sinal",ic:"📵",t:"Celular sem sinal",link:"monitor",lk:"Abrir Monitor",
-  sub:a=>"sem mandar dados há mais de 1 dia e meio",cor:()=>"ora",
-  item:c=>({f:c.frota,cl:c.min>720?"red":"",l1:`<b>Sem dados há ${tempo(c.min)}</b>`,
-    l2:`Último envio ${dtBR(c.ts)} · bateria ${c.bateria==null?"?":c.bateria+"%"}${c.tomada?" (na tomada)":c.bateria!=null&&c.bateria<=20?" (fora da tomada, pode ter descarregado)":""}`,dir:esc(c.nome||"")})},
- {k:"carregador",ic:"🔌",t:"Carregador ruim",link:"monitor",lk:"Abrir Monitor (Diagnóstico)",
-  sub:()=>"alertas nas últimas 24 h",cor:()=>"ora",
-  item:c=>({f:c.frota,l1:`<b>${c.tipos&&c.tipos.includes("nao_carrega")?"Não está carregando":"Carregando devagar"}</b>`,
-    l2:`${c.eventos} alerta${c.eventos>1?"s":""} em 24 h${c.mensagem?" · "+esc(c.mensagem):""}`,dir:"último "+hBR(c.ultimo)})},
- {k:"aberturas",ic:"↔",t:"Aberturas erradas",link:"aberturas",lk:"Abrir Aberturas erradas",
-  sub:()=>"em aberto, últimos 3 dias",cor:a=>a.some(x=>x.gravidade==="alta")?"red":"ora",
-  item:a=>({f:a.frota,cl:a.gravidade==="alta"?"red":"",l1:`<b>${esc(a.linha||"")} ${esc(a.tipo||"")}</b> · ${esc(nome(a.motorista))}`,
-    l2:esc(a.problema||a.regra),dir:dCurto(a.data)+" "+esc(a.hora||"")})},
- {k:"lotadas",ic:"👥",t:"Viagens lotadas hoje",link:"lotacao",lk:"Abrir Lotação",
-  sub:()=>"mais de 45 passageiros (gente em pé)",
-  cor:()=>"red",
-  item:v=>({f:v.frota,cl:"red",l1:`<b>${v.ocupacao} passageiros</b> · ${esc(v.linha||"")} ${esc(v.tipo||"")}`,
-    l2:`${esc(v.tipolinha||"")}${v.empresa?" · "+esc(v.empresa):""}${v.aberta?" · "+chip("viagem em andamento","c-blu"):""}`,dir:"saída "+esc(v.hora||"")})},
- {k:"atrasos",ic:"⏱",t:"Atrasos sem justificativa",link:"eventos",lk:"Abrir Eventos (pontualidade)",
-  sub:()=>"pontualidade dos últimos 3 dias",cor:a=>a.some(e=>e.situacao==="refazer")?"red":"ora",
-  item:e=>({f:e.frota,cl:e.situacao==="refazer"?"red":"",l1:`<b>${esc(e.titulo||"")}</b>`,
-    l2:`${esc(e.empresa||"")} · ${chip(...(SITE[e.situacao]||[e.situacao,"c-gry"]))}${e.prazo?" · prazo "+dtBR(e.prazo):""}`,dir:dCurto(e.data)})},
- {k:"visitas",ic:"📅",t:"Visitas da Caliman",link:"visitas",lk:"Abrir Visitas aos carros",
-  sub:a=>{const p=a.filter(v=>v.status==="pendente").length;return p?p+" esperando sua resposta":"combinadas para hoje"},
-  cor:a=>a.some(v=>v.status==="pendente")?"ora":"grn",
-  item:v=>({f:(v.frotas||[])[0],cl:v.status==="pendente"?"":"grn",l1:`<b>${esc(v.autor||"")}</b> · ${esc(v.local||"")} ${(v.frotas||[]).length>1?"· carros "+v.frotas.map(esc).join(", "):""}`,
-    l2:`${chip(...(SITV[v.status]||[v.status,"c-gry"]))}${v.recado?" · "+esc(v.recado):""}`,
-    dir:dCurto(v.dia)+" "+esc(v.hora_combinada||v.hora_ini||"")})}
-];
-function desenharHoje(){
-  const h=HOJE;
-  $("sub").textContent="O que precisa de ação agora · atualizado às "+hBR(h.agora);
-  const vh=h.viagens_hoje||{};
-  const cel=lista(h.sem_sinal).length, tot=h.celulares_total||0;
-  $("resumo").innerHTML=`<span>📆 <b>${dBR(h.hoje)}</b></span>`+
-    (vh.total!=null?`<span>🚌 <b>${vh.total}</b> viagens hoje · <b>${vh.passageiros}</b> passageiros</span>`:"")+
-    (tot?`<span>📱 <b>${tot-cel}</b> de ${tot} celulares mandando dados</span>`:"");
-  $("cards").innerHTML=QUADROS.map(q=>{
-    const a=h[q.k];
-    if(a===undefined)return `<button class="card gry" data-q="${q.k}"><span class="ic">${q.ic}</span><b>…</b><span>${q.t}</span><small>carregando</small></button>`;
-    if(falhou(a))return `<button class="card gry" data-q="${q.k}"><span class="ic">${q.ic}</span><b>—</b><span>${q.t}</span><small>não instalado / erro</small></button>`;
-    const n=lista(a).length;
-    return `<button class="card ${n?q.cor(lista(a)):"grn"} ${ABERTO===q.k?"on":""}" data-q="${q.k}"><span class="ic">${q.ic}</span><b>${n||"✓"}</b><span>${q.t}</span><small>${n?esc(q.sub(lista(a))):"tudo certo"}</small></button>`;
-  }).join("");
-  document.querySelectorAll("#cards .card").forEach(b=>b.onclick=()=>{ABERTO=ABERTO===b.dataset.q?null:b.dataset.q;desenharHoje()});
-  // sem quadro escolhido: mostra todos os que têm itens, na ordem
-  const mostrar=ABERTO?QUADROS.filter(q=>q.k===ABERTO&&h[q.k]!==undefined):QUADROS.filter(q=>lista(h[q.k]).length||falhou(h[q.k]));
-  const carregando=QUADROS.some(q=>h[q.k]===undefined);
-  $("det").innerHTML=mostrar.length?mostrar.map(q=>secao(q,h[q.k])).join(""):(carregando?'':'<div class="vazio" style="margin-top:14px">Nada pedindo ação agora. 👍</div>');
-  if(ABERTO==="atrasos"&&lista(h.atrasos_rota).length)$("det").innerHTML+=secaoRota(h.atrasos_rota);
-}
-function secao(q,a){
-  const link=`<a class="btn sm" href="${LINK[q.link]}" target="_blank" rel="noopener">${q.lk} →</a>`;
-  if(falhou(a))return `<h2 class="sec">${q.ic} ${q.t} ${link}</h2><div class="vazio err">Não deu para ler: ${esc(a.erro)}</div>`;
-  a=lista(a);
-  const itens=a.length?a.slice(0,ABERTO?200:8).map(x=>{const r=q.item(x);
-    return `<div class="it ${r.cl||""}">${carroBtn(r.f)}<div class="tx"><div>${r.l1}</div><div class="l2">${r.l2||""}</div></div><div class="dir">${r.dir||""}</div></div>`}).join("")
-    :'<div class="vazio">Nada aqui agora.</div>';
-  const mais=!ABERTO&&a.length>8?`<button class="btn sm" data-ver="${q.k}" style="align-self:flex-start">Ver todos os ${a.length}</button>`:"";
-  return `<h2 class="sec">${q.ic} ${q.t} <span class="n">${a.length}</span> ${link}</h2><div class="lista">${itens}${mais}</div>`;
-}
-function secaoRota(a){
-  return `<h2 class="sec">🚏 Pontos da rota piloto com atraso hoje <span class="n">${a.length}</span><a class="btn sm" href="${LINK.rota}" target="_blank" rel="noopener">Abrir Rota →</a></h2><div class="lista">`+
-    a.map(p=>`<div class="it">${carroBtn(p.frota)}<div class="tx"><div><b>${p.atraso_min} min de atraso</b> · ${esc(p.ponto||"")}</div><div class="l2">${esc(p.rota||"")} · previsto ${esc(p.previsto||"")}</div></div><div class="dir">${hBR(p.chegada)}</div></div>`).join("")+"</div>";
-}
-document.addEventListener("click",e=>{const b=e.target.closest("[data-ver]");if(b){ABERTO=b.dataset.ver;desenharHoje();scrollTo(0,$("det").offsetTop-10)}});
-
 /* ---------------- FICHA DO ÔNIBUS ---------------- */
 async function abrirFicha(f){
   $("vHoje").classList.add("hidden");$("vFicha").classList.remove("hidden");$("bHoje").classList.remove("hidden");
@@ -315,7 +227,7 @@ function desenharFicha(r){
   // quadros de situação
   const tl=(cls,tit,val,sub)=>`<div class="tile ${cls}"><h4>${tit}</h4><b>${val}</b><small>${sub}</small></div>`;
   h+=`<div class="tiles">`+
-    (c0?tl(c0.min>60?"ora":"grn","📱 Celular",c0.min>60?"Sem sinal há "+tempo(c0.min):"Online",
+    (c0?tl(c0.min>2160?"red":c0.min>60?"":"grn","📱 Celular",c0.min>2160?"Sem sinal há "+tempo(c0.min):c0.min>60?"Último envio há "+tempo(c0.min):"Online",
         `Bateria ${c0.bateria==null?"?":c0.bateria+"%"}${c0.tomada?" · na tomada":" · fora da tomada"}${c0.versao?" · app "+esc(c0.versao):""}`)
        :falhou(r.celular)?tl("","📱 Celular","—","erro ao ler"):tl("","📱 Celular","Sem Monitor","nenhum celular com esse nº nos últimos 30 dias"))+
     tl(ocA.length?(ocA.some(o=>o.prioridade==="alta")?"red":"ora"):"grn","🛠 Ocorrências",ocA.length?ocA.length+" aberta"+(ocA.length>1?"s":""):"Nenhuma aberta",

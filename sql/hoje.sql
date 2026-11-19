@@ -190,7 +190,7 @@ begin
     select coalesce(jsonb_agg(t order by length(t), t), '[]'::jsonb) into x from (
       select normaliza_tag(frota) t from viagens where data_local >= d - 30
       union select e->>'frota' from jsonb_array_elements(_hj_celulares()) e where (e->>'min')::numeric < 7 * 1440
-      union select normaliza_tag(tag) from vistorias where data_vistoria >= d - 60) z where t is not null;
+      union select normaliza_tag(tag) from vistorias where data_vistoria >= d - 60) z where t is not null and t <> '00';
   exception when others then x := '[]'::jsonb; end;
   end if;
   r := jsonb_build_object('quem', q, 'hoje', d, 'agora', now(), 'cfg', cfg, 'carros', x, 'frota', f);
