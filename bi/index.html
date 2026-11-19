@@ -107,6 +107,7 @@ svg text{font:11px system-ui,sans-serif;fill:var(--mut)}
 .plot .ideal{position:absolute;left:0;right:0;border-top:2px dashed #0f172a;z-index:2;pointer-events:none}
 .plot .ideal span{position:absolute;right:0;top:-17px;font-size:11px;font-weight:700;background:#fff;padding:0 4px}
 .eixo{display:flex;justify-content:center;gap:3px}.eixo span{flex:1 1 0;max-width:60px;font-size:10px;color:#64748b;text-align:center;white-space:nowrap;overflow:visible}
+.tipH{background:#fff;border:0;padding:0 3px;font-size:11px;font-weight:700;box-shadow:none}
 </style>
 </head>
 <body>
@@ -219,6 +220,7 @@ async function entrar(tk){
 function padraoAba(id){
   if(id==="horarios"){const g=GRUPOS().find(g=>g.nome.trim().toUpperCase()==="ADM");
     $("fTurno").value=g?"G:"+g.nome:"";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=hoje();$("fPer").value="0"}
+  else if(id==="mapa_rotas"){$("fTurno").value="";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);$("fPer").value="6"}
   else if(id==="roteiro"){$("fTurno").value="";$("fLinha").value="";$("fSent").value="";$("fAte").value=hoje();$("fDe").value=menosDias(hoje(),6);$("fPer").value="6"}
 }
 function abasVisiveis(){
@@ -256,6 +258,7 @@ async function carregar(){
   if(ABA==="cercas")return telaCercas();
   if(ABA==="gerenciar")return telaGerenciar();
   if(!ABA){$("painel").innerHTML='<div class="vazio">Nenhum painel liberado para você.</div>';return}
+  limpaMapas();
   $("painel").innerHTML='<div class="vazio">Carregando…</div>';
   if(ABA==="viagens"&&$("fAte").value&&$("fDe").value&&(Date.parse($("fAte").value)-Date.parse($("fDe").value))/864e5<6){
     $("fDe").value=menosDias($("fAte").value,29);$("fPer").value="";}
@@ -265,7 +268,7 @@ async function carregar(){
     if(ABA==="horarios"||ABA==="roteiro")aviso=await processarCercas(de,ate);
     DADOS=await rpc("bi_dados",{p_token:TOKEN,p_painel:ABA,p_de:de,p_ate:ate,p_filtros:filtros()});
     if(ABA==="horarios"){HM=null;try{HM=await rpc("bi_horarios_motorista",{p_token:TOKEN,p_de:de,p_ate:ate})}catch(e){HM=null}juntaMot(DADOS.linhas||[])}
-    ({ocupacao:telaOcupacao,horarios:telaHorarios,roteiro:telaRoteiro,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad}[ABA]||(()=>{}))(DADOS);
+    ({ocupacao:telaOcupacao,horarios:telaHorarios,roteiro:telaRoteiro,fora_rota:telaFora,viagens:telaViagens,custo:telaCusto,nao_cad:telaNaoCad,mapa_rotas:telaMapaRotas}[ABA]||(()=>{}))(DADOS);
     if(aviso)$("painel").insertAdjacentHTML("afterbegin",'<div class="note" style="color:#b45309">'+esc(aviso)+'</div>');
   }catch(err){$("painel").innerHTML='<div class="vazio">Erro: '+esc(err.message)+'</div>'}
 }
@@ -360,19 +363,65 @@ $("painel").addEventListener("click",e=>{const el=e.target.closest("[data-dt]");
   drill(el.dataset.dt,el.dataset.dc,el.dataset.dv,el.dataset.dc2,el.dataset.dv2)});
 
 /* ---------------- Ocupação ---------------- */
+// faixas de ocupação (mesmas cores em todo o painel)
+const FX=[{k:"vazias",t:"Sobrando lugar",d:"menos de 50% dos lugares",c:"#f59e0b"},{k:"boas",t:"Boa",d:"de 50% a 88%",c:"#16a34a"},
+          {k:"cheias",t:"Cheia",d:"89% ou mais",c:"#f97316"},{k:"lotadas",t:"Lotada",d:"todos os lugares ocupados",c:"#dc2626"}];
+const corPct=(v,lug,med)=>v==null?"#94a3b8":(med!=null&&lug&&med>=lug)||v>=100?"#dc2626":v>=89?"#f97316":v>=50?"#16a34a":"#f59e0b";
+function barraFaixas(f){
+  const tot=FX.reduce((a,x)=>a+(+f[x.k]||0),0);if(!tot)return'<div class="note">Nenhuma viagem com leitura de passageiros no período.</div>';
+  return'<div style="display:flex;height:34px;border-radius:8px;overflow:hidden;margin:6px 0 10px">'+FX.map(x=>{const n=+f[x.k]||0,pc=100*n/tot;
+      return n?'<div title="'+esc(x.t+": "+n+" viagens ("+Math.round(pc)+"%)")+'" style="width:'+pc.toFixed(2)+'%;background:'+x.c+';color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden">'+(pc>=6?Math.round(pc)+"%":"")+'</div>':''}).join("")+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">'+FX.map(x=>'<div><b style="color:'+x.c+'">● '+esc(x.t)+'</b> · '+nf(+f[x.k]||0)+' viagem(ns)<div class="note">'+esc(x.d)+'</div></div>').join("")+'</div>';
+}
+// ocupação média por dia em %, cor pela faixa, linha em 100%
+function colunasPct(lista,lug){
+  if(!lista||!lista.length)return'<div class="note">Nenhuma viagem com leitura de passageiros no período.</div>';
+  const mx=Math.max(110,...lista.map(x=>+x.pct||0)),n=lista.length,rot=n<=20?1:Math.ceil(n/20),mostraV=n<=45;
+  let h='<div class="colw"><div class="plot" style="min-width:'+(n*12)+'px">';
+  [50,100].forEach(f=>h+='<div class="grade" style="bottom:'+(100*f/mx)+'%"><span>'+f+'%</span></div>');
+  lista.forEach(x=>{const v=+x.pct||0;h+='<div class="c dr"'+drA("viagens","dia",x.dia)+' title="'+esc(dBR(x.dia)+": ocupação média "+nf(v)+"% ("+nf(x.media)+" de "+lug+" lugares) em "+x.viagens+" viagens"+(x.lotadas?", "+x.lotadas+" lotada(s)":"")+" · clique para ver")+'">'
+    +(mostraV?'<b>'+Math.round(v)+'</b>':'')+'<i style="height:'+(100*v/mx).toFixed(1)+'%;background:'+corPct(v)+'"></i></div>'});
+  h+='<div class="ideal" style="bottom:'+(100*100/mx).toFixed(1)+'%;border-color:#dc2626"></div>';
+  return h+'</div><div class="eixo" style="min-width:'+(n*12)+'px">'+lista.map((x,i)=>'<span>'+(i%rot===0?dCurto(x.dia):'')+'</span>').join("")+'</div></div>'
+    +'<div class="note">Número em cima da barra = % dos lugares ocupados, em média, nas viagens do dia. Linha vermelha = ônibus cheio (100%).</div>';
+}
+// ocupação por linha: barra horizontal em %, ordenada da mais cheia para a mais vazia
+function linhasPct(lista,lug){
+  const L=(lista||[]).filter(x=>x.pct!=null).sort((a,b)=>b.pct-a.pct);if(!L.length)return'<div class="note">Sem leitura de passageiros nas viagens do período.</div>';
+  const mx=Math.max(100,...L.map(x=>x.pct));
+  return'<div class="scroll" style="max-height:440px;overflow:auto"><table class="rk">'+L.map(x=>'<tr class="dr"'+drA("viagens","linha",x.linha)+' title="clique para ver as viagens"><td style="width:38%">'+esc(x.linha)+'</td><td>'
+    +'<div style="position:relative;height:18px;background:var(--card2);border-radius:4px"><i style="position:absolute;left:0;top:0;bottom:0;width:'+(100*x.pct/mx).toFixed(1)+'%;background:'+corPct(x.pct)+';border-radius:4px"></i>'
+    +'<i style="position:absolute;top:-2px;bottom:-2px;left:'+(100*100/mx).toFixed(1)+'%;border-left:2px dashed #dc2626"></i></div></td>'
+    +'<td class="n" style="width:150px">'+nf(x.pct)+'% <span class="note" style="font-weight:400">'+nf(x.media_ocup)+' de '+lug+'</span></td></tr>').join("")+'</table></div>'
+    +'<div class="note">Tracejado vermelho = todos os '+lug+' lugares ocupados. Média das viagens que tiveram leitura de passageiros.</div>';
+}
+const STX={"REGULAR":"embarcou na própria linha de cadastro","NAO CADASTRADO":"crachá lido, mas a pessoa não está cadastrada em nenhuma linha","ITINERANTE":"cadastrado, mas usando outra linha (fora de rota)","INATIVO":"cadastro desativado na TFleet","SEM STATUS":"a TFleet não informou"};
 function telaOcupacao(d){
-  const k=d.kpi||{};
+  if(MAPA_OC){try{MAPA_OC.remove()}catch(e){}MAPA_OC=null}
+  const k=d.kpi||{},lug=k.lugares||0;
   const turnos={};(d.por_turno||[]).forEach(x=>{(turnos[x.turno]=turnos[x.turno]||{turno:x.turno,n:0,emp:[]}).n+=x.n;turnos[x.turno].emp.push(x)});
   const tl=Object.values(turnos).sort((a,b)=>b.n-a.n);
-  $("painel").innerHTML='<div class="kpis">'+kpi(nf(k.embarques),"embarques")+kpi(nf(k.pessoas),"pessoas diferentes")+kpi(nf(k.viagens),"viagens")
-    +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","média das viagens com leitura")
-    +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média","sobre "+k.lugares+" lugares",k.pct>=89?"bad":k.pct<50?"warn":"ok")+'</div>'
+  const st=(d.por_status||[]),stT=st.reduce((a,x)=>a+x.n,0);
+  $("painel").innerHTML='<div class="faixa info"><b>Como ler:</b> ocupação = passageiros na viagem ÷ lugares do ônibus ('+lug+'). Exemplo: 33 passageiros num ônibus de '+lug+' lugares = '+(lug?Math.round(3300/lug):"—")+'%. '
+      +'Só entram na conta as viagens em que a TFleet leu os crachás.</div>'
+    +'<div class="kpis">'+kpi(nf(k.embarques),"embarques","cada leitura de crachá conta 1")+kpi(nf(k.pessoas),"pessoas diferentes","a mesma pessoa conta 1 vez")+kpi(nf(k.viagens),"viagens")
+    +kpi(k.media_ocup==null?"—":nf(k.media_ocup),"passageiros por viagem","em média, de "+lug+" lugares")
+    +kpi(k.pct==null?"—":nf(k.pct)+"%","ocupação média",k.pct==null?"":"de cada 10 lugares, "+nf(Math.round(k.pct/10))+" ocupados",k.pct>=89?"bad":k.pct<50?"warn":"ok")+'</div>'
+    +'<div class="box"><h3>Como estão as viagens</h3><div class="note">Cada viagem entra numa faixa pela quantidade de passageiros.</div>'+barraFaixas(d.faixas||{})+'</div>'
+    +'<div class="box"><h3>Ocupação média por dia <span class="r note">clique na barra para ver as viagens do dia</span></h3>'+colunasPct(d.ocup_dia,lug)+'</div>'
+    +'<div class="box"><h3>Ocupação por linha <span class="r note">da mais cheia para a mais vazia · clique para ver as viagens</span></h3>'+linhasPct(d.por_linha,lug)
+      +'<details style="margin-top:8px"><summary class="note">Ver tabela completa (viagens, embarques, pessoas)</summary><div id="tLinha"></div></details></div>'
     +'<div class="box"><h3>Pessoas transportadas por dia <span class="r note">clique na barra para ver quem embarcou</span></h3>'+colunasDia(d.por_dia,"embarques",null,{t:"embarques",c:"dia"})+'</div>'
-    +'<div class="cols3"><div class="box"><h3>Por linha <span class="r note">clique na linha para ver as viagens</span></h3><div id="tLinha"></div></div>'
-    +'<div><div class="box"><h3>Status dos passageiros</h3>'+barras(d.por_status,"status","n",null,null,{t:"embarques",c:"status",k:"status"})+'</div>'
-    +'<div class="box"><h3>Turno → empresa</h3>'+tl.map(t=>'<details><summary><b>'+esc(t.turno)+'</b> · '+nf(t.n)+'</summary>'+barras(t.emp.sort((a,b)=>b.n-a.n),"empresa","n",null,15,{t:"embarques",c:"empresa",k:"empresa"})+'</details>').join("")+'</div></div></div>';
+    +'<div class="box"><h3>Onde os passageiros embarcam <span class="r note">cada bolinha junta os embarques num raio de ~10 m · clique para ver as linhas</span></h3>'
+    +'<div id="mOcup" style="height:460px;border-radius:8px"></div><div class="note" style="margin-top:6px"><b style="color:#38bdf8">●</b> poucos <b style="color:#facc15">●</b> <b style="color:#f97316">●</b> <b style="color:#dc2626">●</b> muitos embarques'
+    +(d.sem_gps?' · '+nf(d.sem_gps)+' embarque(s) sem GPS válido ficaram fora do mapa':'')+'. Para comparar com os pontos oficiais, use a aba <b>Mapa das rotas</b>.</div></div>'
+    +'<div class="cols3"><div class="box"><h3>Quem são os passageiros</h3>'
+      +st.map(x=>'<div class="dr" style="padding:6px 0;border-top:1px solid var(--line)"'+drA("embarques","status",x.status)+' title="clique para ver quem embarcou"><b>'+esc(x.status)+'</b> · '+nf(x.n)+' ('+(stT?Math.round(100*x.n/stT):0)+'%)<div class="note">'+esc(STX[x.status]||"")+'</div>'
+        +'<div class="barra" style="height:6px;background:var(--blubg);border-radius:3px;margin-top:3px"><i style="display:block;height:6px;border-radius:3px;background:'+(x.status==="REGULAR"?"#16a34a":"#f59e0b")+';width:'+(stT?(100*x.n/stT).toFixed(1):0)+'%"></i></div></div>').join("")+'</div>'
+    +'<div class="box"><h3>Turno → empresa <span class="r note">embarques de cada empresa em cada turno</span></h3>'+tl.map(t=>'<details><summary><b>'+esc(t.turno)+'</b> · '+nf(t.n)+'</summary>'+barras(t.emp.sort((a,b)=>b.n-a.n),"empresa","n",null,15,{t:"embarques",c:"empresa",k:"empresa"})+'</details>').join("")+'</div></div>';
   tabela("tLinha",[{k:"linha",t:"Linha",w:1},{k:"viagens",t:"Viagens",num:1},{k:"embarques",t:"Embarques",num:1},{k:"pessoas",t:"Pessoas",num:1},
     {k:"media_ocup",t:"Média por viagem",num:1},{k:"pct",t:"Ocupação %",num:1,f:v=>v==null?"—":'<span class="chip '+(v>=89?"c-bad":v<50?"c-warn":"c-ok")+'">'+nf(v)+'%</span>'}],d.por_linha||[],"ocupacao_por_linha",r=>({t:"viagens",c:"linha",v:r.linha}));
+  mapaOcupacao(d);
 }
 
 /* ---------------- Horários de entrada e saída ---------------- */
@@ -683,6 +732,98 @@ function telaNaoCad(d){
   tabela("tNc",[{k:"status",t:"Status"},{k:"nome",t:"Nome",f:v=>esc(nomeCurto(v))},{k:"cracha",t:"Crachá"},{k:"matricula",t:"Matrícula"},{k:"empresa",t:"Empresa",w:1},
     {k:"linha_cadastro",t:"Linha de cadastro",w:1},{k:"linhas",t:"Linhas que usou",w:1},{k:"vezes",t:"Embarques",num:1},{k:"ultimo",t:"Último",f:dBR}],d.lista||[],"nao_cadastrados");
 }
+
+/* ---------------- mapas de embarque ---------------- */
+// distância em metros (aproximação plana, boa para poucos km) e até um trecho da rota
+const mXY=(la,lo,la0)=>[lo*111320*Math.cos(la0*Math.PI/180),la*110540];
+function dPonto(a,b){const p=mXY(a[0],a[1],a[0]),q=mXY(b[0],b[1],a[0]);return Math.hypot(p[0]-q[0],p[1]-q[1])}
+function dTracado(a,pts){let mn=Infinity;for(let i=0;i<pts.length-1;i++){
+  const p=mXY(a[0],a[1],a[0]),u=mXY(pts[i][0],pts[i][1],a[0]),v=mXY(pts[i+1][0],pts[i+1][1],a[0]);
+  const dx=v[0]-u[0],dy=v[1]-u[1],L2=dx*dx+dy*dy;let t=L2?((p[0]-u[0])*dx+(p[1]-u[1])*dy)/L2:0;t=Math.max(0,Math.min(1,t));
+  const d=Math.hypot(p[0]-u[0]-t*dx,p[1]-u[1]-t*dy);if(d<mn)mn=d}
+  return pts.length===1?dPonto(a,pts[0]):mn}
+// nome da linha para casar embarque (API de ocupação) com a rota do mapa gerencial: sem acento, caixa, "- PASSAGEIRO" e espaços
+const nmL=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase().replace(/\s*-\s*PASSAGEIRO\s*$/,"").replace(/\s*-\s*/g," - ").replace(/\s+/g," ").trim();
+const corN=(n,mx)=>{const f=Math.min(1,Math.log(1+n)/Math.log(1+mx));return f>.75?"#dc2626":f>.5?"#f97316":f>.25?"#facc15":"#38bdf8"};
+let MAPA_OC=null;
+// Leaflet: redesenho pendente do canvas depois que o mapa foi removido (troca de aba) dava erro; ignora
+{const r0=L.Canvas.prototype._redraw;L.Canvas.prototype._redraw=function(){if(this._ctx)return r0.apply(this,arguments)}}
+// tira os mapas do Leaflet antes de trocar o painel (senão ele tenta redesenhar num mapa que sumiu)
+function limpaMapas(){[MAPA_OC,MAPA_MR].forEach(m=>{if(m)try{m.remove()}catch(e){}});MAPA_OC=MAPA_MR=null}
+function mapaOcupacao(d){
+  const P=d.mapa||[];if(!$("mOcup"))return;
+  if(!P.length){$("mOcup").outerHTML='<div class="note">Nenhum embarque com localização no período.</div>';return}
+  const m=MAPA_OC=L.map("mOcup",{preferCanvas:true}).setView(CENTRO,12);
+  L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(m);
+  const mx=P[0][2],b=[];
+  P.slice().reverse().forEach(([la,lo,n,p,ls])=>{b.push([la,lo]);
+    L.circleMarker([la,lo],{radius:Math.min(18,3+Math.sqrt(n)),color:"#fff",weight:1,fillColor:corN(n,mx),fillOpacity:.85}).addTo(m)
+     .bindPopup('<b>'+nf(n)+' embarque(s)</b> · '+nf(p)+' pessoa(s)<br>'+(ls||[]).map(esc).join("<br>"))});
+  m.fitBounds(L.latLngBounds(b).pad(.05),{maxZoom:15,animate:false});
+}
+let MR=null,MR_ROTA="",MR_RAIO=150,MR_DESV=300,MAPA_MR=null;
+function telaMapaRotas(d){
+  if(MAPA_MR){try{MAPA_MR.remove()}catch(e){}MAPA_MR=null}   // antes de trocar o HTML (senão o Leaflet tenta desenhar num mapa que sumiu)
+  const R=(d.rotas||[]).map(r=>({...r,k:nmL(r.linha),pontos:r.pontos||[],paradas:(r.paradas||[]).filter(p=>p&&p.lat!=null)}));
+  const porK={};R.forEach(r=>{(porK[r.k]=porK[r.k]||{})[r.sentido]=r});
+  // classifica cada lugar de embarque comparando com a rota (mesmo nome e sentido; sem o sentido, a do outro sentido)
+  const E=(d.emb||[]).map(([linha,sentido,la,lo,n,p,dias,h1,h2],i)=>{
+    const g=porK[nmL(linha)],r=g&&(g[sentido]||g.IDA||g.VOLTA);const x={i,linha,sentido,la,lo,n,p,dias,h1,h2,rota:r||null};
+    if(!r){x.cl="sem_rota";return x}
+    let dp=Infinity,pp=null;r.paradas.forEach(q=>{const v=dPonto([la,lo],[q.lat,q.lon]);if(v<dp){dp=v;pp=q}});
+    x.dp=dp===Infinity?null:Math.round(dp);x.pp=pp;x.dt=r.pontos.length?Math.round(dTracado([la,lo],r.pontos)):null;
+    x.cl=x.dp!=null&&x.dp<=MR_RAIO?"oficial":(x.dt==null||x.dt<=MR_DESV)?"nao_oficial":"desvio";return x});
+  MR={d,R,E};
+  const nomes=[...new Set(R.map(r=>r.linha).concat(E.map(e=>e.linha)))].sort((a,b)=>a.localeCompare(b,"pt-BR"));
+  if(MR_ROTA&&!nomes.includes(MR_ROTA))MR_ROTA="";
+  const Ef=E.filter(e=>!MR_ROTA||e.linha===MR_ROTA||(e.rota&&e.rota.linha===MR_ROTA));
+  const s={};Ef.forEach(e=>s[e.cl]=(s[e.cl]||0)+e.n);const tot=Ef.reduce((a,e)=>a+e.n,0),pc=k=>tot?Math.round(100*(s[k]||0)/tot)+"% dos embarques":"";
+  const CL={oficial:["#16a34a","no ponto oficial"],nao_oficial:["#f59e0b","fora do ponto, no caminho da rota"],desvio:["#dc2626","longe do traçado da rota"],sem_rota:["#94a3b8","linha sem rota no mapa gerencial"]};
+  $("painel").innerHTML=(R.length?'':'<div class="faixa info">O traçado das rotas ainda não chegou ao banco (tabela rotas_tracado, vem do coletor do mapa gerencial na TV Box). Os embarques aparecem, mas sem comparar com os pontos oficiais.</div>')
+    +'<div class="kpis">'+kpi(nf(tot),"embarques com localização",d.sem_gps?nf(d.sem_gps)+" embarques do período sem GPS válido ficaram de fora":"")
+    +kpi(nf(s.oficial||0),"no ponto oficial",pc("oficial"),"ok")+kpi(nf(s.nao_oficial||0),"fora do ponto oficial",pc("nao_oficial"),"warn")
+    +kpi(nf(s.desvio||0),"longe do traçado",pc("desvio"),"bad")+kpi(nf(s.sem_rota||0),"sem rota cadastrada",pc("sem_rota"))+'</div>'
+    +'<div class="box"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+    +'<label>Rota <select id="mrRota"><option value="">Todas ('+nomes.length+')</option>'+nomes.map(n=>'<option'+(n===MR_ROTA?" selected":"")+'>'+esc(n)+'</option>').join("")+'</select></label>'
+    +'<label>Ponto oficial até <select id="mrRaio">'+[50,100,150,200,300].map(v=>'<option value="'+v+'"'+(v===MR_RAIO?" selected":"")+'>'+v+' m</option>').join("")+'</select></label>'
+    +'<label>Longe do traçado acima de <select id="mrDesv">'+[150,300,500,1000].map(v=>'<option value="'+v+'"'+(v===MR_DESV?" selected":"")+'>'+v+' m</option>').join("")+'</select></label></div>'
+    +'<div id="mMR" style="height:600px;border-radius:8px"></div>'
+    +'<div class="note" style="margin-top:6px">'+Object.values(CL).map(([c,t])=>'<b style="color:'+c+'">●</b> '+t).join(" &nbsp; ")+' &nbsp; · linha = traçado da rota (azul ida, roxo volta) · ■ branco = ponto oficial com o horário previsto. O tamanho da bolinha é a quantidade de embarques no lugar.</div></div>'
+    +'<div class="box"><h3>Lugares de embarque fora dos pontos oficiais <span class="r note">agrupados a cada ~100 m · clique em "ver" para achar no mapa</span></h3><div id="tMR"></div></div>';
+  // lugares fora do ponto: agrupa a ~100 m por linha e sentido
+  const G={};Ef.filter(e=>e.cl==="nao_oficial"||e.cl==="desvio").forEach(e=>{const k=e.linha+"|"+e.sentido+"|"+e.la.toFixed(3)+"|"+e.lo.toFixed(3);
+    const g=G[k]=G[k]||{linha:e.linha,sentido:e.sentido,n:0,p:0,dias:0,h1:e.h1,h2:e.h2,la:0,lo:0,dp:e.dp,dt:e.dt,cl:e.cl,pp:e.pp};
+    g.la+=e.la*e.n;g.lo+=e.lo*e.n;g.n+=e.n;g.p=Math.max(g.p,e.p);g.dias=Math.max(g.dias,e.dias);if(e.h1<g.h1)g.h1=e.h1;if(e.h2>g.h2)g.h2=e.h2;
+    if(e.dp!=null&&(g.dp==null||e.dp<g.dp)){g.dp=e.dp;g.pp=e.pp}if(e.cl==="desvio")g.cl="desvio"});
+  const LG=Object.values(G).map((g,i)=>({...g,la:g.la/g.n,lo:g.lo/g.n,_i:i,situacao:CL[g.cl][1],horas:g.h1===g.h2?g.h1:g.h1+"–"+g.h2,
+    ponto:g.pp?(g.pp.endereco||"")+(g.pp.horario?" ("+g.pp.horario+")":""):"—"})).sort((a,b)=>b.n-a.n);
+  MR.LG=LG;
+  tabela("tMR",[{k:"linha",t:"Linha",w:1},{k:"sentido",t:"Sentido"},{k:"n",t:"Embarques",num:1},{k:"p",t:"Pessoas (máx. num lugar)",num:1},{k:"dias",t:"Dias (máx.)",num:1},
+    {k:"horas",t:"Horário"},{k:"dp",t:"Até o ponto oficial (m)",num:1},{k:"ponto",t:"Ponto oficial mais perto",w:1},{k:"dt",t:"Até o traçado (m)",num:1},
+    {k:"situacao",t:"Situação",f:(v,r)=>'<span class="chip '+(r.cl==="desvio"?"c-bad":"c-warn")+'">'+esc(v)+'</span>'},{k:"_i",t:"",f:v=>'<a href="#" data-mrv="'+v+'">ver</a>'}],LG,"embarques_fora_do_ponto");
+  $("mrRota").onchange=()=>{MR_ROTA=$("mrRota").value;telaMapaRotas(d)};
+  $("mrRaio").onchange=()=>{MR_RAIO=+$("mrRaio").value;telaMapaRotas(d)};
+  $("mrDesv").onchange=()=>{MR_DESV=+$("mrDesv").value;telaMapaRotas(d)};
+  // mapa
+  const m=MAPA_MR=L.map("mMR",{preferCanvas:true}).setView(CENTRO,12);
+  L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(m);
+  const b=[],um=!!MR_ROTA;
+  R.filter(r=>!um||r.linha===MR_ROTA).forEach(r=>{
+    if(r.pontos.length>1){L.polyline(r.pontos,{color:r.sentido==="VOLTA"?"#a855f7":"#3b82f6",weight:um?5:3,opacity:um?.9:.55}).addTo(m)
+      .bindPopup('<b>'+esc(r.linha)+'</b><br>'+esc(r.sentido)+(r.km?' · '+nf(r.km)+' km':'')+(r.cadastrados?' · '+nf(r.cadastrados)+' cadastrados':''));if(um)r.pontos.forEach(p=>b.push(p))}
+    r.paradas.forEach(q=>{const mk=L.circleMarker([q.lat,q.lon],{radius:um?6:4,color:"#111",weight:2,fillColor:"#fff",fillOpacity:1}).addTo(m)
+      .bindPopup('<b>Ponto oficial</b> · '+esc(r.linha)+' ('+esc(r.sentido)+')<br>'+esc(q.endereco||"")+(q.horario?'<br>Previsto: <b>'+esc(q.horario)+'</b>':''));
+      if(um&&q.horario)mk.bindTooltip(esc(q.horario),{permanent:true,direction:"top",className:"tipH"})})});
+  const mx=Math.max(1,...Ef.map(e=>e.n));
+  Ef.slice().sort((a,b)=>a.n-b.n).forEach(e=>{b.push([e.la,e.lo]);
+    L.circleMarker([e.la,e.lo],{radius:Math.min(14,3+2*Math.sqrt(e.n)),color:"#fff",weight:1,fillColor:CL[e.cl][0],fillOpacity:.9}).addTo(m)
+      .bindPopup('<b>'+esc(e.linha)+'</b> · '+esc(e.sentido)+'<br>'+nf(e.n)+' embarque(s), '+nf(e.p)+' pessoa(s), '+nf(e.dias)+' dia(s)<br>Horário: '+esc(e.h1===e.h2?e.h1:e.h1+"–"+e.h2)
+        +'<br><b style="color:'+CL[e.cl][0]+'">'+CL[e.cl][1]+'</b>'+(e.dp!=null?'<br>'+nf(e.dp)+' m do ponto oficial mais perto'+(e.pp&&e.pp.horario?' (previsto '+esc(e.pp.horario)+')':''):'')+(e.dt!=null?'<br>'+nf(e.dt)+' m do traçado':''))});
+  if(b.length)m.fitBounds(L.latLngBounds(b).pad(.05),{maxZoom:16,animate:false});
+}
+$("painel").addEventListener("click",e=>{const a=e.target.closest("[data-mrv]");if(!a||!MR||!MAPA_MR)return;e.preventDefault();
+  const g=MR.LG[+a.dataset.mrv];if(!g)return;$("mMR").scrollIntoView({behavior:"smooth",block:"center"});MAPA_MR.setView([g.la,g.lo],17);
+  L.popup().setLatLng([g.la,g.lo]).setContent('<b>'+esc(g.linha)+'</b> · '+esc(g.sentido)+'<br>'+nf(g.n)+' embarque(s) aqui · '+esc(g.horas)+'<br>'+esc(g.situacao)+(g.dp!=null?'<br>'+nf(g.dp)+' m do ponto oficial: '+esc(g.ponto):'')).openOn(MAPA_MR)});
 
 /* ---------------- mapa ---------------- */
 function novoMapa(id){
