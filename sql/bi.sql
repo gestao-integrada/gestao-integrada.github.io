@@ -84,7 +84,7 @@ $$;
 
 -- posição de embarque aproveitável: dentro da região da operação (Pará e arredores). Fora disso é leitura errada (0,0 ou outro estado).
 create or replace function public._bi_gps_ok(la float8, lo float8) returns boolean
-language sql immutable as $$ select la between -7 and 0 and lo between -52 and -45 $$;
+language sql immutable as $$ select coalesce(la between -7 and 0 and lo between -52 and -45, false) $$;
 
 -- distância em metros entre dois pontos (aproximação plana, boa para poucos km)
 create or replace function public._bi_m(la1 float8, lo1 float8, la2 float8, lo2 float8) returns float8
