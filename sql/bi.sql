@@ -222,6 +222,12 @@ end $$;
 create index if not exists viagens_hist_data on public.viagens_hist (data_local);
 -- os painéis de embarques filtram por data: sem este índice o banco lia a tabela inteira (timeout na Ocupação)
 create index if not exists embarques_data on public.embarques (data_local);
+-- empresa do embarque guardada à parte (calculada pelo banco a cada coleta), para não abrir o JSON bruto em toda consulta
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'embarques' and column_name = 'empresa_bi') then
+    alter table public.embarques add column empresa_bi text generated always as (bruto->>'empresa') stored;
+  end if;
+end $$;
 create index if not exists viagens_data on public.viagens (data_local desc);
 alter table public.viagens_hist enable row level security;
 revoke all on public.viagens_hist from anon, authenticated;
@@ -231,15 +237,19 @@ revoke all on public.viagens_hist from anon, authenticated;
 create or replace function public._bi_viagens(p_de date, p_ate date)
 returns setof public.viagens
 language sql stable security definer set search_path = public as $$
+  -- 1º escolhe qual viagem vale só pelas chaves (leve); depois busca o registro inteiro só das escolhidas.
+  -- (antes ordenava o registro inteiro, com o JSON bruto da TFleet, e isso estourava o tempo da Ocupação/Horários)
+  with k as (
+    select 0 as pr, x.id, coalesce(x.frota, x.placa) as carro, x.saida_ts, x.coletado_em from viagens x where x.data_local between p_de and p_ate
+    union all
+    select 1, h.id, coalesce(h.frota, h.placa), h.saida_ts, h.coletado_em from viagens_hist h where h.data_local between p_de and p_ate),
+  esc as (select distinct on (carro, saida_ts) pr, id from k order by carro, saida_ts, pr, coletado_em desc)
+  select x.* from viagens x where x.data_local between p_de and p_ate and x.id in (select id from esc where pr = 0)
+  union all
   -- registro inteiro (funciona com qualquer coluna a mais que a tabela viagens tenha)
-  select (z.v).*
-  from (
-    select distinct on (coalesce((u.v).frota, (u.v).placa), (u.v).saida_ts) u.v
-    from (select x as v, 0 as pr from viagens x where x.data_local between p_de and p_ate
-          union all
-          select jsonb_populate_record(null::public.viagens, to_jsonb(h)), 1 from viagens_hist h where h.data_local between p_de and p_ate) u
-    order by coalesce((u.v).frota, (u.v).placa), (u.v).saida_ts, u.pr, (u.v).coletado_em desc
-  ) z;
+  -- (lateral: assim a conversão roda 1 vez por linha, e não 1 vez por coluna)
+  select r.*
+  from viagens_hist h cross join lateral jsonb_populate_record(null::public.viagens, to_jsonb(h)) r where h.data_local between p_de and p_ate and h.id in (select id from esc where pr = 1);
 $$;
 
 -- empresa como no .pbix (junta as variações da Hydro)
@@ -683,7 +693,8 @@ revoke execute on function public._bi_horarios(date, date) from public, anon, au
 -- p_filtros: {"linha": "...", "tipolinha": "...", "sentido": "IDA|VOLTA"}
 create or replace function public.bi_dados(p_token text, p_painel text, p_de date, p_ate date, p_filtros jsonb default '{}'::jsonb)
 returns json
-language plpgsql security definer set search_path = public as $$
+-- jit off: a compilação JIT do Postgres somava ~1–2 s em consultas que levam 0,2 s
+language plpgsql security definer set search_path = public set jit = off as $$
 declare q jsonb := public._bi_exige(p_token); ed boolean := (q->>'edita')::boolean; sit text;
         fl text := nullif(trim(p_filtros->>'linha'), ''); ft text := nullif(upper(trim(p_filtros->>'tipolinha')), ''); fg jsonb;
         fs text := nullif(upper(trim(p_filtros->>'sentido')), ''); cfg bi_config; res json;
@@ -707,7 +718,7 @@ begin
     insert into _bi_e (id, data_local, hora, nome, matricula, tipopassageiro, placa, frota, tipolinha, turno, linha, sentido, lat, lon,
                        linhapassageiro, ga, gg, centrocusto, bruto)
     select e.id, e.data_local, e.hora, e.nome, e.matricula, e.tipopassageiro, e.placa, e.frota, e.tipolinha, e.turno, e.linha, e.sentido, e.lat, e.lon,
-           e.linhapassageiro, e.ga, e.gg, e.centrocusto, jsonb_build_object('empresa', e.bruto->>'empresa')
+           e.linhapassageiro, e.ga, e.gg, e.centrocusto, jsonb_build_object('empresa', e.empresa_bi)
     from embarques e
      where e.data_local between p_de and p_ate
        and (fl is null or e.linha = fl) and (ft is null or upper(trim(e.tipolinha)) = ft) and (fg is null or public._bi_linha_ok(e.tipolinha, e.linha, fg, null)) and (fs is null or upper(trim(e.sentido)) = fs);

@@ -28,5 +28,8 @@ end $do$;
 select painel, dias, ms,
        case when ok <> 'ok' then 'ERRO: ' || ok when ms > 2500 then 'LENTO (vai dar timeout no site)' when ms > 1500 then 'no limite' else 'ok' end as situacao,
        (select pg_size_pretty(pg_total_relation_size('public.embarques'))) as tamanho_embarques,
-       (select count(*) from public.embarques) as linhas_embarques
+       (select count(*) from public.embarques) as linhas_embarques,
+       (select pg_size_pretty(pg_total_relation_size('public.viagens'))) as tamanho_viagens,
+       (select count(*) from public.viagens) as linhas_viagens,
+       (select string_agg(indexname, ', ') from pg_indexes where tablename = 'viagens') as indices_viagens
 from _bi_teste order by ms desc;
