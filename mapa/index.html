@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mapa ao vivo · Gestão Integrada</title>
+<meta name="theme-color" content="#16324f">
+<link rel="stylesheet" href="../rota/leaflet.css">
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--ink:#0f172a;--mut:#5b6678;--line:#e4e8f0;--brand:#2563eb;
+  --ok:#16a34a;--atr:#ea580c;--sem:#64748b;--lot:#dc2626;--che:#ca8a04;--sv:#0ea5e9;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+.btn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 11px;font-weight:600;font-size:13px}
+.btn.p{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.sm{padding:3px 8px;font-size:12px}
+/* login */
+#vLogin{display:flex;align-items:center;justify-content:center;min-height:100%;padding:16px}
+#vLogin form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;width:100%;max-width:340px;box-shadow:0 4px 16px rgba(15,23,42,.08)}
+#vLogin h1{font-size:19px;margin:0 0 4px}
+#vLogin p{color:var(--mut);margin:0 0 14px;font-size:13px}
+#vLogin input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:10px}
+.msg{font-size:13px;color:var(--mut);margin-top:8px}.msg.err{color:var(--lot)}
+/* app */
+#vApp{display:grid;grid-template-columns:330px 1fr;grid-template-rows:auto 1fr;height:100%}
+header{grid-column:1/3;display:flex;gap:8px;align-items:center;padding:8px 12px;background:#16324f;color:#fff;flex-wrap:wrap}
+header h1{font-size:16px;margin:0;margin-right:auto}
+header .sub{font-size:12px;opacity:.8}
+header .btn{color:var(--ink)}
+header label{font-size:12px;display:flex;align-items:center;gap:4px;white-space:nowrap}
+aside{background:var(--card);border-right:1px solid var(--line);overflow:auto;display:flex;flex-direction:column}
+#mapa{height:100%;width:100%}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:10px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:6px 8px;background:#fff;text-align:left}
+.kpi b{display:block;font-size:20px;line-height:1.1}
+.kpi span{font-size:11px;color:var(--mut)}
+.kpi.on{outline:2px solid var(--brand)}
+.kpi i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.busca{padding:0 10px 8px}
+.busca input{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.lista{flex:1;overflow:auto;border-top:1px solid var(--line)}
+.it{display:flex;gap:8px;align-items:flex-start;padding:7px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+.it:hover{background:#f6f8fc}
+.it .n{min-width:38px;height:24px;border-radius:12px;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+.it .t{font-size:12.5px;min-width:0}
+.it .t b{font-size:13px}
+.it .t div{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.sec{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;padding:8px 10px 4px;background:#f8fafc}
+.pin{width:40px;height:24px;border-radius:12px;color:#fff;font:800 12px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.pin.vel::after{content:"";position:absolute;right:-4px;top:-4px;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid currentColor}
+.pop{font-size:13px;min-width:220px}
+.pop h3{margin:0 0 4px;font-size:15px}
+.pop .tag{display:inline-block;color:#fff;border-radius:999px;padding:0 8px;font-size:11px;font-weight:700}
+.pop table{border-collapse:collapse;margin:6px 0}
+.pop td{padding:1px 6px 1px 0;vertical-align:top}.pop td:first-child{color:var(--mut)}
+.pop .acts{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.leg{background:#fff;padding:6px 9px;border-radius:8px;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.3);line-height:1.6}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.aviso{margin:0 10px 8px;font-size:12px;background:#fff1e6;color:#9a3412;border-radius:8px;padding:6px 8px}
+@media (max-width:760px){
+  #vApp{grid-template-columns:1fr;grid-template-rows:auto 55% 1fr}
+  header{grid-column:1}
+  aside{order:3;border-right:0;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div id="vLogin" class="hidden">
+  <form id="fLogin">
+    <h1>Mapa ao vivo da frota</h1>
+    <p>Entre com a mesma senha da Central / BI.</p>
+    <input id="lSenha" type="password" placeholder="Senha" autocomplete="current-password" required>
+    <button class="btn p" style="width:100%">Entrar</button>
+    <div id="lMsg" class="msg"></div>
+  </form>
+</div>
+
+<div id="vApp" class="hidden">
+  <header>
+    <h1>Mapa ao vivo da frota <span class="sub" id="atual"></span></h1>
+    <label><input type="checkbox" id="cCercas" checked> Cercas</label>
+    <label><input type="checkbox" id="cRotas"> Todas as rotas</label>
+    <label><input type="checkbox" id="cSemViagem" checked> Sem viagem</label>
+    <button class="btn sm" id="bAtualizar">Atualizar</button>
+    <button class="btn sm" id="bSair">Sair</button>
+  </header>
+  <aside>
+    <div class="kpis" id="kpis"></div>
+    <div class="busca"><input id="fBusca" placeholder="Buscar ônibus, linha, motorista…"></div>
+    <div id="avisos"></div>
+    <div class="lista" id="lista"></div>
+  </aside>
+  <div id="mapa"></div>
+</div>
+
+<script src="../rota/leaflet.js"></script>
+<script>
+const SB_URL="https://orhuxmsrdnugpogvtnbg.supabase.co";
+const SB_KEY="sb_publishable_Hu4Ns0jDTesWzDmVseAl_Q_ubCJa5wL";
+const MAPTILER_KEY="G2MUHW7Q8hatR3VYbHUz";   // restringir ao domínio gestao-integrada.github.io no painel da MapTiler
+const FICHA_URL="";                            // quando a ficha do ônibus existir: "../ficha/?f=" (o número vai no fim)
+const K_SESS="tf_bi", K_CENTRAL="tf_sessao", K_SOL="tf_solicitacoes", K_OPC="tf_mapa_opc";
+const ATUALIZA_S=30;
+
+const EST={
+  atrasado:  {nome:"Atrasado",   cor:"#ea580c", ord:1},
+  lotado:    {nome:"Lotado",     cor:"#dc2626", ord:2},
+  sem_sinal: {nome:"Sem sinal",  cor:"#64748b", ord:3},
+  cheio:     {nome:"Acima do ideal", cor:"#ca8a04", ord:4},
+  ok:        {nome:"Em viagem ok", cor:"#16a34a", ord:5},
+  sem_viagem:{nome:"Sem viagem aberta", cor:"#0ea5e9", ord:6}
+};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls={get:k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const hm=s=>s?new Date(s).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Belem"}):"—";
+const idade=m=>m==null?"sem posição":m<1?"agora":m<60?m+" min atrás":m<1440?Math.floor(m/60)+" h "+(m%60)+" min atrás":"mais de 1 dia";
+let TOKEN=null, DADOS=null, FILTRO=null, MAPA=null, CAM={}, MARK={}, SEL=null, TIMER=null, PRIMEIRA=true, ROTAS_TODAS=null;
+
+async function rpc(fn,body){
+  const r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||t||("Erro "+r.status);if(/sessao/.test(m)){ls.del(K_SESS);mostrarLogin();throw new Error("Sessão expirada, entre de novo.")}throw new Error(m)}
+  return j;
+}
+
+/* ---------- login (mesma sessão do BI / Central) ---------- */
+async function iniciar(){
+  const cand=[ls.get(K_SESS),ls.get(K_CENTRAL),ls.get(K_SOL)].filter(s=>s&&s.token);
+  for(const s of cand){try{const q=await rpc("bi_sessao",{p_token:s.token});if(q&&!q.erro){entrar(s.token);return}}catch(e){}}
+  mostrarLogin();
+}
+function mostrarLogin(){clearInterval(TIMER);$("vApp").classList.add("hidden");$("vLogin").classList.remove("hidden");$("lSenha").focus()}
+$("fLogin").onsubmit=async e=>{e.preventDefault();$("lMsg").textContent="Entrando…";$("lMsg").className="msg";
+  try{const r=await rpc("bi_entrar",{p_senha:$("lSenha").value});
+    if(r.erro){$("lMsg").textContent=r.erro;$("lMsg").className="msg err";return}
+    ls.set(K_SESS,{token:r.token,nome:r.nome});entrar(r.token);
+  }catch(err){$("lMsg").textContent="Erro: "+err.message;$("lMsg").className="msg err"}};
+$("bSair").onclick=async()=>{try{await rpc("bi_sair",{p_token:TOKEN})}catch(e){}ls.del(K_SESS);location.reload()};
+
+function entrar(tk){
+  TOKEN=tk;$("vLogin").classList.add("hidden");$("vApp").classList.remove("hidden");
+  const o=ls.get(K_OPC)||{};if(o.cercas===false)$("cCercas").checked=false;if(o.rotas)$("cRotas").checked=true;if(o.semViagem===false)$("cSemViagem").checked=false;
+  criarMapa();carregar();
+  TIMER=setInterval(()=>{if(!document.hidden)carregar()},ATUALIZA_S*1000);
+}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&TOKEN)carregar()});
+
+/* ---------- mapa ---------- */
+function criarMapa(){
+  if(MAPA)return;
+  MAPA=L.map("mapa",{zoomControl:false}).setView([-3.0,-47.4],10);
+  L.control.zoom({position:"topright"}).addTo(MAPA);
+  L.tileLayer("https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key="+MAPTILER_KEY,{maxZoom:20,attribution:'© MapTiler © OpenStreetMap'}).addTo(MAPA);
+  CAM.cercas=L.layerGroup().addTo(MAPA);CAM.rotas=L.layerGroup().addTo(MAPA);CAM.sel=L.layerGroup().addTo(MAPA);CAM.bus=L.layerGroup().addTo(MAPA);
+  const leg=L.control({position:"bottomright"});
+  leg.onAdd=()=>{const d=L.DomUtil.create("div","leg");d.innerHTML=Object.values(EST).map(e=>`<div><i style="background:${e.cor}"></i>${e.nome}</div>`).join("")+'<div style="color:#5b6678">● branco = andando</div>';return d};
+  leg.addTo(MAPA);
+  MAPA.on("click",()=>{CAM.sel.clearLayers();SEL=null});
+}
+
+async function carregar(){
+  try{DADOS=await rpc("mapa_frota",{p_token:TOKEN})}
+  catch(err){$("atual").textContent="· erro: "+err.message;return}
+  $("atual").textContent="· atualizado "+hm(DADOS.agora)+" (a cada "+ATUALIZA_S+" s)";
+  desenharCercas();desenhar();
+  if($("cRotas").checked)rotasTodas();
+}
+
+function visiveis(){
+  const q=$("fBusca").value.trim().toLowerCase(),sv=$("cSemViagem").checked;
+  return (DADOS.onibus||[]).filter(b=>{
+    if(!sv&&b.estado==="sem_viagem"&&FILTRO!=="sem_viagem")return false;
+    if(FILTRO&&b.estado!==FILTRO)return false;
+    if(q&&![b.frota,b.linha,b.motorista,b.placa,b.empresa,b.turno].some(x=>String(x||"").toLowerCase().includes(q)))return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const todos=DADOS.onibus||[],cfg=DADOS.config||{};
+  // indicadores (clicar filtra = drill-down)
+  const cont={};todos.forEach(b=>cont[b.estado]=(cont[b.estado]||0)+1);
+  $("kpis").innerHTML=Object.entries(EST).map(([k,e])=>`<button class="kpi${FILTRO===k?" on":""}" data-k="${k}"><b>${cont[k]||0}</b><span><i style="background:${e.cor}"></i>${e.nome}</span></button>`).join("");
+  $("kpis").querySelectorAll(".kpi").forEach(el=>el.onclick=()=>{FILTRO=FILTRO===el.dataset.k?null:el.dataset.k;desenhar()});
+  const semGps=todos.filter(b=>b.lat==null);
+  $("avisos").innerHTML=semGps.length?`<div class="aviso">${semGps.length} ônibus com viagem aberta na TFleet sem posição do Monitor (aparecem só na lista).</div>`:"";
+
+  const vis=visiveis().sort((a,b)=>(EST[a.estado].ord-EST[b.estado].ord)||String(a.frota).localeCompare(String(b.frota),"pt",{numeric:true}));
+  // lista
+  let html="",ultimo=null;
+  vis.forEach(b=>{
+    if(b.estado!==ultimo){html+=`<div class="sec">${EST[b.estado].nome}</div>`;ultimo=b.estado}
+    html+=`<div class="it" data-f="${esc(b.frota)}"><div class="n" style="background:${EST[b.estado].cor}">${esc(b.frota||"?")}</div>
+      <div class="t"><b>${esc(b.linha||"Sem viagem aberta")}</b>${b.sentido?" · "+esc(b.sentido):""}
+      <div>${esc(resumo(b,cfg))}</div></div></div>`;
+  });
+  $("lista").innerHTML=html||'<div class="msg" style="padding:10px">Nenhum ônibus nesse filtro.</div>';
+  $("lista").querySelectorAll(".it").forEach(el=>el.onclick=()=>focar(el.dataset.f));
+
+  // marcadores
+  CAM.bus.clearLayers();MARK={};const pts=[];
+  vis.filter(b=>b.lat!=null).forEach(b=>{
+    const cor=EST[b.estado].cor,anda=(b.kmh||0)>=5&&b.estado!=="sem_sinal";
+    const ic=L.divIcon({className:"",iconSize:[40,24],iconAnchor:[20,12],
+      html:`<div class="pin${anda?" vel":""}" style="background:${cor};color:${cor};position:relative"><span style="color:#fff">${esc(b.frota||"?")}</span></div>`});
+    const m=L.marker([b.lat,b.lon],{icon:ic,zIndexOffset:100-EST[b.estado].ord*10}).addTo(CAM.bus);
+    m.bindPopup(()=>popup(b),{maxWidth:300});
+    m.on("popupopen",e=>ligarPopup(e.popup,b));
+    MARK[b.frota]=m;pts.push([b.lat,b.lon]);
+  });
+  if(PRIMEIRA&&pts.length){MAPA.fitBounds(pts,{padding:[30,30],maxZoom:14});PRIMEIRA=false}
+}
+
+function resumo(b,cfg){
+  const p=[];
+  if(b.ocupacao!=null)p.push(b.ocupacao+"/"+(cfg.lugares||45)+" pass.");
+  if(b.atraso_min!=null&&b.previsto)p.push((b.sentido==="VOLTA"?"saída prev. ":"chegada prev. ")+b.previsto+(b.atraso_min>0?" (+"+b.atraso_min+" min)":""));
+  p.push(idade(b.idade_min));
+  return p.join(" · ");
+}
+
+function popup(b){
+  const e=EST[b.estado],cfg=DADOS.config||{};
+  let atr="—";
+  if(b.previsto){atr=b.previsto;if(b.atraso_min!=null)atr+=b.atraso_min>0?` <b style="color:${EST.atrasado.cor}">+${b.atraso_min} min</b>`:` (${b.atraso_min} min)`}
+  const linhas=[
+    ["Linha",esc(b.linha||"Sem viagem aberta")+(b.sentido?" · "+esc(b.sentido):"")],
+    ["Turno",esc(b.turno||"—")],["Empresa",esc(b.empresa||"—")],["Motorista",esc(b.motorista||"—")],
+    ["Saída",hm(b.saida)+(b.chegada?" · chegou "+hm(b.chegada):"")],
+    [b.sentido==="VOLTA"?"Saída prevista":"Chegada prevista",atr],
+    ["Ocupação",b.ocupacao!=null?b.ocupacao+" / "+(cfg.lugares||45)+" lugares (ideal "+(cfg.ideal||40)+")":"sem leitura"],
+    ["Posição",idade(b.idade_min)+(b.kmh!=null?" · "+b.kmh+" km/h":"")],
+    ["Celular",b.bateria!=null?b.bateria+"%"+(b.tomada?" na tomada":" fora da tomada"):"—"]
+  ];
+  return `<div class="pop"><h3>Ônibus ${esc(b.frota||"?")} ${b.placa?'<span style="font-weight:400;color:#5b6678;font-size:12px">'+esc(b.placa)+'</span>':""}</h3>
+    <span class="tag" style="background:${e.cor}">${e.nome}</span>
+    <table>${linhas.map(l=>`<tr><td>${l[0]}</td><td>${l[1]}</td></tr>`).join("")}</table>
+    <div class="acts">
+      ${b.lat!=null?'<button class="btn sm" data-a="trilha">Trajeto 2 h</button>':""}
+      ${b.linha?'<button class="btn sm" data-a="rota">Traçado da rota</button>':""}
+      ${FICHA_URL?`<a class="btn sm" href="${FICHA_URL+encodeURIComponent(b.frota)}" target="_blank">Ficha do ônibus</a>`:""}
+    </div><div class="msg" data-m></div></div>`;
+}
+function ligarPopup(pp,b){
+  const el=pp.getElement();if(!el)return;const m=el.querySelector("[data-m]");
+  el.querySelectorAll("[data-a]").forEach(bt=>bt.onclick=async ev=>{ev.stopPropagation();
+    m.textContent="Carregando…";
+    try{if(bt.dataset.a==="trilha")await trilha(b);else await rotaDe(b);m.textContent=""}
+    catch(err){m.textContent="Erro: "+err.message;m.className="msg err"}});
+}
+
+async function trilha(b){
+  const ate=new Date(),de=new Date(ate-2*3600e3);
+  const r=await rpc("bi_trilha",{p_token:TOKEN,p_frota:b.frota,p_de:de.toISOString(),p_ate:ate.toISOString()});
+  CAM.sel.clearLayers();SEL=b.frota;
+  const pts=(r.pontos||[]).map(p=>[p.lat,p.lon]);
+  if(pts.length<2)throw new Error("Sem trajeto do Monitor nas últimas 2 horas.");
+  L.polyline(pts,{color:"#fde047",weight:4,opacity:.95}).addTo(CAM.sel);
+  L.circleMarker(pts[0],{radius:5,color:"#fff",fillColor:"#111",fillOpacity:1,weight:2}).bindTooltip("Início "+hm(r.pontos[0].ts)).addTo(CAM.sel);
+  MAPA.fitBounds(pts,{padding:[40,40],maxZoom:16});
+}
+async function rotaDe(b){
+  const r=await rpc("mapa_tracado",{p_token:TOKEN,p_linha:b.linha,p_sentido:b.sentido||null});
+  if(!r||!r.length)throw new Error("Essa linha não tem traçado no mapa de roteirização da TFleet.");
+  CAM.sel.clearLayers();SEL=b.frota;const all=[];
+  r.forEach(t=>{
+    const pts=(t.pontos||[]).map(p=>Array.isArray(p)?p:[p.lat,p.lon]);all.push(...pts);
+    L.polyline(pts,{color:t.sentido==="VOLTA"?"#a855f7":"#22d3ee",weight:5,opacity:.9}).bindTooltip(esc(t.linha)+" · "+esc(t.sentido)).addTo(CAM.sel);
+    (t.paradas||[]).forEach((p,i)=>L.circleMarker([p.lat,p.lon],{radius:5,color:"#fff",weight:2,fillColor:"#111",fillOpacity:1})
+      .bindTooltip(`${i+1}. ${esc(p.horario||"")} ${esc(p.endereco||"")}`).addTo(CAM.sel));
+  });
+  if(b.lat!=null)all.push([b.lat,b.lon]);
+  if(all.length)MAPA.fitBounds(all,{padding:[40,40],maxZoom:15});
+}
+async function rotasTodas(){
+  if(!ROTAS_TODAS){try{ROTAS_TODAS=await rpc("mapa_tracado",{p_token:TOKEN})}catch(e){ROTAS_TODAS=[]}}
+  CAM.rotas.clearLayers();
+  const q=$("fBusca").value.trim().toLowerCase();
+  ROTAS_TODAS.filter(t=>!q||String(t.linha).toLowerCase().includes(q)).forEach(t=>{
+    const pts=(t.pontos||[]).map(p=>Array.isArray(p)?p:[p.lat,p.lon]);
+    L.polyline(pts,{color:t.sentido==="VOLTA"?"#c084fc":"#67e8f9",weight:2,opacity:.6}).bindTooltip(esc(t.linha)+" · "+esc(t.sentido),{sticky:true}).addTo(CAM.rotas);
+  });
+}
+function desenharCercas(){
+  CAM.cercas.clearLayers();if(!$("cCercas").checked)return;
+  (DADOS.cercas||[]).forEach(c=>L.polygon(c.pontos,{color:c.cor||"#2563eb",weight:2,fillOpacity:.12}).bindTooltip(esc(c.nome),{sticky:true}).addTo(CAM.cercas));
+}
+function focar(f){
+  const m=MARK[f];
+  if(m){MAPA.setView(m.getLatLng(),Math.max(MAPA.getZoom(),15));m.openPopup()}
+  else{const b=(DADOS.onibus||[]).find(x=>x.frota===f);if(b)L.popup().setLatLng(MAPA.getCenter()).setContent(popup(b)+'<div class="msg">Sem posição do Monitor para este ônibus.</div>').openOn(MAPA)}
+}
+function salvarOpc(){ls.set(K_OPC,{cercas:$("cCercas").checked,rotas:$("cRotas").checked,semViagem:$("cSemViagem").checked})}
+$("cCercas").onchange=()=>{salvarOpc();desenharCercas()};
+$("cRotas").onchange=()=>{salvarOpc();if($("cRotas").checked)rotasTodas();else CAM.rotas.clearLayers()};
+$("cSemViagem").onchange=()=>{salvarOpc();desenhar()};
+$("fBusca").oninput=()=>{desenhar();if($("cRotas").checked)rotasTodas()};
+$("bAtualizar").onclick=carregar;
+iniciar();
+</script>
+<script src="../central-voltar.js"></script>
+</body>
+</html>
