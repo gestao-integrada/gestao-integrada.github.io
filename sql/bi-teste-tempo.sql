@@ -12,7 +12,7 @@ declare def text := pg_get_functiondef('public._bi_quem(text)'::regprocedure);
         p text; d int; f text; t0 timestamptz; r text;
 begin
   execute $f$create or replace function public._bi_quem(p_token text) returns jsonb language sql as $q$select '{"edita":true,"admin":true}'::jsonb$q$$f$;
-  foreach p in array array['ocupacao','fora_rota','custo','nao_cad','viagens','horarios','roteiro'] loop
+  foreach p in array array['ocupacao','fora_rota','custo','nao_cad','viagens','horarios','roteiro','mapa_rotas'] loop
     foreach d in array array[1, 7, 30, 90] loop
     foreach f in array array['{}', '{"tipolinha":"G:ADM"}'] loop
       continue when (p = 'roteiro' and d > 30) or (p = 'horarios' and d > 60);

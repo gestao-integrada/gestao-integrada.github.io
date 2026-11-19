@@ -82,6 +82,10 @@ language sql stable as $$
   where public._bi_linha_ok(u.tipolinha, u.linha, fg, null);
 $$;
 
+-- posição de embarque aproveitável: dentro da região da operação (Pará e arredores). Fora disso é leitura errada (0,0 ou outro estado).
+create or replace function public._bi_gps_ok(la float8, lo float8) returns boolean
+language sql immutable as $$ select la between -7 and 0 and lo between -52 and -45 $$;
+
 -- distância em metros entre dois pontos (aproximação plana, boa para poucos km)
 create or replace function public._bi_m(la1 float8, lo1 float8, la2 float8, lo2 float8) returns float8
 language sql immutable as $$
@@ -124,8 +128,11 @@ insert into public.bi_paineis (id, titulo, descricao, ordem) values
   ('viagens',    'Viagens por dia',              'Quantas viagens foram abertas por dia em cada turno e a média do período.', 4),
   ('custo',      'Custo por pessoa',             'Embarques vezes o valor por pessoa, por gerência, turno e linha.', 5),
   ('nao_cad',    'Não cadastrados',              'Itinerantes e passageiros não cadastrados, com o crachá lido para consulta.', 6),
-  ('roteiro',    'Roteirização',                 'Hora em que cada viagem passou em cada ponto (cerca) da rota: saída, meio do caminho, descida, chegada.', 7)
+  ('roteiro',    'Roteirização',                 'Hora em que cada viagem passou em cada ponto (cerca) da rota: saída, meio do caminho, descida, chegada.', 7),
+  ('mapa_rotas', 'Mapa das rotas',               'Rotas cadastradas na TFleet com os pontos oficiais e horários, e onde os passageiros embarcaram de verdade no período.', 8)
 on conflict (id) do nothing;
+-- painel novo começa visível só para quem edita (muda em Gerenciar → Painéis depois de conferir)
+update public.bi_paineis set situacao = 'admin' where id = 'mapa_rotas' and situacao = 'todos' and atualizado_por is null;
 -- Roteirização fica logo depois de Horários (só na 1ª vez; depois a ordem é a que estiver em Gerenciar)
 update public.bi_paineis set ordem = ordem + 1
  where id <> 'roteiro' and ordem >= 3 and exists (select 1 from public.bi_paineis where id = 'roteiro' and ordem = 7);
@@ -730,7 +737,7 @@ begin
     lk := public._bi_grupo_chaves(fg, p_de, p_ate);
   end if;
 
-  if p_painel in ('ocupacao', 'fora_rota', 'custo', 'nao_cad') then
+  if p_painel in ('ocupacao', 'fora_rota', 'custo', 'nao_cad', 'mapa_rotas') then
     -- cópia enxuta: o "bruto" (JSON grande da TFleet) não é copiado inteiro, só a empresa (era o que fazia a Ocupação estourar o tempo)
     create temp table if not exists _bi_e on commit drop as select * from embarques limit 0;
     truncate _bi_e;
@@ -762,14 +769,54 @@ begin
             on w.linha = l.linha) x),
       'por_dia', (select coalesce(json_agg(x order by x.dia), '[]'::json) from (
           select data_local as dia, count(*) as embarques, count(distinct coalesce(matricula, nome)) as pessoas from _bi_e group by 1) x),
+      -- ocupação média por dia (viagens com leitura de passageiros)
+      'ocup_dia', (select coalesce(json_agg(x order by x.dia), '[]'::json) from (
+          select data_local as dia, count(*) as viagens, round(avg(ocupacao)::numeric, 1) as media,
+                 round(100 * avg(ocupacao)::numeric / cfg.lugares, 1) as pct,
+                 count(*) filter (where ocupacao >= cfg.lugares) as lotadas
+          from vg where ocupacao > 0 group by 1) x),
+      'faixas', (select json_build_object('vazias', count(*) filter (where 100.0 * ocupacao / cfg.lugares < 50),
+                                          'boas', count(*) filter (where 100.0 * ocupacao / cfg.lugares >= 50 and 100.0 * ocupacao / cfg.lugares < 89),
+                                          'cheias', count(*) filter (where 100.0 * ocupacao / cfg.lugares >= 89 and ocupacao < cfg.lugares),
+                                          'lotadas', count(*) filter (where ocupacao >= cfg.lugares))
+                 from vg where ocupacao > 0),
       'por_status', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
           select coalesce(nullif(upper(trim(tipopassageiro)), ''), 'SEM STATUS') as status, count(*) as n from _bi_e group by 1) x),
       'por_turno', (select coalesce(json_agg(x order by x.n desc), '[]'::json) from (
           select coalesce(nullif(upper(trim(tipolinha)), ''), '—') as turno, coalesce(_bi_empresa(bruto->>'empresa'), '—') as empresa, count(*) as n
           from _bi_e group by 1, 2) x),
       'status_linha', (select coalesce(json_agg(x), '[]'::json) from (
-          select linha, coalesce(nullif(upper(trim(tipopassageiro)), ''), 'SEM STATUS') as status, count(*) as n from _bi_e group by 1, 2) x)
+          select linha, coalesce(nullif(upper(trim(tipopassageiro)), ''), 'SEM STATUS') as status, count(*) as n from _bi_e group by 1, 2) x),
+      -- onde embarcam: lugar arredondado a ~10 m → [lat, lon, embarques, pessoas, [até 3 linhas]]
+      'mapa', (select coalesce(json_agg(json_build_array(la, lo, n, p, ls) order by n desc), '[]'::json) from (
+          select round(lat::numeric, 4) as la, round(lon::numeric, 4) as lo, count(*) as n, count(distinct coalesce(matricula, nome)) as p,
+                 (array_agg(distinct linha))[1:3] as ls
+          from _bi_e where public._bi_gps_ok(lat, lon) group by 1, 2) x),
+      'sem_gps', (select count(*) from _bi_e where not public._bi_gps_ok(lat, lon))
     ) into res;
+
+  elsif p_painel = 'mapa_rotas' then
+    declare rt json := '[]'::json;
+    begin
+      if to_regclass('public.rotas_tracado') is not null then
+        execute $q$select coalesce(json_agg(json_build_object('linha', linha, 'sentido', upper(sentido), 'turno', tipolinha, 'pontos', pontos,
+                                   'paradas', paradas, 'km', km, 'cadastrados', cadastrados, 'atualizado', atualizado_em) order by linha, sentido), '[]'::json)
+                   from public.rotas_tracado
+                  where ($1 is null or upper(trim(linha)) = upper(trim($1))) and ($2 is null or upper(trim(tipolinha)) = $2)
+                    and ($3 is null or public._bi_linha_ok(tipolinha, linha, $3, null)) and ($4 is null or upper(sentido) = $4)$q$
+          into rt using fl, ft, fg, fs;
+      end if;
+      select json_build_object(
+        'rotas', rt,
+        -- embarques por lugar (~10 m), linha e sentido → [linha, sentido, lat, lon, embarques, pessoas, dias, 1ª hora, última hora]
+        'emb', (select coalesce(json_agg(json_build_array(linha, sentido, la, lo, n, p, d, h1, h2)), '[]'::json) from (
+            select linha, upper(trim(sentido)) as sentido, round(lat::numeric, 4) as la, round(lon::numeric, 4) as lo, count(*) as n,
+                   count(distinct coalesce(matricula, nome)) as p, count(distinct data_local) as d,
+                   to_char(min(hora), 'HH24:MI') as h1, to_char(max(hora), 'HH24:MI') as h2
+            from _bi_e where public._bi_gps_ok(lat, lon) group by 1, 2, 3, 4) x),
+        'total', (select count(*) from _bi_e), 'sem_gps', (select count(*) from _bi_e where not public._bi_gps_ok(lat, lon))
+      ) into res;
+    end;
 
   elsif p_painel = 'fora_rota' then
     with b as (
